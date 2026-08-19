@@ -1,0 +1,42 @@
+Error: Acceso denegado
+Error: Acceso denegado
+node:child_process:1000
+    throw err;
+    ^
+
+Error: Command failed: taskkill /pid 33628 /T /F
+Error: Acceso denegado
+
+    at genericNodeError (node:internal/errors:985:15)
+    at wrappedFn (node:internal/errors:539:14)
+    at checkExecSyncError (node:child_process:925:11)
+    at execSync (node:child_process:997:15)
+    at treeKillSync (C:\Users\yasuy\Documents\githup\cobro\backend\node_modules\@nestjs\cli\lib\utils\tree-kill.js:7:38)
+    at C:\Users\yasuy\Documents\githup\cobro\backend\node_modules\@nestjs\cli\actions\start.action.js:92:46
+    at Object.onWatchStatusChange (C:\Users\yasuy\Documents\githup\cobro\backend\node_modules\@nestjs\cli\lib\compiler\watch-compiler.js:82:17)
+    at C:\Users\yasuy\Documents\githup\cobro\backend\node_modules\typescript\lib\typescript.js:133916:30
+    at emitFilesAndReportErrors (C:\Users\yasuy\Documents\githup\cobro\backend\node_modules\typescript\lib\typescript.js:133737:5)
+    at result.afterProgramCreate (C:\Users\yasuy\Documents\githup\cobro\backend\node_modules\typescript\lib\typescript.js:133912:5) {
+  status: 1,
+  signal: null,
+  output: [
+    null,
+    Buffer(0) [Uint8Array] [],
+    Buffer(25) [Uint8Array] [
+       69, 114, 114, 111, 114,  58,  32,
+       65,  99,  99, 101, 115, 111,  32,
+      100, 101, 110, 101, 103,  97, 100,
+      111,  13,  13,  10
+    ]
+  ],
+  pid: 32772,
+  stdout: Buffer(0) [Uint8Array] [],
+  stderr: Buffer(25) [Uint8Array] [
+     69, 114, 114, 111, 114,  58,  32,
+     65,  99,  99, 101, 115, 111,  32,
+    100, 101, 110, 101, 103,  97, 100,
+    111,  13,  13,  10
+  ]
+}
+
+Node.js v24.12.0

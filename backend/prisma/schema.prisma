@@ -1,0 +1,532 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  schemas  = ["public"]
+}
+
+model Moneda {
+  codigoMoneda String @id @map("codigo_moneda") @db.Char(3)
+  nombre       String @db.VarChar(80)
+  simbolo      String @db.VarChar(8)
+  decimales    Int    @default(2) @db.SmallInt
+
+  creditos            Credito[]
+  cajasMenores        CajaMenor[]
+  gastos              Gasto[]
+  pagos               Pago[]
+  presupuestosPeriodo PresupuestoPeriodo[]
+
+  @@map("moneda")
+  @@schema("public")
+}
+
+model EstadoUsuario {
+  estadoUsuarioId Int    @id @default(autoincrement()) @map("estado_usuario_id") @db.SmallInt
+  codigo          String @unique @db.VarChar(30)
+  nombre          String @db.VarChar(80)
+
+  usuarios Usuario[]
+
+  @@map("estado_usuario")
+  @@schema("public")
+}
+
+model Rol {
+  rolId  Int    @id @default(autoincrement()) @map("rol_id") @db.SmallInt
+  codigo String @unique @db.VarChar(30)
+  nombre String @db.VarChar(80)
+
+  usuarios UsuarioRol[]
+
+  @@map("rol")
+  @@schema("public")
+}
+
+model EstadoCliente {
+  estadoClienteId Int    @id @default(autoincrement()) @map("estado_cliente_id") @db.SmallInt
+  codigo          String @unique @db.VarChar(30)
+  nombre          String @db.VarChar(80)
+
+  clientes Cliente[]
+
+  @@map("estado_cliente")
+  @@schema("public")
+}
+
+model TipoDocumento {
+  tipoDocumentoId Int    @id @default(autoincrement()) @map("tipo_documento_id") @db.SmallInt
+  codigo          String @unique @db.VarChar(30)
+  nombre          String @db.VarChar(80)
+
+  documentos ClienteDocumento[]
+
+  @@map("tipo_documento")
+  @@schema("public")
+}
+
+model TipoContacto {
+  tipoContactoId Int    @id @default(autoincrement()) @map("tipo_contacto_id") @db.SmallInt
+  codigo         String @unique @db.VarChar(30)
+  nombre         String @db.VarChar(80)
+
+  contactos ClienteContacto[]
+
+  @@map("tipo_contacto")
+  @@schema("public")
+}
+
+model TipoDireccion {
+  tipoDireccionId Int    @id @default(autoincrement()) @map("tipo_direccion_id") @db.SmallInt
+  codigo          String @unique @db.VarChar(30)
+  nombre          String @db.VarChar(80)
+
+  direcciones ClienteDireccion[]
+
+  @@map("tipo_direccion")
+  @@schema("public")
+}
+
+model EstadoRuta {
+  estadoRutaId Int    @id @default(autoincrement()) @map("estado_ruta_id") @db.SmallInt
+  codigo       String @unique @db.VarChar(30)
+  nombre       String @db.VarChar(80)
+
+  rutas Ruta[]
+
+  @@map("estado_ruta")
+  @@schema("public")
+}
+
+model FrecuenciaPago {
+  frecuenciaPagoId Int    @id @default(autoincrement()) @map("frecuencia_pago_id") @db.SmallInt
+  codigo           String @unique @db.VarChar(30)
+  nombre           String @db.VarChar(80)
+  diasIntervalo    Int    @map("dias_intervalo") @db.SmallInt
+
+  creditos Credito[]
+
+  @@map("frecuencia_pago")
+  @@schema("public")
+}
+
+model EstadoCredito {
+  estadoCreditoId Int    @id @default(autoincrement()) @map("estado_credito_id") @db.SmallInt
+  codigo          String @unique @db.VarChar(30)
+  nombre          String @db.VarChar(80)
+
+  creditos Credito[]
+
+  @@map("estado_credito")
+  @@schema("public")
+}
+
+model EstadoCuota {
+  estadoCuotaId Int    @id @default(autoincrement()) @map("estado_cuota_id") @db.SmallInt
+  codigo        String @unique @db.VarChar(30)
+  nombre        String @db.VarChar(80)
+
+  cuotas CreditoCuota[]
+
+  @@map("estado_cuota")
+  @@schema("public")
+}
+
+model MedioPago {
+  medioPagoId Int    @id @default(autoincrement()) @map("medio_pago_id") @db.SmallInt
+  codigo      String @unique @db.VarChar(30)
+  nombre      String @db.VarChar(80)
+
+  pagos Pago[]
+
+  @@map("medio_pago")
+  @@schema("public")
+}
+
+model TipoMovimientoCaja {
+  tipoMovimientoCajaId Int    @id @default(autoincrement()) @map("tipo_movimiento_caja_id") @db.SmallInt
+  codigo               String @unique @db.VarChar(30)
+  nombre               String @db.VarChar(80)
+  naturaleza           String @db.Char(1)
+
+  movimientos CajaMenorMovimiento[]
+
+  @@map("tipo_movimiento_caja")
+  @@schema("public")
+}
+
+model CategoriaGasto {
+  categoriaGastoId Int     @id @default(autoincrement()) @map("categoria_gasto_id") @db.SmallInt
+  codigo           String  @unique @db.VarChar(30)
+  nombre           String  @db.VarChar(100)
+  activa           Boolean @default(true)
+
+  gastos Gasto[]
+
+  @@map("categoria_gasto")
+  @@schema("public")
+}
+
+model Usuario {
+  usuarioId       String   @id @default(dbgenerated("gen_random_uuid()")) @map("usuario_id") @db.Uuid
+  estadoUsuarioId Int      @map("estado_usuario_id") @db.SmallInt
+  nombreUsuario   String   @unique @map("nombre_usuario") @db.VarChar(60)
+  passwordHash    String   @map("password_hash") @db.VarChar(255)
+  nombres         String   @db.VarChar(120)
+  apellidos       String   @db.VarChar(120)
+  correo          String   @db.VarChar(180)
+  telefono        String?  @db.VarChar(40)
+  creadoEn        DateTime @default(now()) @map("creado_en") @db.Timestamptz(6)
+  actualizadoEn   DateTime @default(now()) @map("actualizado_en") @db.Timestamptz(6)
+
+  estadoUsuario        EstadoUsuario         @relation(fields: [estadoUsuarioId], references: [estadoUsuarioId])
+  roles                UsuarioRol[]
+  clientesCreados      Cliente[]             @relation("ClienteCreadoPor")
+  rutas                Ruta[]                @relation("RutaResponsable")
+  creditosCreados      Credito[]             @relation("CreditoCreadoPor")
+  cajasMenores         CajaMenor[]           @relation("CajaMenorResponsable")
+  movimientosCajaMenor CajaMenorMovimiento[]
+  gastosRegistrados    Gasto[]               @relation("GastoRegistradoPor")
+  pagosComoCobrador    Pago[]                @relation("PagoCobrador")
+  presupuestosPeriodo  PresupuestoPeriodo[]
+
+  @@map("usuario")
+  @@schema("public")
+}
+
+model UsuarioRol {
+  usuarioId  String   @map("usuario_id") @db.Uuid
+  rolId      Int      @map("rol_id") @db.SmallInt
+  asignadoEn DateTime @default(now()) @map("asignado_en") @db.Timestamptz(6)
+
+  usuario Usuario @relation(fields: [usuarioId], references: [usuarioId], onDelete: Cascade)
+  rol     Rol     @relation(fields: [rolId], references: [rolId])
+
+  @@id([usuarioId, rolId])
+  @@map("usuario_rol")
+  @@schema("public")
+}
+
+model Cliente {
+  clienteId          String   @id @default(dbgenerated("gen_random_uuid()")) @map("cliente_id") @db.Uuid
+  estadoClienteId    Int      @map("estado_cliente_id") @db.SmallInt
+  creadoPorUsuarioId String?  @map("creado_por_usuario_id") @db.Uuid
+  nombreCompleto     String   @map("nombre_completo") @db.VarChar(180)
+  nombreComercial    String?  @map("nombre_comercial") @db.VarChar(180)
+  notas              String?
+  creadoEn           DateTime @default(now()) @map("creado_en") @db.Timestamptz(6)
+  actualizadoEn      DateTime @default(now()) @map("actualizado_en") @db.Timestamptz(6)
+
+  estadoCliente EstadoCliente      @relation(fields: [estadoClienteId], references: [estadoClienteId])
+  creadoPor     Usuario?           @relation("ClienteCreadoPor", fields: [creadoPorUsuarioId], references: [usuarioId])
+  documentos    ClienteDocumento[]
+  contactos     ClienteContacto[]
+  direcciones   ClienteDireccion[]
+  rutas         RutaCliente[]
+  creditos      Credito[]
+  pagos         Pago[]
+
+  @@index([nombreCompleto], map: "ix_cliente_nombre_completo")
+  @@map("cliente")
+  @@schema("public")
+}
+
+model ClienteDocumento {
+  clienteDocumentoId String  @id @default(dbgenerated("gen_random_uuid()")) @map("cliente_documento_id") @db.Uuid
+  clienteId          String  @map("cliente_id") @db.Uuid
+  tipoDocumentoId    Int     @map("tipo_documento_id") @db.SmallInt
+  numeroDocumento    String  @map("numero_documento") @db.VarChar(60)
+  expedidoEn         String? @map("expedido_en") @db.VarChar(120)
+
+  cliente       Cliente       @relation(fields: [clienteId], references: [clienteId], onDelete: Cascade)
+  tipoDocumento TipoDocumento @relation(fields: [tipoDocumentoId], references: [tipoDocumentoId])
+
+  @@unique([tipoDocumentoId, numeroDocumento])
+  @@unique([clienteId, tipoDocumentoId, numeroDocumento])
+  @@map("cliente_documento")
+  @@schema("public")
+}
+
+model ClienteContacto {
+  clienteContactoId String    @id @default(dbgenerated("gen_random_uuid()")) @map("cliente_contacto_id") @db.Uuid
+  clienteId         String    @map("cliente_id") @db.Uuid
+  tipoContactoId    Int       @map("tipo_contacto_id") @db.SmallInt
+  valor             String    @db.VarChar(180)
+  esPrincipal       Boolean   @default(false) @map("es_principal")
+  verificadoEn      DateTime? @map("verificado_en") @db.Timestamptz(6)
+
+  cliente      Cliente      @relation(fields: [clienteId], references: [clienteId], onDelete: Cascade)
+  tipoContacto TipoContacto @relation(fields: [tipoContactoId], references: [tipoContactoId])
+
+  @@unique([clienteId, tipoContactoId, valor])
+  @@map("cliente_contacto")
+  @@schema("public")
+}
+
+model ClienteDireccion {
+  clienteDireccionId String   @id @default(dbgenerated("gen_random_uuid()")) @map("cliente_direccion_id") @db.Uuid
+  clienteId          String   @map("cliente_id") @db.Uuid
+  tipoDireccionId    Int      @map("tipo_direccion_id") @db.SmallInt
+  direccion          String   @db.VarChar(220)
+  barrio             String?  @db.VarChar(120)
+  municipio          String   @db.VarChar(120)
+  departamento       String   @db.VarChar(120)
+  pais               String   @default("Colombia") @db.VarChar(80)
+  referencia         String?
+  latitud            Decimal? @db.Decimal(10, 7)
+  longitud           Decimal? @db.Decimal(10, 7)
+  esPrincipal        Boolean  @default(false) @map("es_principal")
+
+  cliente       Cliente       @relation(fields: [clienteId], references: [clienteId], onDelete: Cascade)
+  tipoDireccion TipoDireccion @relation(fields: [tipoDireccionId], references: [tipoDireccionId])
+
+  @@unique([clienteId, tipoDireccionId, direccion])
+  @@map("cliente_direccion")
+  @@schema("public")
+}
+
+model Ruta {
+  rutaId               String   @id @default(dbgenerated("gen_random_uuid()")) @map("ruta_id") @db.Uuid
+  responsableUsuarioId String   @map("responsable_usuario_id") @db.Uuid
+  estadoRutaId         Int      @map("estado_ruta_id") @db.SmallInt
+  nombre               String   @db.VarChar(120)
+  descripcion          String?
+  esPrincipal          Boolean  @default(false) @map("es_principal")
+  creadoEn             DateTime @default(now()) @map("creado_en") @db.Timestamptz(6)
+  actualizadoEn        DateTime @default(now()) @map("actualizado_en") @db.Timestamptz(6)
+
+  responsable Usuario       @relation("RutaResponsable", fields: [responsableUsuarioId], references: [usuarioId])
+  estadoRuta  EstadoRuta    @relation(fields: [estadoRutaId], references: [estadoRutaId])
+  clientes    RutaCliente[]
+  creditos    Credito[]
+  pagos       Pago[]
+
+  @@unique([responsableUsuarioId, nombre])
+  @@map("ruta")
+  @@schema("public")
+}
+
+model RutaCliente {
+  rutaId      String   @map("ruta_id") @db.Uuid
+  clienteId   String   @map("cliente_id") @db.Uuid
+  ordenVisita Int      @map("orden_visita")
+  activo      Boolean  @default(true)
+  asignadoEn  DateTime @default(now()) @map("asignado_en") @db.Date
+
+  ruta    Ruta    @relation(fields: [rutaId], references: [rutaId], onDelete: Cascade)
+  cliente Cliente @relation(fields: [clienteId], references: [clienteId], onDelete: Restrict)
+
+  @@id([rutaId, clienteId])
+  @@unique([rutaId, ordenVisita])
+  @@map("ruta_cliente")
+  @@schema("public")
+}
+
+model Credito {
+  creditoId          String   @id @default(dbgenerated("gen_random_uuid()")) @map("credito_id") @db.Uuid
+  clienteId          String   @map("cliente_id") @db.Uuid
+  rutaId             String   @map("ruta_id") @db.Uuid
+  monedaCodigo       String   @map("moneda_codigo") @db.Char(3)
+  frecuenciaPagoId   Int      @map("frecuencia_pago_id") @db.SmallInt
+  estadoCreditoId    Int      @map("estado_credito_id") @db.SmallInt
+  creadoPorUsuarioId String?  @map("creado_por_usuario_id") @db.Uuid
+  fechaInicio        DateTime @map("fecha_inicio") @db.Date
+  valorPrincipal     Decimal  @map("valor_principal") @db.Decimal(14, 2)
+  porcentajeInteres  Decimal  @map("porcentaje_interes") @db.Decimal(7, 4)
+  plazoDias          Int      @map("plazo_dias")
+  omitirDomingos     Boolean  @default(true) @map("omitir_domingos")
+  observacion        String?
+  creadoEn           DateTime @default(now()) @map("creado_en") @db.Timestamptz(6)
+  actualizadoEn      DateTime @default(now()) @map("actualizado_en") @db.Timestamptz(6)
+
+  cliente        Cliente            @relation(fields: [clienteId], references: [clienteId], onDelete: Restrict)
+  ruta           Ruta               @relation(fields: [rutaId], references: [rutaId], onDelete: Restrict)
+  moneda         Moneda             @relation(fields: [monedaCodigo], references: [codigoMoneda])
+  frecuenciaPago FrecuenciaPago     @relation(fields: [frecuenciaPagoId], references: [frecuenciaPagoId])
+  estadoCredito  EstadoCredito      @relation(fields: [estadoCreditoId], references: [estadoCreditoId])
+  creadoPor      Usuario?           @relation("CreditoCreadoPor", fields: [creadoPorUsuarioId], references: [usuarioId])
+  planPago       CreditoPlanPago?
+  desembolso     CreditoDesembolso?
+
+  @@index([clienteId], map: "ix_credito_cliente")
+  @@index([rutaId, estadoCreditoId], map: "ix_credito_ruta_estado")
+  @@map("credito")
+  @@schema("public")
+}
+
+model CreditoPlanPago {
+  creditoPlanPagoId String   @id @default(dbgenerated("gen_random_uuid()")) @map("credito_plan_pago_id") @db.Uuid
+  creditoId         String   @unique @map("credito_id") @db.Uuid
+  numeroCuotas      Int      @map("numero_cuotas")
+  valorCuota        Decimal  @map("valor_cuota") @db.Decimal(14, 2)
+  valorTotal        Decimal  @map("valor_total") @db.Decimal(14, 2)
+  fechaMaxima       DateTime @map("fecha_maxima") @db.Date
+  domingosOmitidos  Int      @default(0) @map("domingos_omitidos")
+  generadoEn        DateTime @default(now()) @map("generado_en") @db.Timestamptz(6)
+
+  credito Credito        @relation(fields: [creditoId], references: [creditoId], onDelete: Cascade)
+  cuotas  CreditoCuota[]
+
+  @@map("credito_plan_pago")
+  @@schema("public")
+}
+
+model CreditoCuota {
+  creditoCuotaId    String   @id @default(dbgenerated("gen_random_uuid()")) @map("credito_cuota_id") @db.Uuid
+  creditoPlanPagoId String   @map("credito_plan_pago_id") @db.Uuid
+  estadoCuotaId     Int      @map("estado_cuota_id") @db.SmallInt
+  numeroCuota       Int      @map("numero_cuota")
+  fechaVencimiento  DateTime @map("fecha_vencimiento") @db.Date
+  valorCapital      Decimal  @default(0) @map("valor_capital") @db.Decimal(14, 2)
+  valorInteres      Decimal  @default(0) @map("valor_interes") @db.Decimal(14, 2)
+  valorTotal        Decimal  @default(dbgenerated()) @map("valor_total") @db.Decimal(14, 2)
+
+  planPago     CreditoPlanPago  @relation(fields: [creditoPlanPagoId], references: [creditoPlanPagoId], onDelete: Cascade)
+  estadoCuota  EstadoCuota      @relation(fields: [estadoCuotaId], references: [estadoCuotaId])
+  aplicaciones PagoAplicacion[]
+
+  @@unique([creditoPlanPagoId, numeroCuota])
+  @@index([fechaVencimiento, estadoCuotaId], map: "ix_credito_cuota_vencimiento_estado")
+  @@map("credito_cuota")
+  @@schema("public")
+}
+
+model CajaMenor {
+  cajaMenorId          String   @id @default(dbgenerated("gen_random_uuid()")) @map("caja_menor_id") @db.Uuid
+  responsableUsuarioId String   @map("responsable_usuario_id") @db.Uuid
+  monedaCodigo         String   @map("moneda_codigo") @db.Char(3)
+  nombre               String   @db.VarChar(120)
+  activa               Boolean  @default(true)
+  creadaEn             DateTime @default(now()) @map("creada_en") @db.Timestamptz(6)
+  actualizadoEn        DateTime @default(now()) @map("actualizado_en") @db.Timestamptz(6)
+
+  responsable Usuario               @relation("CajaMenorResponsable", fields: [responsableUsuarioId], references: [usuarioId])
+  moneda      Moneda                @relation(fields: [monedaCodigo], references: [codigoMoneda])
+  movimientos CajaMenorMovimiento[]
+  gastos      Gasto[]
+
+  @@unique([responsableUsuarioId, nombre])
+  @@map("caja_menor")
+  @@schema("public")
+}
+
+model CajaMenorMovimiento {
+  cajaMenorMovimientoId String   @id @default(dbgenerated("gen_random_uuid()")) @map("caja_menor_movimiento_id") @db.Uuid
+  cajaMenorId           String   @map("caja_menor_id") @db.Uuid
+  tipoMovimientoCajaId  Int      @map("tipo_movimiento_caja_id") @db.SmallInt
+  usuarioId             String?  @map("usuario_id") @db.Uuid
+  fechaMovimiento       DateTime @map("fecha_movimiento") @db.Date
+  monto                 Decimal  @db.Decimal(14, 2)
+  motivo                String
+  referenciaTabla       String?  @map("referencia_tabla") @db.VarChar(80)
+  referenciaId          String?  @map("referencia_id") @db.Uuid
+  creadoEn              DateTime @default(now()) @map("creado_en") @db.Timestamptz(6)
+
+  cajaMenor          CajaMenor          @relation(fields: [cajaMenorId], references: [cajaMenorId])
+  tipoMovimientoCaja TipoMovimientoCaja @relation(fields: [tipoMovimientoCajaId], references: [tipoMovimientoCajaId])
+  usuario            Usuario?           @relation(fields: [usuarioId], references: [usuarioId])
+  desembolsoCredito  CreditoDesembolso?
+
+  @@index([cajaMenorId, fechaMovimiento], map: "ix_caja_menor_movimiento_fecha")
+  @@map("caja_menor_movimiento")
+  @@schema("public")
+}
+
+model CreditoDesembolso {
+  creditoDesembolsoId   String   @id @default(dbgenerated("gen_random_uuid()")) @map("credito_desembolso_id") @db.Uuid
+  creditoId             String   @unique @map("credito_id") @db.Uuid
+  cajaMenorMovimientoId String?  @unique @map("caja_menor_movimiento_id") @db.Uuid
+  fechaDesembolso       DateTime @map("fecha_desembolso") @db.Date
+  monto                 Decimal  @db.Decimal(14, 2)
+  creadoEn              DateTime @default(now()) @map("creado_en") @db.Timestamptz(6)
+
+  credito             Credito              @relation(fields: [creditoId], references: [creditoId], onDelete: Restrict)
+  cajaMenorMovimiento CajaMenorMovimiento? @relation(fields: [cajaMenorMovimientoId], references: [cajaMenorMovimientoId])
+
+  @@map("credito_desembolso")
+  @@schema("public")
+}
+
+model Gasto {
+  gastoId                String   @id @default(dbgenerated("gen_random_uuid()")) @map("gasto_id") @db.Uuid
+  cajaMenorId            String?  @map("caja_menor_id") @db.Uuid
+  categoriaGastoId       Int      @map("categoria_gasto_id") @db.SmallInt
+  monedaCodigo           String   @map("moneda_codigo") @db.Char(3)
+  registradoPorUsuarioId String?  @map("registrado_por_usuario_id") @db.Uuid
+  fechaGasto             DateTime @map("fecha_gasto") @db.Date
+  monto                  Decimal  @db.Decimal(14, 2)
+  concepto               String
+  creadoEn               DateTime @default(now()) @map("creado_en") @db.Timestamptz(6)
+  actualizadoEn          DateTime @default(now()) @map("actualizado_en") @db.Timestamptz(6)
+
+  cajaMenor            CajaMenor?     @relation(fields: [cajaMenorId], references: [cajaMenorId])
+  categoriaGasto       CategoriaGasto @relation(fields: [categoriaGastoId], references: [categoriaGastoId])
+  moneda               Moneda         @relation(fields: [monedaCodigo], references: [codigoMoneda])
+  registradoPorUsuario Usuario?       @relation("GastoRegistradoPor", fields: [registradoPorUsuarioId], references: [usuarioId])
+
+  @@index([fechaGasto], map: "ix_gasto_fecha")
+  @@map("gasto")
+  @@schema("public")
+}
+
+model Pago {
+  pagoId            String   @id @default(dbgenerated("gen_random_uuid()")) @map("pago_id") @db.Uuid
+  clienteId         String   @map("cliente_id") @db.Uuid
+  rutaId            String   @map("ruta_id") @db.Uuid
+  cobradorUsuarioId String?  @map("cobrador_usuario_id") @db.Uuid
+  medioPagoId       Int      @map("medio_pago_id") @db.SmallInt
+  monedaCodigo      String   @map("moneda_codigo") @db.Char(3)
+  fechaPago         DateTime @default(now()) @map("fecha_pago") @db.Timestamptz(6)
+  totalPagado       Decimal  @map("total_pagado") @db.Decimal(14, 2)
+  referenciaExterna String?  @map("referencia_externa") @db.VarChar(120)
+  observacion       String?
+  creadoEn          DateTime @default(now()) @map("creado_en") @db.Timestamptz(6)
+
+  cliente      Cliente          @relation(fields: [clienteId], references: [clienteId], onDelete: Restrict)
+  ruta         Ruta             @relation(fields: [rutaId], references: [rutaId], onDelete: Restrict)
+  cobrador     Usuario?         @relation("PagoCobrador", fields: [cobradorUsuarioId], references: [usuarioId])
+  medioPago    MedioPago        @relation(fields: [medioPagoId], references: [medioPagoId])
+  moneda       Moneda           @relation(fields: [monedaCodigo], references: [codigoMoneda])
+  aplicaciones PagoAplicacion[]
+
+  @@index([rutaId, fechaPago], map: "ix_pago_fecha_ruta")
+  @@map("pago")
+  @@schema("public")
+}
+
+model PagoAplicacion {
+  pagoAplicacionId String  @id @default(dbgenerated("gen_random_uuid()")) @map("pago_aplicacion_id") @db.Uuid
+  pagoId           String  @map("pago_id") @db.Uuid
+  creditoCuotaId   String  @map("credito_cuota_id") @db.Uuid
+  montoCapital     Decimal @default(0) @map("monto_capital") @db.Decimal(14, 2)
+  montoInteres     Decimal @default(0) @map("monto_interes") @db.Decimal(14, 2)
+  montoMora        Decimal @default(0) @map("monto_mora") @db.Decimal(14, 2)
+  montoDescuento   Decimal @default(0) @map("monto_descuento") @db.Decimal(14, 2)
+
+  pago         Pago         @relation(fields: [pagoId], references: [pagoId], onDelete: Cascade)
+  creditoCuota CreditoCuota @relation(fields: [creditoCuotaId], references: [creditoCuotaId], onDelete: Restrict)
+
+  @@unique([pagoId, creditoCuotaId])
+  @@map("pago_aplicacion")
+  @@schema("public")
+}
+
+model PresupuestoPeriodo {
+  presupuestoPeriodoId String   @id @default(dbgenerated("gen_random_uuid()")) @map("presupuesto_periodo_id") @db.Uuid
+  usuarioId            String?  @map("usuario_id") @db.Uuid
+  monedaCodigo         String   @map("moneda_codigo") @db.Char(3)
+  fechaInicio          DateTime @map("fecha_inicio") @db.Date
+  fechaFin             DateTime @map("fecha_fin") @db.Date
+  nombre               String   @db.VarChar(120)
+  creadoEn             DateTime @default(now()) @map("creado_en") @db.Timestamptz(6)
+
+  usuario Usuario? @relation(fields: [usuarioId], references: [usuarioId])
+  moneda  Moneda   @relation(fields: [monedaCodigo], references: [codigoMoneda])
+
+  @@unique([usuarioId, monedaCodigo, fechaInicio, fechaFin])
+  @@map("presupuesto_periodo")
+  @@schema("public")
+}

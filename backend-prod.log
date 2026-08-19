@@ -1,0 +1,21 @@
+[32m[Nest] 28308  - [39m17/08/2026, 4:35:18 p. m. [32m    LOG[39m [38;5;3m[NestFactory] [39m[32mStarting Nest application...[39m
+[32m[Nest] 28308  - [39m17/08/2026, 4:35:18 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAppModule dependencies initialized[39m[38;5;3m +26ms[39m
+[32m[Nest] 28308  - [39m17/08/2026, 4:35:18 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mPrismaModule dependencies initialized[39m[38;5;3m +5ms[39m
+[32m[Nest] 28308  - [39m17/08/2026, 4:35:18 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigHostModule dependencies initialized[39m[38;5;3m +13ms[39m
+[32m[Nest] 28308  - [39m17/08/2026, 4:35:18 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mHealthModule dependencies initialized[39m[38;5;3m +2ms[39m
+[32m[Nest] 28308  - [39m17/08/2026, 4:35:18 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 28308  - [39m17/08/2026, 4:35:18 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mCustomersModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 28308  - [39m17/08/2026, 4:35:18 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mChargesModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 28308  - [39m17/08/2026, 4:35:18 p. m. [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mHealthController {/api/v1/health}:[39m[38;5;3m +7ms[39m
+[32m[Nest] 28308  - [39m17/08/2026, 4:35:18 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/health, GET} route[39m[38;5;3m +4ms[39m
+[32m[Nest] 28308  - [39m17/08/2026, 4:35:18 p. m. [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mCustomersController {/api/v1/customers}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 28308  - [39m17/08/2026, 4:35:18 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/customers, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 28308  - [39m17/08/2026, 4:35:18 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/customers, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 28308  - [39m17/08/2026, 4:35:18 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/customers/:id, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 28308  - [39m17/08/2026, 4:35:18 p. m. [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mChargesController {/api/v1/charges}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 28308  - [39m17/08/2026, 4:35:18 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/charges, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 28308  - [39m17/08/2026, 4:35:18 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/charges, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 28308  - [39m17/08/2026, 4:35:18 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/charges/:id, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 28308  - [39m17/08/2026, 4:35:18 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/charges/:id/pay, PATCH} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 28308  - [39m17/08/2026, 4:35:18 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/charges/:id/cancel, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 28308  - [39m17/08/2026, 4:35:18 p. m. [32m    LOG[39m [38;5;3m[NestApplication] [39m[32mNest application successfully started[39m[38;5;3m +45ms[39m

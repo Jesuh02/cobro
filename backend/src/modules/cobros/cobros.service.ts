@@ -1774,21 +1774,44 @@ export class CobrosService {
       1,
       Math.ceil(input.plazoDias / input.diasIntervalo),
     );
-    const valorTotal = this.redondear(
+    const unidadesPrincipal = this.dineroAUnidades(
+      input.valorPrincipal,
+      input.decimales,
+    );
+    const unidadesTotal = this.dineroAUnidades(
       input.valorPrincipal +
         input.valorPrincipal * (input.porcentajeInteres / 100),
       input.decimales,
     );
-    const totalInteres = this.redondear(
-      valorTotal - input.valorPrincipal,
-      input.decimales,
-    );
+    const unidadesInteres = Math.max(0, unidadesTotal - unidadesPrincipal);
+    const valorTotal = this.unidadesADinero(unidadesTotal, input.decimales);
     const valorCuota = this.redondear(
       valorTotal / numeroCuotas,
       input.decimales,
     );
-    let capitalAcumulado = 0;
-    let interesAcumulado = 0;
+    const totalesPorCuota = this.distribuirUnidades(
+      unidadesTotal,
+      numeroCuotas,
+    );
+    const interesesPorCuota = this.distribuirUnidadesAcotadas(
+      unidadesInteres,
+      totalesPorCuota,
+    );
+    const capitalesPorCuota = totalesPorCuota.map(
+      (totalCuota, index) => totalCuota - interesesPorCuota[index],
+    );
+    const totalCapitalCalculado = capitalesPorCuota.reduce(
+      (sum, value) => sum + value,
+      0,
+    );
+
+    if (totalCapitalCalculado !== unidadesPrincipal) {
+      throw DomainError.validation(
+        'No se pudo distribuir el capital del credito en cuotas validas',
+        'PLAN_CREDITO_DISTRIBUCION_INVALIDA',
+      );
+    }
+
     let cursor = this.fechaUtc(input.fechaInicio);
     let domingosOmitidos = 0;
 
@@ -1804,31 +1827,17 @@ export class CobrosService {
         cursor = this.sumarDias(cursor, input.diasIntervalo);
       }
 
-      const ultima = index === numeroCuotas - 1;
-      const capital = ultima
-        ? this.redondear(
-            input.valorPrincipal - capitalAcumulado,
-            input.decimales,
-          )
-        : this.redondear(input.valorPrincipal / numeroCuotas, input.decimales);
-      const interes = ultima
-        ? this.redondear(totalInteres - interesAcumulado, input.decimales)
-        : this.redondear(totalInteres / numeroCuotas, input.decimales);
-
-      capitalAcumulado = this.redondear(
-        capitalAcumulado + capital,
-        input.decimales,
-      );
-      interesAcumulado = this.redondear(
-        interesAcumulado + interes,
-        input.decimales,
-      );
-
       return {
         numeroCuota: index + 1,
         fechaVencimiento: cursor,
-        valorCapital: capital,
-        valorInteres: interes,
+        valorCapital: this.unidadesADinero(
+          capitalesPorCuota[index],
+          input.decimales,
+        ),
+        valorInteres: this.unidadesADinero(
+          interesesPorCuota[index],
+          input.decimales,
+        ),
       };
     });
 
@@ -1840,6 +1849,61 @@ export class CobrosService {
       domingosOmitidos,
       cuotas,
     };
+  }
+
+  private distribuirUnidades(total: number, partes: number) {
+    const base = Math.floor(total / partes);
+    let restante = total - base * partes;
+
+    return Array.from({ length: partes }, (_, index) => {
+      const partesPendientes = partes - index;
+      if (restante <= 0) {
+        return base;
+      }
+
+      if (restante >= partesPendientes) {
+        restante--;
+        return base + 1;
+      }
+
+      return base;
+    });
+  }
+
+  private distribuirUnidadesAcotadas(total: number, topes: number[]) {
+    const distribucion = this.distribuirUnidades(total, topes.length).map(
+      (valor, index) => Math.min(valor, topes[index]),
+    );
+    let restante = total - distribucion.reduce((sum, value) => sum + value, 0);
+
+    for (
+      let index = distribucion.length - 1;
+      index >= 0 && restante > 0;
+      index--
+    ) {
+      const disponible = topes[index] - distribucion[index];
+      const asignado = Math.min(disponible, restante);
+      distribucion[index] += asignado;
+      restante -= asignado;
+    }
+
+    if (restante > 0) {
+      throw DomainError.validation(
+        'No se pudo distribuir el interes del credito en cuotas validas',
+        'PLAN_CREDITO_INTERES_INVALIDO',
+      );
+    }
+
+    return distribucion;
+  }
+
+  private dineroAUnidades(value: number, decimales: number) {
+    const factor = 10 ** decimales;
+    return Math.round((value + Number.EPSILON) * factor);
+  }
+
+  private unidadesADinero(value: number, decimales: number) {
+    return this.redondear(value / 10 ** decimales, decimales);
   }
 
   private saldoCuota(cuota: CreditoCuotaParaPago, sumas: SumaAplicaciones) {

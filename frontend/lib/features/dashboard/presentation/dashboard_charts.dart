@@ -82,6 +82,7 @@ class _GraficaLineaPresupuesto extends StatelessWidget {
     final double minimo = minimoValor < 0 ? minimoValor * 1.18 : 0;
     final ClayTokens clay = context.clay;
     final Color primary = Theme.of(context).colorScheme.primary;
+    final bool desactivarAnimaciones = MediaQuery.of(context).disableAnimations;
 
     return _TarjetaGrafica(
       titulo: 'Flujo acumulado',
@@ -95,54 +96,74 @@ class _GraficaLineaPresupuesto extends StatelessWidget {
           _Leyenda(color: clay.inactiveBar, texto: 'Sin egresos'),
         ],
       ),
-      child: LineChart(
-        LineChartData(
-          minX: 0,
-          maxX: 3,
-          minY: minimo,
-          maxY: maximo,
-          clipData: const FlClipData.all(),
-          borderData: FlBorderData(show: false),
-          gridData: _gridData(clay),
-          titlesData: _titulosEjes(
-            clay: clay,
-            etiquetas: const <String>['Caja', 'Cobros', 'Gastos', 'Creditos'],
-            maxY: maximo,
-          ),
-          lineTouchData: LineTouchData(
-            touchTooltipData: _tooltipLinea(clay),
-          ),
-          lineBarsData: <LineChartBarData>[
-            LineChartBarData(
-              spots: _puntos(referencia),
-              isCurved: true,
-              curveSmoothness: 0.25,
-              color: clay.inactiveBar,
-              barWidth: 2,
-              dashArray: const <int>[6, 5],
-              dotData: const FlDotData(show: false),
-            ),
-            LineChartBarData(
-              spots: _puntos(actual),
-              isCurved: true,
-              curveSmoothness: 0.25,
-              color: primary,
-              barWidth: 3,
-              isStrokeCapRound: true,
-              dotData: FlDotData(
-                getDotPainter: (spot, percent, bar, index) =>
-                    FlDotCirclePainter(
-                  radius: index == actual.length - 1 ? 4 : 2.6,
-                  color: clay.chartBackground,
-                  strokeColor: primary,
-                  strokeWidth: 2.4,
-                ),
+      child: _AnimacionInicialGrafica(
+        duration: const Duration(milliseconds: 1050),
+        builder: (BuildContext context, double progreso) {
+          final double opacidad = _progresoSuavizado(progreso);
+          return LineChart(
+            LineChartData(
+              minX: 0,
+              maxX: 3,
+              minY: minimo,
+              maxY: maximo,
+              clipData: const FlClipData.all(),
+              borderData: FlBorderData(show: false),
+              gridData: _gridData(clay),
+              titlesData: _titulosEjes(
+                clay: clay,
+                etiquetas: const <String>[
+                  'Caja',
+                  'Cobros',
+                  'Gastos',
+                  'Creditos',
+                ],
+                maxY: maximo,
               ),
+              lineTouchData: LineTouchData(
+                touchTooltipData: _tooltipLinea(clay),
+              ),
+              lineBarsData: <LineChartBarData>[
+                LineChartBarData(
+                  spots: _puntosAnimados(referencia, progreso),
+                  isCurved: true,
+                  curveSmoothness: 0.25,
+                  color: clay.inactiveBar.withValues(alpha: opacidad),
+                  barWidth: 2,
+                  dashArray: const <int>[6, 5],
+                  dotData: const FlDotData(show: false),
+                ),
+                LineChartBarData(
+                  spots: _puntosAnimados(actual, progreso),
+                  isCurved: true,
+                  curveSmoothness: 0.25,
+                  color: primary.withValues(alpha: opacidad),
+                  barWidth: 3,
+                  isStrokeCapRound: true,
+                  dotData: FlDotData(
+                    getDotPainter: (spot, percent, bar, index) {
+                      final double progresoPunto = _progresoEscalonado(
+                        progreso,
+                        index,
+                        actual.length,
+                      );
+                      return FlDotCirclePainter(
+                        radius: (index == actual.length - 1 ? 4 : 2.6) *
+                            progresoPunto,
+                        color: clay.chartBackground,
+                        strokeColor: primary.withValues(alpha: progresoPunto),
+                        strokeWidth: 2.4 * progresoPunto,
+                      );
+                    },
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-        duration: const Duration(milliseconds: 650),
-        curve: Curves.easeOutCubic,
+            duration: desactivarAnimaciones || progreso < 1
+                ? Duration.zero
+                : const Duration(milliseconds: 650),
+            curve: Curves.easeOutCubic,
+          );
+        },
       ),
     );
   }
@@ -165,6 +186,7 @@ class _GraficaAreaMovimientos extends StatelessWidget {
     final double maximo = math.max(1, valores.reduce(math.max) * 1.2);
     final ClayTokens clay = context.clay;
     final Color primary = Theme.of(context).colorScheme.primary;
+    final bool desactivarAnimaciones = MediaQuery.of(context).disableAnimations;
 
     return _TarjetaGrafica(
       titulo: 'Composicion financiera',
@@ -180,54 +202,66 @@ class _GraficaAreaMovimientos extends StatelessWidget {
               fontWeight: FontWeight.w700,
             ),
       ),
-      child: LineChart(
-        LineChartData(
-          minX: 0,
-          maxX: 4,
-          minY: 0,
-          maxY: maximo,
-          clipData: const FlClipData.all(),
-          borderData: FlBorderData(show: false),
-          gridData: _gridData(clay),
-          titlesData: _titulosEjes(
-            clay: clay,
-            etiquetas: const <String>[
-              'Caja',
-              'Cobros',
-              'Gastos',
-              'Creditos',
-              'Saldo',
-            ],
-            maxY: maximo,
-          ),
-          lineTouchData: LineTouchData(
-            touchTooltipData: _tooltipLinea(clay),
-          ),
-          lineBarsData: <LineChartBarData>[
-            LineChartBarData(
-              spots: _puntos(valores),
-              isCurved: true,
-              curveSmoothness: 0.28,
-              color: primary,
-              barWidth: 3,
-              isStrokeCapRound: true,
-              dotData: const FlDotData(show: false),
-              belowBarData: BarAreaData(
-                show: true,
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: <Color>[
-                    primary.withValues(alpha: 0.34),
-                    primary.withValues(alpha: 0.03),
-                  ],
-                ),
+      child: _AnimacionInicialGrafica(
+        duration: const Duration(milliseconds: 1100),
+        builder: (BuildContext context, double progreso) {
+          final double opacidad = _progresoSuavizado(progreso);
+          return LineChart(
+            LineChartData(
+              minX: 0,
+              maxX: 4,
+              minY: 0,
+              maxY: maximo,
+              clipData: const FlClipData.all(),
+              borderData: FlBorderData(show: false),
+              gridData: _gridData(clay),
+              titlesData: _titulosEjes(
+                clay: clay,
+                etiquetas: const <String>[
+                  'Caja',
+                  'Cobros',
+                  'Gastos',
+                  'Creditos',
+                  'Saldo',
+                ],
+                maxY: maximo,
               ),
+              lineTouchData: LineTouchData(
+                touchTooltipData: _tooltipLinea(clay),
+              ),
+              lineBarsData: <LineChartBarData>[
+                LineChartBarData(
+                  spots: _puntosAnimados(
+                    valores,
+                    progreso,
+                    desfase: 0.09,
+                  ),
+                  isCurved: true,
+                  curveSmoothness: 0.28,
+                  color: primary.withValues(alpha: opacidad),
+                  barWidth: 3,
+                  isStrokeCapRound: true,
+                  dotData: const FlDotData(show: false),
+                  belowBarData: BarAreaData(
+                    show: true,
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: <Color>[
+                        primary.withValues(alpha: 0.34 * opacidad),
+                        primary.withValues(alpha: 0.03 * opacidad),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-        duration: const Duration(milliseconds: 700),
-        curve: Curves.easeOutCubic,
+            duration: desactivarAnimaciones || progreso < 1
+                ? Duration.zero
+                : const Duration(milliseconds: 700),
+            curve: Curves.easeOutCubic,
+          );
+        },
       ),
     );
   }
@@ -275,6 +309,11 @@ class _GraficaDonaDistribucion extends StatelessWidget {
           ]
             .where((_SegmentoDona item) => item.valor > 0)
             .toList(growable: false);
+    final double totalSegmentos = segmentos.fold<double>(
+      0,
+      (double suma, _SegmentoDona item) => suma + item.valor,
+    );
+    final bool desactivarAnimaciones = MediaQuery.of(context).disableAnimations;
 
     return _TarjetaGrafica(
       titulo: 'Distribucion operativa',
@@ -292,49 +331,99 @@ class _GraficaDonaDistribucion extends StatelessWidget {
             .toList(growable: false),
       ),
       chartPadding: const EdgeInsets.symmetric(horizontal: 38, vertical: 10),
-      chartOverlay: IgnorePointer(
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Text(
-                '${porcentaje.toStringAsFixed(0)}%',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w900,
+      chartOverlay: _AnimacionInicialGrafica(
+        duration: const Duration(milliseconds: 950),
+        builder: (BuildContext context, double progreso) {
+          final double progresoSuave = _progresoSuavizado(progreso);
+          return IgnorePointer(
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Text(
+                    '${(porcentaje * progresoSuave).toStringAsFixed(0)}%',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w900,
+                        ),
+                  ),
+                  Opacity(
+                    opacity: progresoSuave,
+                    child: Text(
+                      'disponible',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: clay.subtleText,
+                            fontWeight: FontWeight.w700,
+                          ),
                     ),
+                  ),
+                ],
               ),
-              Text(
-                'disponible',
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: clay.subtleText,
-                      fontWeight: FontWeight.w700,
-                    ),
-              ),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
-      child: PieChart(
-        PieChartData(
-          startDegreeOffset: -90,
-          centerSpaceRadius: 54,
-          sectionsSpace: 5,
-          borderData: FlBorderData(show: false),
-          sections: segmentos
-              .map(
-                (_SegmentoDona item) => PieChartSectionData(
-                  value: item.valor,
-                  color: item.color,
+      child: _AnimacionInicialGrafica(
+        duration: const Duration(milliseconds: 950),
+        builder: (BuildContext context, double progreso) {
+          final double progresoSuave = _progresoSuavizado(progreso);
+          return PieChart(
+            PieChartData(
+              startDegreeOffset: -108 + (18 * progresoSuave),
+              centerSpaceRadius: 54,
+              sectionsSpace: 5 * progresoSuave,
+              borderData: FlBorderData(show: false),
+              sections: <PieChartSectionData>[
+                ...segmentos.map(
+                  (_SegmentoDona item) => PieChartSectionData(
+                    value: item.valor * progresoSuave,
+                    color: item.color.withValues(alpha: progresoSuave),
+                    radius: 14 + (6 * progresoSuave),
+                    showTitle: false,
+                    cornerRadius: 12 * progresoSuave,
+                  ),
+                ),
+                PieChartSectionData(
+                  value: totalSegmentos * (1 - progresoSuave),
+                  color: Colors.transparent,
                   radius: 20,
                   showTitle: false,
-                  cornerRadius: 12,
                 ),
-              )
-              .toList(growable: false),
-        ),
-        duration: const Duration(milliseconds: 700),
-        curve: Curves.easeOutCubic,
+              ],
+            ),
+            duration: desactivarAnimaciones || progreso < 1
+                ? Duration.zero
+                : const Duration(milliseconds: 700),
+            curve: Curves.easeOutCubic,
+          );
+        },
       ),
+    );
+  }
+}
+
+class _AnimacionInicialGrafica extends StatelessWidget {
+  const _AnimacionInicialGrafica({
+    required this.duration,
+    required this.builder,
+  });
+
+  final Duration duration;
+  final Widget Function(BuildContext context, double progreso) builder;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool desactivarAnimaciones = MediaQuery.of(context).disableAnimations;
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0, end: 1),
+      duration: desactivarAnimaciones ? Duration.zero : duration,
+      curve: Curves.linear,
+      builder: (
+        BuildContext context,
+        double progreso,
+        Widget? child,
+      ) {
+        return builder(context, progreso);
+      },
     );
   }
 }
@@ -507,10 +596,37 @@ class _SegmentoDona {
   final String titulo;
 }
 
-List<FlSpot> _puntos(List<double> valores) {
+List<FlSpot> _puntosAnimados(
+  List<double> valores,
+  double progreso, {
+  double desfase = 0.12,
+}) {
   return valores.asMap().entries.map((MapEntry<int, double> entry) {
-    return FlSpot(entry.key.toDouble(), entry.value);
+    final double progresoPunto = _progresoEscalonado(
+      progreso,
+      entry.key,
+      valores.length,
+      desfase: desfase,
+    );
+    return FlSpot(entry.key.toDouble(), entry.value * progresoPunto);
   }).toList(growable: false);
+}
+
+double _progresoEscalonado(
+  double progreso,
+  int indice,
+  int total, {
+  double desfase = 0.12,
+}) {
+  final double desfaseTotal = desfase * math.max(0, total - 1);
+  final double duracionPunto = math.max(0.01, 1 - desfaseTotal);
+  final double progresoLocal =
+      ((progreso - (indice * desfase)) / duracionPunto).clamp(0.0, 1.0);
+  return Curves.easeOutCubic.transform(progresoLocal);
+}
+
+double _progresoSuavizado(double progreso) {
+  return Curves.easeOutCubic.transform(progreso.clamp(0.0, 1.0));
 }
 
 FlGridData _gridData(ClayTokens clay) {

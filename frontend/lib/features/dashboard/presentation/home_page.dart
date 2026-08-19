@@ -5134,7 +5134,8 @@ class _FormularioCredito extends StatelessWidget {
           right: TextField(
             controller: interesController,
             enabled: !guardando,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            readOnly: true,
+            enableInteractiveSelection: false,
             decoration: const InputDecoration(
               labelText: 'Interés %',
               prefixIcon: Icon(Icons.percent_rounded),
@@ -5377,7 +5378,8 @@ class _CamposCreditoSinCliente extends StatelessWidget {
           right: TextField(
             controller: interesController,
             enabled: !guardando,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            readOnly: true,
+            enableInteractiveSelection: false,
             decoration: const InputDecoration(
               labelText: 'Interes %',
               prefixIcon: Icon(Icons.percent_rounded),

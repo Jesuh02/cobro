@@ -233,11 +233,15 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('cobros-ruta-prueba.xlsx'), findsOneWidget);
-      expect(find.text('Archivo guardado en Cloudflare R2'), findsOneWidget);
+      expect(find.text('Archivo guardado en Cloudflare R2'), findsNothing);
       expect(find.text('Cliente'), findsWidgets);
       expect(find.text('Cliente decimal'), findsWidgets);
       expect(find.text('0,04'), findsOneWidget);
-      expect(find.text('Abrir Excel'), findsOneWidget);
+      expect(find.text('Descargar'), findsOneWidget);
+      expect(
+        find.textContaining('pub-9f393625246c4018b5613be60b01bda1.r2.dev'),
+        findsNothing,
+      );
       expect(tester.takeException(), isNull);
     },
   );
@@ -297,6 +301,63 @@ void main() {
       expect(exportUri, isNotNull);
       expect(exportUri!.queryParameters.containsKey('tipo'), isFalse);
       expect(find.text('caja-menor-prueba.xlsx'), findsOneWidget);
+      expect(find.text('Cliente caja menor'), findsOneWidget);
+      expect(find.text('100200300'), findsOneWidget);
+      expect(find.text('Monto con naturaleza'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'muestra cliente beneficiario en movimientos de caja',
+    (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1280, 900);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+
+      final ApiClient apiClient = ApiClient(
+        baseUrl: 'https://cobro.test/api/v1',
+        client: MockClient(_responderApiMovimientosConCliente),
+      );
+      addTearDown(apiClient.close);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: CobroAppTheme.light(),
+          home: HomePage(
+            apiBaseUrl: 'https://cobro.test/api/v1',
+            apiClient: apiClient,
+            themeMode: ThemeMode.light,
+            onThemeModeChanged: (_) {},
+          ),
+        ),
+      );
+
+      await tester.enterText(find.byType(TextField).at(0), 'admin');
+      await tester.enterText(find.byType(TextField).at(1), 'Admin12345!');
+      await tester.tap(find.text('Entrar'));
+      await tester.pumpAndSettle(const Duration(seconds: 2));
+      tester.takeException();
+
+      await tester.tap(
+        find.ancestor(
+          of: find.text('Caja menor'),
+          matching: find.byType(ListTile),
+        ),
+      );
+      await tester.pumpAndSettle(const Duration(milliseconds: 500));
+
+      expect(
+        find.text('Desembolso de credito para Cliente desembolso'),
+        findsOneWidget,
+      );
+      expect(find.text('Desembolso de credito'), findsNothing);
+      expect(
+        find.textContaining('Cliente: Cliente desembolso'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Identificacion: 123456789'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );
@@ -381,11 +442,49 @@ Map<String, dynamic> _exportacionExcelCajaMenor() {
     'filas': 1,
     'generadoEn': '2026-08-19T18:20:00.000Z',
     'vistaPrevia': <String, dynamic>{
-      'columnas': <String>['Fecha', 'Monto'],
+      'columnas': <String>['Fecha', 'Cliente', 'Identificacion', 'Monto'],
       'filas': <List<Object>>[
-        <Object>['2026-08-19', 0.04],
+        <Object>['2026-08-19', 'Cliente caja menor', '100200300', 0.04],
       ],
     },
+  };
+}
+
+Future<http.Response> _responderApiMovimientosConCliente(
+  http.Request request,
+) async {
+  final String path = request.url.path;
+
+  if (path.endsWith('/caja-menor/movimientos')) {
+    return _jsonResponse(<Map<String, dynamic>>[
+      _movimientoCajaConCliente(),
+    ]);
+  }
+
+  return _responderApiPagosPrecisos(request);
+}
+
+Map<String, dynamic> _movimientoCajaConCliente() {
+  return <String, dynamic>{
+    'id': 'movimiento-cliente',
+    'cajaMenorId': 'caja-1',
+    'cajaMenor': 'Caja principal',
+    'cliente': 'Cliente desembolso',
+    'clienteIdentificacion': '123456789',
+    'tipoMovimiento': <String, dynamic>{
+      'id': 1,
+      'codigo': 'DESEMBOLSO_CREDITO',
+      'nombre': 'Desembolso credito',
+      'naturaleza': 'S',
+    },
+    'usuario': null,
+    'fechaMovimiento': '2026-08-19',
+    'monto': 100,
+    'montoConNaturaleza': -100,
+    'motivo': 'Desembolso de credito',
+    'referenciaTabla': 'credito_desembolso',
+    'referenciaId': '00000000-0000-0000-0000-000000000001',
+    'creadoEn': '2026-08-19T18:30:00.000Z',
   };
 }
 

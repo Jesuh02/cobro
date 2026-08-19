@@ -868,7 +868,7 @@ class _HomePageState extends State<HomePage> {
         _catalogos?.cajasMenoresActivas.isNotEmpty ?? false;
     return _Pagina(
       titulo: 'Caja menor',
-      subtitulo: 'Movimientos y pagos registrados en Supabase',
+      subtitulo: 'Movimientos y pagos registrados  ',
       error: _error,
       onRefresh: _cargar,
       acciones: <Widget>[
@@ -1065,7 +1065,7 @@ class _HomePageState extends State<HomePage> {
           const _EstadoVacio(
             icono: Icons.groups_outlined,
             titulo: 'Sin clientes',
-            mensaje: 'No hay clientes registrados en Supabase.',
+            mensaje: 'No hay clientes registrados.',
           )
         else ...<Widget>[
           TextField(
@@ -1575,6 +1575,10 @@ class _HomePageState extends State<HomePage> {
         }
 
         return movimiento.cajaMenor.toLowerCase().contains(consulta) ||
+            (movimiento.cliente ?? '').toLowerCase().contains(consulta) ||
+            (movimiento.clienteIdentificacion ?? '')
+                .toLowerCase()
+                .contains(consulta) ||
             movimiento.motivo.toLowerCase().contains(consulta) ||
             movimiento.tipoMovimiento.nombre.toLowerCase().contains(consulta) ||
             (movimiento.usuario?.nombreCompleto ?? '')
@@ -2095,10 +2099,10 @@ class _HomePageState extends State<HomePage> {
       builder: (BuildContext dialogContext) {
         return _VisorExportacionExcel(
           exportacion: exportacion,
-          onAbrirArchivo: () async {
+          onDescargar: () async {
             final bool abierta = await abrirExportacionExcel(exportacion.url);
             if (!abierta && mounted) {
-              _mostrarMensaje('No se pudo abrir el archivo exportado');
+              _mostrarMensaje('No se pudo descargar el archivo exportado');
             }
           },
         );
@@ -4277,11 +4281,11 @@ class _FiltrosRuta extends StatelessWidget {
 class _VisorExportacionExcel extends StatelessWidget {
   const _VisorExportacionExcel({
     required this.exportacion,
-    required this.onAbrirArchivo,
+    required this.onDescargar,
   });
 
   final ExportacionExcel exportacion;
-  final Future<void> Function() onAbrirArchivo;
+  final Future<void> Function() onDescargar;
 
   @override
   Widget build(BuildContext context) {
@@ -4361,30 +4365,6 @@ class _VisorExportacionExcel extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 14),
-              InputDecorator(
-                decoration: InputDecoration(
-                  prefixIcon: const Icon(Icons.link_rounded),
-                  labelText: 'Archivo guardado en Cloudflare R2',
-                  suffixIcon: IconButton(
-                    tooltip: 'Copiar URL',
-                    onPressed: () {
-                      Clipboard.setData(ClipboardData(text: exportacion.url));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('URL copiada')),
-                      );
-                    },
-                    icon: const Icon(Icons.content_copy_rounded),
-                  ),
-                ),
-                child: SelectableText(
-                  exportacion.url,
-                  maxLines: 1,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                ),
-              ),
-              const SizedBox(height: 14),
               Expanded(
                 child: DecoratedBox(
                   decoration: BoxDecoration(
@@ -4425,10 +4405,10 @@ class _VisorExportacionExcel extends StatelessWidget {
                     ),
                     FilledButton.icon(
                       onPressed: () {
-                        unawaited(onAbrirArchivo());
+                        unawaited(onDescargar());
                       },
-                      icon: const Icon(Icons.open_in_new_rounded),
-                      label: const Text('Abrir Excel'),
+                      icon: const Icon(Icons.download_rounded),
+                      label: const Text('Descargar'),
                     ),
                   ],
                 ),
@@ -5914,7 +5894,16 @@ class _MovimientoCajaItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool salida = movimiento.tipoMovimiento.naturaleza == 'S';
     final Color color = salida ? CobroAppTheme.danger : CobroAppTheme.success;
+    final String? cliente = movimiento.cliente?.trim().isEmpty ?? true
+        ? null
+        : movimiento.cliente!.trim();
+    final String? identificacion =
+        movimiento.clienteIdentificacion?.trim().isEmpty ?? true
+            ? null
+            : movimiento.clienteIdentificacion!.trim();
     final String detalle = <String>[
+      if (cliente != null) 'Cliente: $cliente',
+      if (identificacion != null) 'Identificacion: $identificacion',
       movimiento.cajaMenor,
       movimiento.tipoMovimiento.nombre,
       _fechaEtiqueta(movimiento.fechaMovimiento),
@@ -5941,7 +5930,7 @@ class _MovimientoCajaItem extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 Text(
-                  movimiento.motivo,
+                  movimiento.motivoVisible,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.titleSmall?.copyWith(
@@ -5951,7 +5940,7 @@ class _MovimientoCajaItem extends StatelessWidget {
                 const SizedBox(height: 3),
                 Text(
                   detalle,
-                  maxLines: 1,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: context.clay.subtleText,
@@ -6553,6 +6542,8 @@ class MovimientoCaja {
     required this.monto,
     required this.montoConNaturaleza,
     required this.motivo,
+    this.cliente,
+    this.clienteIdentificacion,
     this.usuario,
     this.referenciaTabla,
     this.referenciaId,
@@ -6570,6 +6561,8 @@ class MovimientoCaja {
       monto: _doble(json['monto']),
       montoConNaturaleza: _doble(json['montoConNaturaleza']),
       motivo: json['motivo'] as String,
+      cliente: json['cliente'] as String?,
+      clienteIdentificacion: json['clienteIdentificacion'] as String?,
       usuario: usuario is Map<String, dynamic>
           ? UsuarioCatalogo.fromJson(usuario)
           : null,
@@ -6585,11 +6578,25 @@ class MovimientoCaja {
   final double monto;
   final double montoConNaturaleza;
   final String motivo;
+  final String? cliente;
+  final String? clienteIdentificacion;
   final UsuarioCatalogo? usuario;
   final String? referenciaTabla;
   final String? referenciaId;
 
   bool get esPago => referenciaTabla == 'pago';
+
+  String get motivoVisible {
+    final String? clienteNombre = cliente?.trim().isEmpty ?? true
+        ? null
+        : cliente!.trim();
+
+    if (referenciaTabla == 'credito_desembolso' && clienteNombre != null) {
+      return 'Desembolso de credito para $clienteNombre';
+    }
+
+    return motivo;
+  }
 }
 
 class Presupuesto {

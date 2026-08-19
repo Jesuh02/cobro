@@ -152,6 +152,8 @@ type CobroRutaExportado = {
 
 type MovimientoCajaExportado = {
   cajaMenor: string;
+  cliente: string | null;
+  clienteIdentificacion: string | null;
   tipoMovimiento: {
     codigo: string;
     nombre: string;
@@ -839,6 +841,7 @@ export class CobrosService {
         usuario,
         valorPrincipal,
         fechaInicio,
+        cliente.nombreCompleto,
       );
 
       await tx.creditoDesembolso.create({
@@ -1236,6 +1239,34 @@ export class CobrosService {
             nombre: { contains: search, mode: 'insensitive' },
           },
         },
+        {
+          desembolsoCredito: {
+            is: {
+              credito: {
+                cliente: {
+                  OR: [
+                    {
+                      nombreCompleto: {
+                        contains: search,
+                        mode: 'insensitive',
+                      },
+                    },
+                    {
+                      documentos: {
+                        some: {
+                          numeroDocumento: {
+                            contains: search,
+                            mode: 'insensitive',
+                          },
+                        },
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        },
       ];
     }
 
@@ -1271,6 +1302,15 @@ export class CobrosService {
           },
         },
         {
+          cliente: {
+            documentos: {
+              some: {
+                numeroDocumento: { contains: search, mode: 'insensitive' },
+              },
+            },
+          },
+        },
+        {
           medioPago: {
             nombre: { contains: search, mode: 'insensitive' },
           },
@@ -1288,6 +1328,19 @@ export class CobrosService {
           cajaMenor: true,
           tipoMovimientoCaja: true,
           usuario: true,
+          desembolsoCredito: {
+            include: {
+              credito: {
+                include: {
+                  cliente: {
+                    include: {
+                      documentos: { include: { tipoDocumento: true } },
+                    },
+                  },
+                },
+              },
+            },
+          },
         },
         orderBy: [{ fechaMovimiento: 'desc' }, { creadoEn: 'desc' }],
         take: 100,
@@ -1295,7 +1348,11 @@ export class CobrosService {
       this.prisma.pago.findMany({
         where: pagoWhere,
         include: {
-          cliente: true,
+          cliente: {
+            include: {
+              documentos: { include: { tipoDocumento: true } },
+            },
+          },
           cobrador: true,
           medioPago: true,
           ruta: true,
@@ -1323,30 +1380,43 @@ export class CobrosService {
         : null,
     );
 
-    const movimientosCaja = movimientos.map((movimiento) => ({
-      id: movimiento.cajaMenorMovimientoId,
-      cajaMenorId: movimiento.cajaMenorId,
-      cajaMenor: movimiento.cajaMenor.nombre,
-      tipoMovimiento: {
-        id: movimiento.tipoMovimientoCajaId,
-        codigo: movimiento.tipoMovimientoCaja.codigo,
-        nombre: movimiento.tipoMovimientoCaja.nombre,
-        naturaleza: movimiento.tipoMovimientoCaja.naturaleza,
-      },
-      usuario: movimiento.usuario
-        ? this.formatearUsuario(movimiento.usuario)
-        : null,
-      fechaMovimiento: this.fechaIso(movimiento.fechaMovimiento),
-      monto: this.decimalANumero(movimiento.monto),
-      montoConNaturaleza:
-        movimiento.tipoMovimientoCaja.naturaleza === 'S'
-          ? -this.decimalANumero(movimiento.monto)
-          : this.decimalANumero(movimiento.monto),
-      motivo: movimiento.motivo,
-      referenciaTabla: movimiento.referenciaTabla,
-      referenciaId: movimiento.referenciaId,
-      creadoEn: movimiento.creadoEn.toISOString(),
-    }));
+    const movimientosCaja = movimientos.map((movimiento) => {
+      const clienteCredito =
+        movimiento.desembolsoCredito?.credito.cliente ?? null;
+
+      return {
+        id: movimiento.cajaMenorMovimientoId,
+        cajaMenorId: movimiento.cajaMenorId,
+        cajaMenor: movimiento.cajaMenor.nombre,
+        cliente: clienteCredito?.nombreCompleto ?? null,
+        clienteIdentificacion: clienteCredito
+          ? this.identificacionCliente(clienteCredito)
+          : null,
+        tipoMovimiento: {
+          id: movimiento.tipoMovimientoCajaId,
+          codigo: movimiento.tipoMovimientoCaja.codigo,
+          nombre: movimiento.tipoMovimientoCaja.nombre,
+          naturaleza: movimiento.tipoMovimientoCaja.naturaleza,
+        },
+        usuario: movimiento.usuario
+          ? this.formatearUsuario(movimiento.usuario)
+          : null,
+        fechaMovimiento: this.fechaIso(movimiento.fechaMovimiento),
+        monto: this.decimalANumero(movimiento.monto),
+        montoConNaturaleza:
+          movimiento.tipoMovimientoCaja.naturaleza === 'S'
+            ? -this.decimalANumero(movimiento.monto)
+            : this.decimalANumero(movimiento.monto),
+        motivo: this.formatearMotivoMovimientoCaja(
+          movimiento.motivo,
+          movimiento.referenciaTabla,
+          clienteCredito?.nombreCompleto ?? null,
+        ),
+        referenciaTabla: movimiento.referenciaTabla,
+        referenciaId: movimiento.referenciaId,
+        creadoEn: movimiento.creadoEn.toISOString(),
+      };
+    });
 
     const movimientosPago = pagos.map((pago) => {
       const caja = cajasPago.get(
@@ -1358,6 +1428,8 @@ export class CobrosService {
         id: `pago-${pago.pagoId}`,
         cajaMenorId: caja?.cajaMenorId ?? null,
         cajaMenor: caja?.nombre ?? pago.ruta.nombre,
+        cliente: pago.cliente.nombreCompleto,
+        clienteIdentificacion: this.identificacionCliente(pago.cliente),
         tipoMovimiento: {
           id: tipoRecaudo?.tipoMovimientoCajaId ?? 0,
           codigo: tipoRecaudo?.codigo ?? 'RECAUDO',
@@ -1437,10 +1509,11 @@ export class CobrosService {
     const columnas: ColumnaExportacion[] = [
       { header: 'Fecha', key: 'fechaMovimiento', width: 14 },
       { header: 'Caja menor', key: 'cajaMenor', width: 24 },
+      { header: 'Cliente', key: 'cliente', width: 30 },
+      { header: 'Identificacion', key: 'clienteIdentificacion', width: 20 },
       { header: 'Tipo', key: 'tipo', width: 20 },
       { header: 'Naturaleza', key: 'naturaleza', width: 12 },
       { header: 'Monto', key: 'monto', width: 16 },
-      { header: 'Monto con naturaleza', key: 'montoConNaturaleza', width: 20 },
       { header: 'Motivo', key: 'motivo', width: 40 },
       { header: 'Usuario', key: 'usuario', width: 28 },
       { header: 'Referencia', key: 'referencia', width: 18 },
@@ -1450,11 +1523,12 @@ export class CobrosService {
     const filasExcel: FilaExportacion[] = filtrados.map((movimiento) => ({
       fechaMovimiento: movimiento.fechaMovimiento,
       cajaMenor: movimiento.cajaMenor,
+      cliente: movimiento.cliente ?? '',
+      clienteIdentificacion: movimiento.clienteIdentificacion ?? '',
       tipo: movimiento.tipoMovimiento.nombre,
       naturaleza:
         movimiento.tipoMovimiento.naturaleza === 'S' ? 'Salida' : 'Entrada',
       monto: movimiento.monto,
-      montoConNaturaleza: movimiento.montoConNaturaleza,
       motivo: movimiento.motivo,
       usuario: movimiento.usuario?.nombreCompleto ?? '',
       referencia: movimiento.referenciaTabla ?? '',
@@ -1462,7 +1536,7 @@ export class CobrosService {
     }));
     sheet.addRows(filasExcel);
 
-    this.formatearHojaExportacion(sheet, ['monto', 'montoConNaturaleza']);
+    this.formatearHojaExportacion(sheet, ['monto']);
 
     return this.subirWorkbookExportacion({
       workbook,
@@ -1555,6 +1629,8 @@ export class CobrosService {
           ? -this.decimalANumero(movimiento.monto)
           : this.decimalANumero(movimiento.monto),
       motivo: movimiento.motivo,
+      cliente: null,
+      clienteIdentificacion: null,
       referenciaTabla: movimiento.referenciaTabla,
       referenciaId: movimiento.referenciaId,
       creadoEn: movimiento.creadoEn.toISOString(),
@@ -1940,6 +2016,7 @@ export class CobrosService {
     usuario: AuthenticatedUser,
     valorPrincipal: number,
     fechaInicio: Date,
+    clienteNombre: string,
   ) {
     if (!dto.cajaMenorId) {
       throw DomainError.validation(
@@ -2022,7 +2099,7 @@ export class CobrosService {
         usuarioId: usuario.usuarioId,
         fechaMovimiento: fechaInicio,
         monto: this.decimal(valorPrincipal),
-        motivo: 'Desembolso de credito',
+        motivo: this.motivoDesembolsoCredito(clienteNombre),
       },
     });
 
@@ -2443,6 +2520,35 @@ export class CobrosService {
       creadoEn: cliente.creadoEn.toISOString(),
       actualizadoEn: cliente.actualizadoEn.toISOString(),
     };
+  }
+
+  private identificacionCliente(cliente: {
+    documentos: Array<{
+      numeroDocumento: string;
+      tipoDocumento?: { codigo: string } | null;
+    }>;
+  }) {
+    const documento =
+      cliente.documentos.find((item) => item.tipoDocumento?.codigo === 'CC') ??
+      cliente.documentos[0];
+
+    return documento?.numeroDocumento ?? null;
+  }
+
+  private formatearMotivoMovimientoCaja(
+    motivo: string,
+    referenciaTabla: string | null,
+    clienteNombre: string | null,
+  ) {
+    if (referenciaTabla === 'credito_desembolso' && clienteNombre) {
+      return this.motivoDesembolsoCredito(clienteNombre);
+    }
+
+    return motivo;
+  }
+
+  private motivoDesembolsoCredito(clienteNombre: string) {
+    return `Desembolso de credito para ${clienteNombre}`;
   }
 
   private formatearUsuario(usuario: {

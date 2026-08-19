@@ -1,5 +1,7 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { Workbook, type Worksheet } from 'exceljs';
+import { Buffer } from 'node:buffer';
 
 import { DomainError } from '../../common/domain/domain-error';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -10,11 +12,13 @@ import {
   CrearClienteDto,
   CrearCreditoDto,
   CrearMovimientoCajaDto,
+  ExportarMovimientosCajaQueryDto,
   ListarClientesQueryDto,
   ListarCobrosRutaQueryDto,
   ListarMovimientosCajaQueryDto,
   RegistrarPagoDto,
 } from './dto';
+import { ExportacionesR2Service } from './exportaciones-r2.service';
 
 type ClienteConRelaciones = Prisma.ClienteGetPayload<{
   include: {
@@ -125,11 +129,71 @@ type SumaAplicaciones = {
   };
 };
 
+type CobroRutaExportado = {
+  cliente: string;
+  cedula: string | null;
+  negocio: string | null;
+  ruta: string;
+  monedaCodigo: string;
+  valorPrincipal: number;
+  valorTotal: number;
+  valorCuota: number;
+  totalAbonado: number;
+  saldo: number;
+  numeroCuotas: number;
+  cuotasRestantes: number;
+  fechaInicio: string;
+  fechaMaxima: string;
+  proximaNumeroCuota: number | null;
+  proximaFechaPago: string | null;
+  proximoSaldoCuota: number;
+  estadoCobro: string;
+};
+
+type MovimientoCajaExportado = {
+  cajaMenor: string;
+  tipoMovimiento: {
+    codigo: string;
+    nombre: string;
+    naturaleza: string;
+  };
+  usuario: { nombreCompleto: string } | null;
+  fechaMovimiento: string;
+  monto: number;
+  montoConNaturaleza: number;
+  motivo: string;
+  referenciaTabla: string | null;
+  creadoEn: string;
+};
+
+type ExportacionExcel = {
+  archivo: string;
+  key: string;
+  url: string;
+  filas: number;
+  generadoEn: string;
+  vistaPrevia: ExportacionVistaPrevia;
+};
+
+type ExportacionVistaPrevia = {
+  columnas: string[];
+  filas: Array<Array<string | number | null>>;
+};
+
+type ColumnaExportacion = {
+  header: string;
+  key: string;
+  width: number;
+};
+
+type FilaExportacion = Record<string, string | number | null | undefined>;
+
 @Injectable()
 export class CobrosService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    private readonly exportacionesR2: ExportacionesR2Service,
   ) {}
 
   async obtenerCatalogos(usuario: AuthenticatedUser) {
@@ -538,6 +602,80 @@ export class CobrosService {
       proximoSaldoCuota: this.decimalANumero(row.proximo_saldo_cuota),
       estadoCobro: row.estado_cobro,
     }));
+  }
+
+  async exportarCobrosRuta(
+    query: ListarCobrosRutaQueryDto,
+    usuario: AuthenticatedUser,
+  ): Promise<ExportacionExcel> {
+    const cobros = (await this.listarCobrosRuta(
+      query,
+      usuario,
+    )) as CobroRutaExportado[];
+    const workbook = new Workbook();
+    workbook.creator = 'Cobro';
+    workbook.created = new Date();
+
+    const sheet = workbook.addWorksheet('Ruta activa');
+    const columnas: ColumnaExportacion[] = [
+      { header: 'Cliente', key: 'cliente', width: 30 },
+      { header: 'Cedula', key: 'cedula', width: 18 },
+      { header: 'Negocio', key: 'negocio', width: 24 },
+      { header: 'Ruta', key: 'ruta', width: 22 },
+      { header: 'Moneda', key: 'monedaCodigo', width: 10 },
+      { header: 'Valor principal', key: 'valorPrincipal', width: 16 },
+      { header: 'Valor total', key: 'valorTotal', width: 16 },
+      { header: 'Valor cuota', key: 'valorCuota', width: 16 },
+      { header: 'Total abonado', key: 'totalAbonado', width: 16 },
+      { header: 'Saldo', key: 'saldo', width: 16 },
+      { header: 'Cuotas', key: 'cuotas', width: 12 },
+      { header: 'Cuotas restantes', key: 'cuotasRestantes', width: 16 },
+      { header: 'Fecha inicio', key: 'fechaInicio', width: 14 },
+      { header: 'Fecha maxima', key: 'fechaMaxima', width: 14 },
+      { header: 'Proxima cuota', key: 'proximaNumeroCuota', width: 14 },
+      { header: 'Proxima fecha pago', key: 'proximaFechaPago', width: 18 },
+      { header: 'Saldo proxima cuota', key: 'proximoSaldoCuota', width: 18 },
+      { header: 'Estado', key: 'estadoCobro', width: 14 },
+    ];
+    sheet.columns = columnas;
+    const filasExcel: FilaExportacion[] = cobros.map((cobro) => ({
+      cliente: cobro.cliente,
+      cedula: cobro.cedula ?? '',
+      negocio: cobro.negocio ?? '',
+      ruta: cobro.ruta,
+      monedaCodigo: cobro.monedaCodigo,
+      valorPrincipal: cobro.valorPrincipal,
+      valorTotal: cobro.valorTotal,
+      valorCuota: cobro.valorCuota,
+      totalAbonado: cobro.totalAbonado,
+      saldo: cobro.saldo,
+      cuotas: `${cobro.cuotasRestantes} / ${cobro.numeroCuotas}`,
+      cuotasRestantes: cobro.cuotasRestantes,
+      fechaInicio: cobro.fechaInicio,
+      fechaMaxima: cobro.fechaMaxima,
+      proximaNumeroCuota: cobro.proximaNumeroCuota ?? '',
+      proximaFechaPago: cobro.proximaFechaPago ?? '',
+      proximoSaldoCuota: cobro.proximoSaldoCuota,
+      estadoCobro: cobro.estadoCobro,
+    }));
+    sheet.addRows(filasExcel);
+
+    this.formatearHojaExportacion(sheet, [
+      'valorPrincipal',
+      'valorTotal',
+      'valorCuota',
+      'totalAbonado',
+      'saldo',
+      'proximoSaldoCuota',
+    ]);
+
+    return this.subirWorkbookExportacion({
+      workbook,
+      carpeta: 'cobros-ruta',
+      nombreBase: 'cobros-ruta',
+      filas: cobros.length,
+      vistaPrevia: this.crearVistaPreviaExportacion(columnas, filasExcel),
+    });
   }
 
   async listarCuotasCredito(creditoId: string, usuario: AuthenticatedUser) {
@@ -1251,6 +1389,90 @@ export class CobrosService {
       .slice(0, 100);
   }
 
+  async exportarMovimientosCaja(
+    query: ExportarMovimientosCajaQueryDto,
+    usuario: AuthenticatedUser,
+  ): Promise<ExportacionExcel> {
+    const movimientos = (await this.listarMovimientosCaja(
+      query,
+      usuario,
+    )) as MovimientoCajaExportado[];
+    const fechaDesde = query.fechaDesde
+      ? this.parsearFecha(query.fechaDesde, 'fechaDesde')
+      : null;
+    const fechaHasta = query.fechaHasta
+      ? this.parsearFecha(query.fechaHasta, 'fechaHasta')
+      : null;
+    const tipo = query.tipo ?? 'todos';
+    const filtrados = movimientos.filter((movimiento) => {
+      const naturaleza = movimiento.tipoMovimiento.naturaleza.toUpperCase();
+      const fechaMovimiento = this.parsearFecha(
+        movimiento.fechaMovimiento,
+        'fechaMovimiento',
+      );
+
+      if (tipo === 'entradas' && naturaleza !== 'E') {
+        return false;
+      }
+
+      if (tipo === 'salidas' && naturaleza !== 'S') {
+        return false;
+      }
+
+      if (fechaDesde && fechaMovimiento < fechaDesde) {
+        return false;
+      }
+
+      if (fechaHasta && fechaMovimiento > fechaHasta) {
+        return false;
+      }
+
+      return true;
+    });
+    const workbook = new Workbook();
+    workbook.creator = 'Cobro';
+    workbook.created = new Date();
+
+    const sheet = workbook.addWorksheet('Caja menor');
+    const columnas: ColumnaExportacion[] = [
+      { header: 'Fecha', key: 'fechaMovimiento', width: 14 },
+      { header: 'Caja menor', key: 'cajaMenor', width: 24 },
+      { header: 'Tipo', key: 'tipo', width: 20 },
+      { header: 'Naturaleza', key: 'naturaleza', width: 12 },
+      { header: 'Monto', key: 'monto', width: 16 },
+      { header: 'Monto con naturaleza', key: 'montoConNaturaleza', width: 20 },
+      { header: 'Motivo', key: 'motivo', width: 40 },
+      { header: 'Usuario', key: 'usuario', width: 28 },
+      { header: 'Referencia', key: 'referencia', width: 18 },
+      { header: 'Creado en', key: 'creadoEn', width: 24 },
+    ];
+    sheet.columns = columnas;
+    const filasExcel: FilaExportacion[] = filtrados.map((movimiento) => ({
+      fechaMovimiento: movimiento.fechaMovimiento,
+      cajaMenor: movimiento.cajaMenor,
+      tipo: movimiento.tipoMovimiento.nombre,
+      naturaleza:
+        movimiento.tipoMovimiento.naturaleza === 'S' ? 'Salida' : 'Entrada',
+      monto: movimiento.monto,
+      montoConNaturaleza: movimiento.montoConNaturaleza,
+      motivo: movimiento.motivo,
+      usuario: movimiento.usuario?.nombreCompleto ?? '',
+      referencia: movimiento.referenciaTabla ?? '',
+      creadoEn: movimiento.creadoEn,
+    }));
+    sheet.addRows(filasExcel);
+
+    this.formatearHojaExportacion(sheet, ['monto', 'montoConNaturaleza']);
+
+    return this.subirWorkbookExportacion({
+      workbook,
+      carpeta: 'caja-menor',
+      nombreBase: 'caja-menor',
+      filas: filtrados.length,
+      vistaPrevia: this.crearVistaPreviaExportacion(columnas, filasExcel),
+    });
+  }
+
   async crearMovimientoCaja(
     dto: CrearMovimientoCajaDto,
     usuario: AuthenticatedUser,
@@ -1449,6 +1671,84 @@ export class CobrosService {
         ),
       },
     };
+  }
+
+  private formatearHojaExportacion(
+    sheet: Worksheet,
+    columnasMonetarias: string[],
+  ) {
+    sheet.views = [{ state: 'frozen', ySplit: 1 }];
+    sheet.getRow(1).height = 22;
+    sheet.getRow(1).eachCell((cell) => {
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF1F2937' },
+      };
+      cell.alignment = { vertical: 'middle' };
+    });
+
+    for (const key of columnasMonetarias) {
+      sheet.getColumn(key).numFmt = '#,##0.##########';
+    }
+
+    sheet.eachRow((row, rowNumber) => {
+      if (rowNumber === 1) {
+        return;
+      }
+
+      row.eachCell((cell) => {
+        cell.alignment = { vertical: 'top', wrapText: true };
+      });
+    });
+  }
+
+  private crearVistaPreviaExportacion(
+    columnas: ColumnaExportacion[],
+    filas: FilaExportacion[],
+  ): ExportacionVistaPrevia {
+    return {
+      columnas: columnas.map((columna) => columna.header),
+      filas: filas.slice(0, 50).map((fila) =>
+        columnas.map((columna) => {
+          const valor = fila[columna.key];
+
+          if (valor === undefined) {
+            return null;
+          }
+
+          return valor;
+        }),
+      ),
+    };
+  }
+
+  private async subirWorkbookExportacion(input: {
+    workbook: Workbook;
+    carpeta: string;
+    nombreBase: string;
+    filas: number;
+    vistaPrevia: ExportacionVistaPrevia;
+  }): Promise<ExportacionExcel> {
+    const contenido = Buffer.from(await input.workbook.xlsx.writeBuffer());
+    const nombreArchivo = `${input.nombreBase}-${this.timestampArchivo()}.xlsx`;
+    const resultado = await this.exportacionesR2.subirExcel({
+      carpeta: input.carpeta,
+      nombreArchivo,
+      contenido,
+    });
+
+    return {
+      ...resultado,
+      filas: input.filas,
+      generadoEn: new Date().toISOString(),
+      vistaPrevia: input.vistaPrevia,
+    };
+  }
+
+  private timestampArchivo() {
+    return new Date().toISOString().replace(/[:.]/g, '-');
   }
 
   private async crearContactoCliente(

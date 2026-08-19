@@ -154,6 +154,154 @@ void main() {
   );
 
   testWidgets(
+    'muestra pagos decimales sin redondear',
+    (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(390, 844);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+
+      final ApiClient apiClient = ApiClient(
+        baseUrl: 'https://cobro.test/api/v1',
+        client: MockClient(_responderApiPagosPrecisos),
+      );
+      addTearDown(apiClient.close);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: CobroAppTheme.light(),
+          home: HomePage(
+            apiBaseUrl: 'https://cobro.test/api/v1',
+            apiClient: apiClient,
+            themeMode: ThemeMode.light,
+            onThemeModeChanged: (_) {},
+          ),
+        ),
+      );
+
+      await tester.enterText(find.byType(TextField).at(0), 'admin');
+      await tester.enterText(find.byType(TextField).at(1), 'Admin12345!');
+      await tester.tap(find.text('Entrar'));
+      await tester.pumpAndSettle(const Duration(seconds: 2));
+      tester.takeException();
+
+      await tester.tap(find.text('Ruta'));
+      await tester.pumpAndSettle(const Duration(milliseconds: 500));
+
+      expect(find.text(r'$0,8'), findsWidgets);
+      expect(find.text(r'$0,04'), findsWidgets);
+      expect(find.text(r'$1'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'muestra visor interno al exportar Excel de ruta',
+    (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(390, 844);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+
+      final ApiClient apiClient = ApiClient(
+        baseUrl: 'https://cobro.test/api/v1',
+        client: MockClient(_responderApiExportacionExcel),
+      );
+      addTearDown(apiClient.close);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: CobroAppTheme.light(),
+          home: HomePage(
+            apiBaseUrl: 'https://cobro.test/api/v1',
+            apiClient: apiClient,
+            themeMode: ThemeMode.light,
+            onThemeModeChanged: (_) {},
+          ),
+        ),
+      );
+
+      await tester.enterText(find.byType(TextField).at(0), 'admin');
+      await tester.enterText(find.byType(TextField).at(1), 'Admin12345!');
+      await tester.tap(find.text('Entrar'));
+      await tester.pumpAndSettle(const Duration(seconds: 2));
+      tester.takeException();
+
+      await tester.tap(find.text('Ruta'));
+      await tester.pumpAndSettle(const Duration(milliseconds: 500));
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Exportar'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('cobros-ruta-prueba.xlsx'), findsOneWidget);
+      expect(find.text('Archivo guardado en Cloudflare R2'), findsOneWidget);
+      expect(find.text('Cliente'), findsWidgets);
+      expect(find.text('Cliente decimal'), findsWidgets);
+      expect(find.text('0,04'), findsOneWidget);
+      expect(find.text('Abrir Excel'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'exporta caja menor sin enviar tipo cuando el filtro es todos',
+    (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1280, 900);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+
+      Uri? exportUri;
+      final ApiClient apiClient = ApiClient(
+        baseUrl: 'https://cobro.test/api/v1',
+        client: MockClient((http.Request request) async {
+          if (request.url.path.endsWith('/exportaciones/caja-menor')) {
+            exportUri = request.url;
+            return _jsonResponse(_exportacionExcelCajaMenor());
+          }
+
+          return _responderApiPagosPrecisos(request);
+        }),
+      );
+      addTearDown(apiClient.close);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: CobroAppTheme.light(),
+          home: HomePage(
+            apiBaseUrl: 'https://cobro.test/api/v1',
+            apiClient: apiClient,
+            themeMode: ThemeMode.light,
+            onThemeModeChanged: (_) {},
+          ),
+        ),
+      );
+
+      await tester.enterText(find.byType(TextField).at(0), 'admin');
+      await tester.enterText(find.byType(TextField).at(1), 'Admin12345!');
+      await tester.tap(find.text('Entrar'));
+      await tester.pumpAndSettle(const Duration(seconds: 2));
+      tester.takeException();
+
+      await tester.tap(
+        find.ancestor(
+          of: find.text('Caja menor'),
+          matching: find.byType(ListTile),
+        ),
+      );
+      await tester.pumpAndSettle(const Duration(milliseconds: 500));
+      final Finder exportar = find.widgetWithText(OutlinedButton, 'Exportar');
+      await tester.ensureVisible(exportar);
+      await tester.tap(exportar);
+      await tester.pumpAndSettle();
+
+      expect(exportUri, isNotNull);
+      expect(exportUri!.queryParameters.containsKey('tipo'), isFalse);
+      expect(find.text('caja-menor-prueba.xlsx'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
     'muestra alerta superior cuando el prestamo supera la caja menor',
     (WidgetTester tester) async {
       tester.view.devicePixelRatio = 1;
@@ -222,6 +370,123 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+}
+
+Map<String, dynamic> _exportacionExcelCajaMenor() {
+  return <String, dynamic>{
+    'archivo': 'caja-menor-prueba.xlsx',
+    'key': 'exportaciones/caja-menor/2026-08-19/caja-menor-prueba.xlsx',
+    'url':
+        'https://pub-9f393625246c4018b5613be60b01bda1.r2.dev/exportaciones/caja-menor/2026-08-19/caja-menor-prueba.xlsx',
+    'filas': 1,
+    'generadoEn': '2026-08-19T18:20:00.000Z',
+    'vistaPrevia': <String, dynamic>{
+      'columnas': <String>['Fecha', 'Monto'],
+      'filas': <List<Object>>[
+        <Object>['2026-08-19', 0.04],
+      ],
+    },
+  };
+}
+
+Future<http.Response> _responderApiExportacionExcel(
+  http.Request request,
+) async {
+  final String path = request.url.path;
+
+  if (path.endsWith('/exportaciones/cobros-ruta')) {
+    return _jsonResponse(<String, dynamic>{
+      'archivo': 'cobros-ruta-prueba.xlsx',
+      'key': 'exportaciones/cobros-ruta/2026-08-19/cobros-ruta-prueba.xlsx',
+      'url':
+          'https://pub-9f393625246c4018b5613be60b01bda1.r2.dev/exportaciones/cobros-ruta/2026-08-19/cobros-ruta-prueba.xlsx',
+      'filas': 1,
+      'generadoEn': '2026-08-19T18:10:00.000Z',
+      'vistaPrevia': <String, dynamic>{
+        'columnas': <String>['Cliente', 'Saldo proxima cuota'],
+        'filas': <List<Object>>[
+          <Object>['Cliente decimal', 0.04],
+        ],
+      },
+    });
+  }
+
+  return _responderApiPagosPrecisos(request);
+}
+
+Future<http.Response> _responderApiPagosPrecisos(http.Request request) async {
+  final String path = request.url.path;
+
+  if (path.endsWith('/catalogos')) {
+    return _jsonResponse(_catalogosCredito());
+  }
+
+  if (path.endsWith('/clientes')) {
+    return _jsonResponse(<Map<String, dynamic>>[
+      <String, dynamic>{
+        'id': 'cliente-decimal',
+        'nombreCompleto': 'Cliente decimal',
+        'cedula': '100',
+        'nombreComercial': null,
+        'correo': null,
+        'telefono': null,
+        'estado': <String, dynamic>{'nombre': 'Activo'},
+      },
+    ]);
+  }
+
+  if (path.endsWith('/presupuesto')) {
+    return _jsonResponse(<String, dynamic>{
+      'items': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'cajaMenorId': 'caja-1',
+          'monedaCodigo': 'COP',
+          'cajaMenor': 0.8,
+          'recaudado': 0.04,
+          'gastos': 0,
+          'creditos': 0,
+          'presupuesto': 0.84,
+        },
+      ],
+      'totales': <String, dynamic>{
+        'cajaMenor': 0.8,
+        'recaudado': 0.04,
+        'gastos': 0,
+        'creditos': 0,
+        'presupuesto': 0.84,
+      },
+    });
+  }
+
+  if (path.endsWith('/cobros/ruta')) {
+    return _jsonResponse(<Map<String, dynamic>>[
+      <String, dynamic>{
+        'id': 'cobro-decimal',
+        'cliente': 'Cliente decimal',
+        'cedula': '100',
+        'negocio': null,
+        'rutaId': 'ruta-1',
+        'ruta': 'Ruta decimal',
+        'valorTotal': 0.8,
+        'valorCuota': 0.04,
+        'totalAbonado': 0,
+        'saldo': 0.8,
+        'numeroCuotas': 20,
+        'cuotasRestantes': 20,
+        'proximaCuotaId': 'cuota-decimal',
+        'proximaNumeroCuota': 1,
+        'proximaFechaPago': '2026-08-20',
+        'proximoSaldoCuota': 0.04,
+        'estadoCobro': 'PENDIENTE',
+      },
+    ]);
+  }
+
+  if (path.endsWith('/caja-menor/movimientos')) {
+    return _jsonResponse(<dynamic>[]);
+  }
+
+  return _responderApi(request);
 }
 
 Future<http.Response> _responderApiCredito(http.Request request) async {

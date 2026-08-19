@@ -3,6 +3,7 @@ import {
   IsBoolean,
   IsDateString,
   IsEmail,
+  IsIn,
   IsInt,
   IsNumber,
   IsOptional,
@@ -156,6 +157,20 @@ export class ListarMovimientosCajaQueryDto {
   @IsString()
   @MaxLength(120)
   search?: string;
+}
+
+export class ExportarMovimientosCajaQueryDto extends ListarMovimientosCajaQueryDto {
+  @IsOptional()
+  @IsIn(['todos', 'entradas', 'salidas'])
+  tipo?: 'todos' | 'entradas' | 'salidas';
+
+  @IsOptional()
+  @IsDateString()
+  fechaDesde?: string;
+
+  @IsOptional()
+  @IsDateString()
+  fechaHasta?: string;
 }
 
 export class CrearCajaMenorDto {

@@ -87,7 +87,7 @@ class _GraficaLineaPresupuesto extends StatelessWidget {
     return _TarjetaGrafica(
       titulo: 'Flujo acumulado',
       etiqueta: 'LINEA',
-      valor: _dinero(totales.presupuesto),
+      valor: _dineroGrafica(totales.presupuesto),
       detalle: 'Capital disponible',
       pie: Row(
         children: <Widget>[
@@ -191,7 +191,7 @@ class _GraficaAreaMovimientos extends StatelessWidget {
     return _TarjetaGrafica(
       titulo: 'Composicion financiera',
       etiqueta: 'AREA',
-      valor: _dinero(totales.recaudado),
+      valor: _dineroGrafica(totales.recaudado),
       detalle: 'Total recaudado',
       pie: Text(
         'Entradas, salidas y saldo',
@@ -318,7 +318,7 @@ class _GraficaDonaDistribucion extends StatelessWidget {
     return _TarjetaGrafica(
       titulo: 'Distribucion operativa',
       etiqueta: 'DONA',
-      valor: '${porcentaje.toStringAsFixed(0)}%',
+      valor: '${_porcentajeGrafica(porcentaje)}%',
       detalle: 'Capital disponible',
       pie: Wrap(
         spacing: 12,
@@ -341,7 +341,7 @@ class _GraficaDonaDistribucion extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
                   Text(
-                    '${(porcentaje * progresoSuave).toStringAsFixed(0)}%',
+                    '${_porcentajeGrafica(porcentaje)}%',
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
                           fontWeight: FontWeight.w900,
                         ),
@@ -707,7 +707,7 @@ LineTouchTooltipData _tooltipLinea(ClayTokens clay) {
       return spots
           .map(
             (LineBarSpot spot) => LineTooltipItem(
-              _dinero(spot.y),
+              _dineroGrafica(spot.y),
               TextStyle(
                 color: clay.text,
                 fontSize: 11,
@@ -721,14 +721,52 @@ LineTouchTooltipData _tooltipLinea(ClayTokens clay) {
 }
 
 String _numeroCompacto(double value) {
+  return _numeroGrafica(value, compactar: true);
+}
+
+String _dineroGrafica(double value) {
+  return '${value < 0 ? '-' : ''}\$${_numeroGrafica(value.abs(), compactar: true)}';
+}
+
+String _porcentajeGrafica(double value) {
+  return _numeroGrafica(value, compactar: false);
+}
+
+String _numeroGrafica(double value, {required bool compactar}) {
+  if (value == 0 || value.isNaN || value.isInfinite) {
+    return '0';
+  }
+
   final double absoluto = value.abs();
-  if (absoluto >= 1000000) {
-    final int decimales = absoluto >= 10000000 ? 0 : 1;
-    return '${(value / 1000000).toStringAsFixed(decimales)}M';
+  final String signo = value < 0 ? '-' : '';
+
+  if (compactar && absoluto >= 1000000000) {
+    return '$signo${_decimalGrafica(absoluto / 1000000000, decimales: 1)}B';
   }
-  if (absoluto >= 1000) {
-    final int decimales = absoluto >= 10000 ? 0 : 1;
-    return '${(value / 1000).toStringAsFixed(decimales)}k';
+  if (compactar && absoluto >= 1000000) {
+    return '$signo${_decimalGrafica(absoluto / 1000000, decimales: 1)}M';
   }
-  return value.toStringAsFixed(0);
+  if (compactar && absoluto >= 1000) {
+    return '$signo${_decimalGrafica(absoluto / 1000, decimales: 1)}k';
+  }
+
+  if (absoluto >= 100) {
+    return '$signo${_decimalGrafica(absoluto, decimales: 0)}';
+  }
+  if (absoluto >= 10) {
+    return '$signo${_decimalGrafica(absoluto, decimales: 0)}';
+  }
+  if (absoluto >= 1) {
+    return '$signo${_decimalGrafica(absoluto, decimales: 1)}';
+  }
+  return '$signo${_decimalGrafica(absoluto, decimales: 2)}';
+}
+
+String _decimalGrafica(double value, {required int decimales}) {
+  final String raw = value.toStringAsFixed(decimales);
+  if (!raw.contains('.')) {
+    return raw;
+  }
+  final String limpio = raw.replaceFirst(RegExp(r'\.?0+$'), '');
+  return limpio.replaceAll('.', ',');
 }

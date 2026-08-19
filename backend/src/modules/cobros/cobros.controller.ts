@@ -18,6 +18,7 @@ import {
   CrearClienteDto,
   CrearCreditoDto,
   CrearMovimientoCajaDto,
+  ExportarMovimientosCajaQueryDto,
   ListarClientesQueryDto,
   ListarCobrosRutaQueryDto,
   ListarMovimientosCajaQueryDto,
@@ -63,6 +64,14 @@ export class CobrosController {
     return this.cobros.listarCobrosRuta(query, usuario);
   }
 
+  @Get('exportaciones/cobros-ruta')
+  exportarCobrosRuta(
+    @CurrentUser() usuario: AuthenticatedUser,
+    @Query() query: ListarCobrosRutaQueryDto,
+  ) {
+    return this.cobros.exportarCobrosRuta(query, usuario);
+  }
+
   @Post('creditos')
   crearCredito(
     @CurrentUser() usuario: AuthenticatedUser,
@@ -101,6 +110,14 @@ export class CobrosController {
     @Query() query: ListarMovimientosCajaQueryDto,
   ) {
     return this.cobros.listarMovimientosCaja(query, usuario);
+  }
+
+  @Get('exportaciones/caja-menor')
+  exportarMovimientosCaja(
+    @CurrentUser() usuario: AuthenticatedUser,
+    @Query() query: ExportarMovimientosCajaQueryDto,
+  ) {
+    return this.cobros.exportarMovimientosCaja(query, usuario);
   }
 
   @Post('caja-menor/movimientos')

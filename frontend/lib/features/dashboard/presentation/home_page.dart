@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import '../../../app/app_theme.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/network/api_exception.dart';
+import '../../../core/platform/export_download.dart';
 import '../../../core/ui/clay.dart';
 
 part 'dashboard_charts.dart';
@@ -91,6 +92,7 @@ class _HomePageState extends State<HomePage> {
   int _seccionActual = 0;
   bool _cargando = false;
   bool _guardando = false;
+  bool _exportando = false;
   bool _mostrarContrasenaLogin = false;
   bool _menuLateralExpandido = true;
   _FiltroMovimientoCaja _filtroMovimientoCaja = _FiltroMovimientoCaja.todos;
@@ -736,9 +738,11 @@ class _HomePageState extends State<HomePage> {
           buscarController: _buscarRutaController,
           rutas: _catalogos?.rutas ?? const <RutaCatalogo>[],
           rutaSeleccionadaId: _rutaFiltroId,
+          exportando: _exportando,
           onRutaChanged: (String? rutaId) {
             setState(() => _rutaFiltroId = rutaId);
           },
+          onExportar: _exportarCobrosRuta,
         ),
         const SizedBox(height: 14),
         _ResumenEstados(
@@ -974,6 +978,16 @@ class _HomePageState extends State<HomePage> {
                 ? 'Hasta'
                 : 'Hasta ${_fechaEtiqueta(_fechaCajaHasta)}',
           ),
+        ),
+        OutlinedButton.icon(
+          onPressed: _exportando ? null : _exportarMovimientosCaja,
+          icon: _exportando
+              ? const SizedBox.square(
+                  dimension: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.file_download_outlined),
+          label: Text(_exportando ? 'Exportando' : 'Exportar'),
         ),
         if (_hayFiltrosCaja)
           Tooltip(
@@ -1985,6 +1999,111 @@ class _HomePageState extends State<HomePage> {
         }
       }
     }());
+  }
+
+  Future<void> _exportarCobrosRuta() async {
+    if (_exportando) {
+      return;
+    }
+
+    setState(() {
+      _exportando = true;
+      _error = null;
+    });
+    _mostrarMensaje('Generando Excel...');
+
+    try {
+      final ExportacionExcel exportacion = ExportacionExcel.fromJson(
+        await _apiClient.getObject(
+          '/exportaciones/cobros-ruta',
+          query: <String, String?>{
+            'rutaId': _rutaFiltroId,
+            'search': _buscarRutaController.text.trim(),
+          },
+        ),
+      );
+      if (mounted) {
+        setState(() => _exportando = false);
+      }
+      await _mostrarExportacionLista(exportacion);
+    } catch (error) {
+      if (mounted) {
+        setState(() => _error = _mensajeError(error));
+        _mostrarMensaje(_mensajeError(error));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _exportando = false);
+      }
+    }
+  }
+
+  Future<void> _exportarMovimientosCaja() async {
+    if (_exportando) {
+      return;
+    }
+
+    setState(() {
+      _exportando = true;
+      _error = null;
+    });
+    _mostrarMensaje('Generando Excel...');
+
+    try {
+      final ExportacionExcel exportacion = ExportacionExcel.fromJson(
+        await _apiClient.getObject(
+          '/exportaciones/caja-menor',
+          query: <String, String?>{
+            'search': _buscarCajaController.text.trim(),
+            'tipo': _filtroMovimientoCaja == _FiltroMovimientoCaja.todos
+                ? null
+                : _filtroMovimientoCaja.name,
+            'fechaDesde':
+                _fechaCajaDesde == null ? null : _fechaValor(_fechaCajaDesde!),
+            'fechaHasta':
+                _fechaCajaHasta == null ? null : _fechaValor(_fechaCajaHasta!),
+          },
+        ),
+      );
+      if (mounted) {
+        setState(() => _exportando = false);
+      }
+      await _mostrarExportacionLista(exportacion);
+    } catch (error) {
+      if (mounted) {
+        setState(() => _error = _mensajeError(error));
+        _mostrarMensaje(_mensajeError(error));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _exportando = false);
+      }
+    }
+  }
+
+  Future<void> _mostrarExportacionLista(ExportacionExcel exportacion) async {
+    final String filas =
+        exportacion.filas == 1 ? '1 fila' : '${exportacion.filas} filas';
+    _mostrarMensaje('Excel exportado en R2: $filas');
+
+    if (!mounted) {
+      return;
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return _VisorExportacionExcel(
+          exportacion: exportacion,
+          onAbrirArchivo: () async {
+            final bool abierta = await abrirExportacionExcel(exportacion.url);
+            if (!abierta && mounted) {
+              _mostrarMensaje('No se pudo abrir el archivo exportado');
+            }
+          },
+        );
+      },
+    );
   }
 
   void _aplicarPagoRutaOptimista(String cuotaId, double monto) {
@@ -4075,13 +4194,17 @@ class _FiltrosRuta extends StatelessWidget {
     required this.buscarController,
     required this.rutas,
     required this.rutaSeleccionadaId,
+    required this.exportando,
     required this.onRutaChanged,
+    required this.onExportar,
   });
 
   final TextEditingController buscarController;
   final List<RutaCatalogo> rutas;
   final String? rutaSeleccionadaId;
+  final bool exportando;
   final ValueChanged<String?> onRutaChanged;
+  final VoidCallback onExportar;
 
   @override
   Widget build(BuildContext context) {
@@ -4124,6 +4247,20 @@ class _FiltrosRuta extends StatelessWidget {
               onChanged: onRutaChanged,
             ),
           ),
+          SizedBox(width: compact ? 0 : 12, height: compact ? 12 : 0),
+          SizedBox(
+            width: compact ? double.infinity : null,
+            child: OutlinedButton.icon(
+              onPressed: exportando ? null : onExportar,
+              icon: exportando
+                  ? const SizedBox.square(
+                      dimension: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.file_download_outlined),
+              label: Text(exportando ? 'Exportando' : 'Exportar'),
+            ),
+          ),
         ];
 
         return compact
@@ -4133,6 +4270,268 @@ class _FiltrosRuta extends StatelessWidget {
                 children: children,
               );
       },
+    );
+  }
+}
+
+class _VisorExportacionExcel extends StatelessWidget {
+  const _VisorExportacionExcel({
+    required this.exportacion,
+    required this.onAbrirArchivo,
+  });
+
+  final ExportacionExcel exportacion;
+  final Future<void> Function() onAbrirArchivo;
+
+  @override
+  Widget build(BuildContext context) {
+    final ClayTokens clay = context.clay;
+    final Size size = MediaQuery.sizeOf(context);
+    final ExportacionVistaPrevia vistaPrevia = exportacion.vistaPrevia;
+    final bool sinVistaPrevia =
+        vistaPrevia.columnas.isEmpty || vistaPrevia.filas.isEmpty;
+    final String filas = exportacion.filas == 1
+        ? '1 fila exportada'
+        : '${exportacion.filas} filas exportadas';
+
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 1080,
+          maxHeight: size.height * 0.88,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .primary
+                          .withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      Icons.table_chart_rounded,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          exportacion.archivo,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style:
+                              Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                        ),
+                        const SizedBox(height: 4),
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 4,
+                          children: <Widget>[
+                            _EtiquetaExportacion(texto: filas),
+                            _EtiquetaExportacion(
+                              texto:
+                                  'Generado ${_fechaHoraEtiqueta(exportacion.generadoEn)}',
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Cerrar',
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              InputDecorator(
+                decoration: InputDecoration(
+                  prefixIcon: const Icon(Icons.link_rounded),
+                  labelText: 'Archivo guardado en Cloudflare R2',
+                  suffixIcon: IconButton(
+                    tooltip: 'Copiar URL',
+                    onPressed: () {
+                      Clipboard.setData(ClipboardData(text: exportacion.url));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('URL copiada')),
+                      );
+                    },
+                    icon: const Icon(Icons.content_copy_rounded),
+                  ),
+                ),
+                child: SelectableText(
+                  exportacion.url,
+                  maxLines: 1,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Expanded(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    border: Border.all(color: clay.border),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: sinVistaPrevia
+                        ? Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(24),
+                              child: Text(
+                                'El Excel no tiene filas para previsualizar.',
+                                textAlign: TextAlign.center,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodyMedium
+                                    ?.copyWith(color: clay.subtleText),
+                              ),
+                            ),
+                          )
+                        : _TablaVistaPreviaExcel(vistaPrevia: vistaPrevia),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Align(
+                alignment: Alignment.centerRight,
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.end,
+                  children: <Widget>[
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('Cerrar'),
+                    ),
+                    FilledButton.icon(
+                      onPressed: () {
+                        unawaited(onAbrirArchivo());
+                      },
+                      icon: const Icon(Icons.open_in_new_rounded),
+                      label: const Text('Abrir Excel'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _EtiquetaExportacion extends StatelessWidget {
+  const _EtiquetaExportacion({required this.texto});
+
+  final String texto;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: context.clay.surfaceHigh,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: context.clay.border),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        child: Text(
+          texto,
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: context.clay.subtleText,
+                fontWeight: FontWeight.w800,
+              ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TablaVistaPreviaExcel extends StatelessWidget {
+  const _TablaVistaPreviaExcel({required this.vistaPrevia});
+
+  final ExportacionVistaPrevia vistaPrevia;
+
+  @override
+  Widget build(BuildContext context) {
+    final ClayTokens clay = context.clay;
+    return Scrollbar(
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Scrollbar(
+          child: SingleChildScrollView(
+            child: DataTable(
+              headingRowColor: WidgetStatePropertyAll<Color>(
+                clay.surfaceHigh,
+              ),
+              headingTextStyle: Theme.of(context)
+                  .textTheme
+                  .labelMedium
+                  ?.copyWith(fontWeight: FontWeight.w900),
+              dataTextStyle: Theme.of(context).textTheme.bodySmall,
+              columnSpacing: 18,
+              columns: vistaPrevia.columnas
+                  .map(
+                    (String columna) => DataColumn(
+                      label: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 150),
+                        child: Text(
+                          columna,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ),
+                  )
+                  .toList(growable: false),
+              rows: vistaPrevia.filas
+                  .map(
+                    (List<Object?> fila) => DataRow(
+                      cells: List<DataCell>.generate(
+                        vistaPrevia.columnas.length,
+                        (int index) {
+                          final Object? valor =
+                              index < fila.length ? fila[index] : null;
+                          return DataCell(
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 180),
+                              child: Text(
+                                _textoCeldaExportacion(valor),
+                                maxLines: 3,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  )
+                  .toList(growable: false),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -4900,22 +5299,18 @@ class _CalculoCredito {
     required int diasIntervalo,
     required bool omitirDomingos,
   }) {
-    final double valorPrincipal = _redondearCredito(
-      math.max(0.0, _parseNumero(valor) ?? 0),
+    final double valorPrincipal = math.max(0.0, _parseNumero(valor) ?? 0);
+    final double porcentajeInteres = math.max(
+      0.0,
+      _parseNumero(interes) ?? 0,
     );
-    final double porcentajeInteres =
-        (math.max(0.0, _parseNumero(interes) ?? 0) * 10000).roundToDouble() /
-            10000;
     final int plazoDias = math.max(1, (_parseNumero(plazo) ?? 1).round());
     final int intervalo = math.max(1, diasIntervalo);
     final int numeroCuotas = math.max(1, (plazoDias / intervalo).ceil());
-    final double valorTotal = _redondearCredito(
-      valorPrincipal + valorPrincipal * (porcentajeInteres / 100),
-    );
-    final double valorInteres = _redondearCredito(
-      valorTotal - valorPrincipal,
-    );
-    final double valorCuota = _redondearCredito(valorTotal / numeroCuotas);
+    final double valorTotal =
+        valorPrincipal + valorPrincipal * (porcentajeInteres / 100);
+    final double valorInteres = valorTotal - valorPrincipal;
+    final double valorCuota = valorTotal / numeroCuotas;
     DateTime cursor = DateTime(
       fechaInicio.year,
       fechaInicio.month,
@@ -5730,6 +6125,69 @@ enum _FiltroMovimientoCaja {
   salidas,
 }
 
+class ExportacionExcel {
+  const ExportacionExcel({
+    required this.archivo,
+    required this.key,
+    required this.url,
+    required this.filas,
+    required this.generadoEn,
+    required this.vistaPrevia,
+  });
+
+  factory ExportacionExcel.fromJson(Map<String, dynamic> json) {
+    return ExportacionExcel(
+      archivo: json['archivo'] as String,
+      key: json['key'] as String? ?? '',
+      url: json['url'] as String,
+      filas: json['filas'] as int,
+      generadoEn: _fechaNullable(json['generadoEn']),
+      vistaPrevia: ExportacionVistaPrevia.fromJson(json['vistaPrevia']),
+    );
+  }
+
+  final String archivo;
+  final String key;
+  final String url;
+  final int filas;
+  final DateTime? generadoEn;
+  final ExportacionVistaPrevia vistaPrevia;
+}
+
+class ExportacionVistaPrevia {
+  const ExportacionVistaPrevia({
+    required this.columnas,
+    required this.filas,
+  });
+
+  factory ExportacionVistaPrevia.fromJson(Object? json) {
+    if (json is! Map<String, dynamic>) {
+      return const ExportacionVistaPrevia(
+        columnas: <String>[],
+        filas: <List<Object?>>[],
+      );
+    }
+
+    final Object? columnasRaw = json['columnas'];
+    final Object? filasRaw = json['filas'];
+
+    return ExportacionVistaPrevia(
+      columnas: columnasRaw is List<dynamic>
+          ? columnasRaw.map((Object? value) => value.toString()).toList()
+          : const <String>[],
+      filas: filasRaw is List<dynamic>
+          ? filasRaw
+              .whereType<List<dynamic>>()
+              .map((List<dynamic> fila) => List<Object?>.from(fila))
+              .toList()
+          : const <List<Object?>>[],
+    );
+  }
+
+  final List<String> columnas;
+  final List<List<Object?>> filas;
+}
+
 class Sesion {
   const Sesion({required this.token, required this.usuario});
 
@@ -6260,7 +6718,7 @@ double _doble(Object? value) {
     return value.toDouble();
   }
   if (value is String) {
-    return double.tryParse(value) ?? 0;
+    return _parseNumero(value) ?? 0;
   }
   return 0;
 }
@@ -6302,44 +6760,50 @@ String _fechaEtiqueta(DateTime? value) {
       '${meses[value.month - 1]} ${value.year}';
 }
 
+String _fechaHoraEtiqueta(DateTime? value) {
+  if (value == null) {
+    return '-';
+  }
+
+  final DateTime local = value.toLocal();
+  return '${local.day.toString().padLeft(2, '0')}/'
+      '${local.month.toString().padLeft(2, '0')}/'
+      '${local.year.toString().padLeft(4, '0')} '
+      '${local.hour.toString().padLeft(2, '0')}:'
+      '${local.minute.toString().padLeft(2, '0')}';
+}
+
+String _textoCeldaExportacion(Object? value) {
+  if (value == null) {
+    return '';
+  }
+  if (value is num) {
+    return _numero(value.toDouble()).replaceAll('.', ',');
+  }
+  return value.toString();
+}
+
 String _dinero(double value) {
   final bool negativo = value < 0;
-  final String raw = value.abs().toStringAsFixed(0);
+  final String raw = _decimalPreciso(value.abs());
+  final List<String> partes = raw.split('.');
+  final String entero = partes.first;
   final StringBuffer buffer = StringBuffer();
 
-  for (int i = 0; i < raw.length; i++) {
-    final int desdeFinal = raw.length - i;
-    buffer.write(raw[i]);
+  for (int i = 0; i < entero.length; i++) {
+    final int desdeFinal = entero.length - i;
+    buffer.write(entero[i]);
     if (desdeFinal > 1 && desdeFinal % 3 == 1) {
       buffer.write('.');
     }
   }
 
-  return '${negativo ? '-' : ''}\$${buffer.toString()}';
+  final String decimales = partes.length == 2 ? ',${partes.last}' : '';
+  return '${negativo ? '-' : ''}\$${buffer.toString()}$decimales';
 }
 
 String _dineroCredito(double value) {
-  final double redondeado = _redondearCredito(value);
-  final bool tieneDecimales = redondeado != redondeado.roundToDouble();
-  final String raw = redondeado.abs().toStringAsFixed(tieneDecimales ? 2 : 0);
-  final List<String> partes = raw.split('.');
-  final String entero = partes.first;
-  final StringBuffer agrupado = StringBuffer();
-
-  for (int i = 0; i < entero.length; i++) {
-    final int desdeFinal = entero.length - i;
-    agrupado.write(entero[i]);
-    if (desdeFinal > 1 && desdeFinal % 3 == 1) {
-      agrupado.write('.');
-    }
-  }
-
-  final String decimales = partes.length == 2 ? ',${partes.last}' : '';
-  return '${redondeado < 0 ? '-' : ''}\$${agrupado.toString()}$decimales';
-}
-
-double _redondearCredito(double value) {
-  return (value * 100).roundToDouble() / 100;
+  return _dinero(value);
 }
 
 String _etiquetaFrecuencia(FrecuenciaPago? frecuencia) {
@@ -6358,10 +6822,11 @@ String _etiquetaFrecuencia(FrecuenciaPago? frecuencia) {
 }
 
 String _numero(double value) {
-  if (value == value.roundToDouble()) {
-    return value.toStringAsFixed(0);
+  if (value == 0) {
+    return '0';
   }
-  return value.toStringAsFixed(2);
+
+  return '${value < 0 ? '-' : ''}${_decimalPreciso(value.abs())}';
 }
 
 double _leerMonto(String value) {
@@ -6369,7 +6834,7 @@ double _leerMonto(String value) {
   if (parsed == null || parsed <= 0) {
     throw const FormatException('Ingresa un monto mayor que cero');
   }
-  return (parsed * 100).roundToDouble() / 100;
+  return parsed;
 }
 
 double _leerPorcentaje(String value) {
@@ -6377,7 +6842,58 @@ double _leerPorcentaje(String value) {
   if (parsed == null || parsed < 0) {
     throw const FormatException('Ingresa un porcentaje válido');
   }
-  return (parsed * 10000).roundToDouble() / 10000;
+  return parsed;
+}
+
+String _decimalPreciso(double value) {
+  if (value == 0 || value.isNaN || value.isInfinite) {
+    return '0';
+  }
+
+  final String raw = value.toString().toLowerCase();
+  if (!raw.contains('e')) {
+    return _quitarCerosDecimales(raw);
+  }
+
+  return _quitarCerosDecimales(_expandirNotacionCientifica(raw));
+}
+
+String _expandirNotacionCientifica(String raw) {
+  final List<String> partes = raw.split('e');
+  final String mantisa = partes.first;
+  final int exponente = int.parse(partes.last);
+  final int punto = mantisa.indexOf('.');
+  final int posicionDecimal = punto == -1 ? mantisa.length : punto;
+  final String digitos = mantisa.replaceAll('.', '');
+  final int nuevaPosicion = posicionDecimal + exponente;
+
+  if (nuevaPosicion <= 0) {
+    final String ceros = ''.padLeft(-nuevaPosicion, '0');
+    return '0.$ceros$digitos';
+  }
+
+  if (nuevaPosicion >= digitos.length) {
+    final String ceros = ''.padLeft(nuevaPosicion - digitos.length, '0');
+    return '$digitos$ceros';
+  }
+
+  return '${digitos.substring(0, nuevaPosicion)}.'
+      '${digitos.substring(nuevaPosicion)}';
+}
+
+String _quitarCerosDecimales(String value) {
+  if (!value.contains('.')) {
+    return value;
+  }
+
+  var limpio = value;
+  while (limpio.endsWith('0')) {
+    limpio = limpio.substring(0, limpio.length - 1);
+  }
+  if (limpio.endsWith('.')) {
+    limpio = limpio.substring(0, limpio.length - 1);
+  }
+  return limpio.isEmpty ? '0' : limpio;
 }
 
 int _leerEnteroPositivo(String value) {

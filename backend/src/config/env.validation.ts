@@ -19,6 +19,11 @@ type ValidatedConfig = {
   BREVO_SMTP_PORT: number;
   BREVO_SMTP_USER?: string;
   BREVO_SMTP_PASSWORD?: string;
+  R2_ACCESS_KEY_ID?: string;
+  R2_ACCOUNT_ID?: string;
+  R2_BUCKET_NAME?: string;
+  R2_PUBLIC_URL?: string;
+  R2_SECRET_ACCESS_KEY?: string;
   YCLOUD_API_KEY?: string;
   YCLOUD_BASE_URL: string;
   YCLOUD_ENABLED: boolean;
@@ -91,6 +96,11 @@ export function validateEnv(config: RawConfig): ValidatedConfig {
 
   const ycloudBaseUrl = config.YCLOUD_BASE_URL ?? 'https://api.ycloud.com/v2';
   assertHttpUrl(ycloudBaseUrl, 'YCLOUD_BASE_URL');
+  const r2PublicUrl = optional(config.R2_PUBLIC_URL);
+
+  if (r2PublicUrl) {
+    assertHttpUrl(r2PublicUrl, 'R2_PUBLIC_URL');
+  }
 
   return {
     AUTH_TOKEN_SECRET: authTokenSecret,
@@ -125,6 +135,11 @@ export function validateEnv(config: RawConfig): ValidatedConfig {
     ),
     BREVO_SMTP_USER: optional(config.BREVO_SMTP_USER),
     BREVO_SMTP_PASSWORD: optional(config.BREVO_SMTP_PASSWORD),
+    R2_ACCESS_KEY_ID: optional(config.R2_ACCESS_KEY_ID),
+    R2_ACCOUNT_ID: optional(config.R2_ACCOUNT_ID),
+    R2_BUCKET_NAME: optional(config.R2_BUCKET_NAME),
+    R2_PUBLIC_URL: r2PublicUrl,
+    R2_SECRET_ACCESS_KEY: optional(config.R2_SECRET_ACCESS_KEY),
     YCLOUD_API_KEY: optional(config.YCLOUD_API_KEY),
     YCLOUD_BASE_URL: ycloudBaseUrl,
     YCLOUD_ENABLED: ycloudEnabled,

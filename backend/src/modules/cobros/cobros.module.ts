@@ -5,10 +5,11 @@ import { AuthModule } from '../auth/auth.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { CobrosController } from './cobros.controller';
 import { CobrosService } from './cobros.service';
+import { ExportacionesR2Service } from './exportaciones-r2.service';
 
 @Module({
   imports: [AuthModule, PrismaModule, NotificationsModule],
   controllers: [CobrosController],
-  providers: [CobrosService],
+  providers: [CobrosService, ExportacionesR2Service],
 })
 export class CobrosModule {}

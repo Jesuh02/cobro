@@ -36,8 +36,11 @@ class ApiClient {
     return body;
   }
 
-  Future<Map<String, dynamic>> getObject(String path) async {
-    final response = await _client.get(_uri(path), headers: _headers);
+  Future<Map<String, dynamic>> getObject(
+    String path, {
+    Map<String, String?> query = const <String, String?>{},
+  }) async {
+    final response = await _client.get(_uri(path, query), headers: _headers);
     return _decodeObject(response);
   }
 

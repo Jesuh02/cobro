@@ -82,6 +82,13 @@ type PresupuestoDisponibleRow = {
   presupuesto: Prisma.Decimal;
 };
 
+type CajaResumenPago = {
+  cajaMenorId: string;
+  nombre: string;
+  responsableUsuarioId: string;
+  monedaCodigo: string;
+};
+
 type CuotaCreditoRow = {
   credito_cuota_id: string;
   numero_cuota: number;
@@ -1094,18 +1101,91 @@ export class CobrosService {
       ];
     }
 
-    const movimientos = await this.prisma.cajaMenorMovimiento.findMany({
-      where,
-      include: {
-        cajaMenor: true,
-        tipoMovimientoCaja: true,
-        usuario: true,
-      },
-      orderBy: [{ fechaMovimiento: 'desc' }, { creadoEn: 'desc' }],
-      take: 100,
-    });
+    const cajaFiltro = query.cajaMenorId
+      ? await this.prisma.cajaMenor.findUnique({
+          where: { cajaMenorId: query.cajaMenorId },
+        })
+      : null;
+    const cajaFiltroVisible =
+      cajaFiltro &&
+      (this.esAdministrador(usuario) ||
+        cajaFiltro.responsableUsuarioId === usuario.usuarioId)
+        ? cajaFiltro
+        : null;
+    const pagoWhere: Prisma.PagoWhereInput = {};
 
-    return movimientos.map((movimiento) => ({
+    if (query.cajaMenorId && !cajaFiltroVisible) {
+      pagoWhere.pagoId = '00000000-0000-0000-0000-000000000000';
+    } else if (cajaFiltroVisible) {
+      pagoWhere.monedaCodigo = cajaFiltroVisible.monedaCodigo;
+      pagoWhere.ruta = {
+        responsableUsuarioId: cajaFiltroVisible.responsableUsuarioId,
+      };
+    } else if (!this.esAdministrador(usuario)) {
+      pagoWhere.ruta = { responsableUsuarioId: usuario.usuarioId };
+    }
+
+    if (search) {
+      pagoWhere.OR = [
+        {
+          cliente: {
+            nombreCompleto: { contains: search, mode: 'insensitive' },
+          },
+        },
+        {
+          medioPago: {
+            nombre: { contains: search, mode: 'insensitive' },
+          },
+        },
+        { ruta: { nombre: { contains: search, mode: 'insensitive' } } },
+        { referenciaExterna: { contains: search, mode: 'insensitive' } },
+        { observacion: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    const [movimientos, pagos, tipoRecaudo] = await Promise.all([
+      this.prisma.cajaMenorMovimiento.findMany({
+        where,
+        include: {
+          cajaMenor: true,
+          tipoMovimientoCaja: true,
+          usuario: true,
+        },
+        orderBy: [{ fechaMovimiento: 'desc' }, { creadoEn: 'desc' }],
+        take: 100,
+      }),
+      this.prisma.pago.findMany({
+        where: pagoWhere,
+        include: {
+          cliente: true,
+          cobrador: true,
+          medioPago: true,
+          ruta: true,
+        },
+        orderBy: [{ fechaPago: 'desc' }, { creadoEn: 'desc' }],
+        take: 100,
+      }),
+      this.prisma.tipoMovimientoCaja.findUnique({
+        where: { codigo: 'RECAUDO' },
+      }),
+    ]);
+
+    const cajasPago = await this.cajasParaPagos(
+      pagos.map((pago) => ({
+        responsableUsuarioId: pago.ruta.responsableUsuarioId,
+        monedaCodigo: pago.monedaCodigo,
+      })),
+      cajaFiltroVisible
+        ? {
+            cajaMenorId: cajaFiltroVisible.cajaMenorId,
+            nombre: cajaFiltroVisible.nombre,
+            responsableUsuarioId: cajaFiltroVisible.responsableUsuarioId,
+            monedaCodigo: cajaFiltroVisible.monedaCodigo,
+          }
+        : null,
+    );
+
+    const movimientosCaja = movimientos.map((movimiento) => ({
       id: movimiento.cajaMenorMovimientoId,
       cajaMenorId: movimiento.cajaMenorId,
       cajaMenor: movimiento.cajaMenor.nombre,
@@ -1129,6 +1209,46 @@ export class CobrosService {
       referenciaId: movimiento.referenciaId,
       creadoEn: movimiento.creadoEn.toISOString(),
     }));
+
+    const movimientosPago = pagos.map((pago) => {
+      const caja = cajasPago.get(
+        this.claveCajaPago(pago.ruta.responsableUsuarioId, pago.monedaCodigo),
+      );
+      const monto = this.decimalANumero(pago.totalPagado);
+
+      return {
+        id: `pago-${pago.pagoId}`,
+        cajaMenorId: caja?.cajaMenorId ?? null,
+        cajaMenor: caja?.nombre ?? pago.ruta.nombre,
+        tipoMovimiento: {
+          id: tipoRecaudo?.tipoMovimientoCajaId ?? 0,
+          codigo: tipoRecaudo?.codigo ?? 'RECAUDO',
+          nombre: tipoRecaudo?.nombre ?? 'Recaudo',
+          naturaleza: tipoRecaudo?.naturaleza ?? 'E',
+        },
+        usuario: pago.cobrador ? this.formatearUsuario(pago.cobrador) : null,
+        fechaMovimiento: this.fechaIso(pago.fechaPago),
+        monto,
+        montoConNaturaleza: monto,
+        motivo: `Pago del usuario ${pago.cliente.nombreCompleto}`,
+        referenciaTabla: 'pago',
+        referenciaId: pago.pagoId,
+        creadoEn: pago.creadoEn.toISOString(),
+      };
+    });
+
+    return [...movimientosCaja, ...movimientosPago]
+      .sort((left, right) => {
+        const fecha =
+          Date.parse(right.fechaMovimiento) - Date.parse(left.fechaMovimiento);
+
+        if (fecha !== 0) {
+          return fecha;
+        }
+
+        return Date.parse(right.creadoEn) - Date.parse(left.creadoEn);
+      })
+      .slice(0, 100);
   }
 
   async crearMovimientoCaja(
@@ -1788,6 +1908,69 @@ export class CobrosService {
     }
 
     this.asegurarAccesoCredito(credito, usuario);
+  }
+
+  private async cajasParaPagos(
+    pagos: Array<{ responsableUsuarioId: string; monedaCodigo: string }>,
+    cajaFiltro: CajaResumenPago | null,
+  ) {
+    const cajas = new Map<string, CajaResumenPago>();
+
+    if (cajaFiltro) {
+      cajas.set(
+        this.claveCajaPago(
+          cajaFiltro.responsableUsuarioId,
+          cajaFiltro.monedaCodigo,
+        ),
+        cajaFiltro,
+      );
+      return cajas;
+    }
+
+    const claves = new Set(
+      pagos.map((pago) =>
+        this.claveCajaPago(pago.responsableUsuarioId, pago.monedaCodigo),
+      ),
+    );
+
+    if (claves.size === 0) {
+      return cajas;
+    }
+
+    const responsables = [
+      ...new Set(pagos.map((pago) => pago.responsableUsuarioId)),
+    ];
+    const monedas = [...new Set(pagos.map((pago) => pago.monedaCodigo))];
+    const candidatas = await this.prisma.cajaMenor.findMany({
+      where: {
+        responsableUsuarioId: { in: responsables },
+        monedaCodigo: { in: monedas },
+        activa: true,
+      },
+      orderBy: { creadaEn: 'asc' },
+    });
+
+    for (const caja of candidatas) {
+      const clave = this.claveCajaPago(
+        caja.responsableUsuarioId,
+        caja.monedaCodigo,
+      );
+
+      if (claves.has(clave) && !cajas.has(clave)) {
+        cajas.set(clave, {
+          cajaMenorId: caja.cajaMenorId,
+          nombre: caja.nombre,
+          responsableUsuarioId: caja.responsableUsuarioId,
+          monedaCodigo: caja.monedaCodigo,
+        });
+      }
+    }
+
+    return cajas;
+  }
+
+  private claveCajaPago(responsableUsuarioId: string, monedaCodigo: string) {
+    return `${responsableUsuarioId}:${monedaCodigo}`;
   }
 
   private asegurarAccesoCredito(

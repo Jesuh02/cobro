@@ -93,10 +93,13 @@ class _HomePageState extends State<HomePage> {
   bool _guardando = false;
   bool _mostrarContrasenaLogin = false;
   bool _menuLateralExpandido = true;
+  _FiltroMovimientoCaja _filtroMovimientoCaja = _FiltroMovimientoCaja.todos;
   final Set<String> _cuotasEnPago = <String>{};
   String? _error;
   OverlayEntry? _mensajeOverlay;
   Timer? _mensajeTimer;
+  DateTime? _fechaCajaDesde;
+  DateTime? _fechaCajaHasta;
 
   String? _rutaFiltroId;
   String? _clienteCreditoId;
@@ -861,7 +864,7 @@ class _HomePageState extends State<HomePage> {
         _catalogos?.cajasMenoresActivas.isNotEmpty ?? false;
     return _Pagina(
       titulo: 'Caja menor',
-      subtitulo: 'Movimientos registrados en Supabase',
+      subtitulo: 'Movimientos y pagos registrados en Supabase',
       error: _error,
       onRefresh: _cargar,
       acciones: <Widget>[
@@ -888,16 +891,18 @@ class _HomePageState extends State<HomePage> {
           controller: _buscarCajaController,
           decoration: const InputDecoration(
             prefixIcon: Icon(Icons.search_rounded),
-            labelText: 'Buscar movimiento',
+            labelText: 'Buscar movimiento o pago',
           ),
         ),
+        const SizedBox(height: 12),
+        _construirFiltrosCaja(context),
         const SizedBox(height: 16),
         if (movimientos.isEmpty)
           _EstadoVacio(
             icono: Icons.savings_outlined,
             titulo: hayCajaMenor ? 'Sin movimientos' : 'Sin caja menor',
             mensaje: hayCajaMenor
-                ? 'No hay movimientos de caja menor para mostrar.'
+                ? 'No hay movimientos ni pagos para mostrar.'
                 : 'Crea una caja menor para comenzar a registrar movimientos.',
             accion: FilledButton.icon(
               onPressed: _guardando
@@ -921,6 +926,110 @@ class _HomePageState extends State<HomePage> {
       ],
     );
   }
+
+  Widget _construirFiltrosCaja(BuildContext context) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: <Widget>[
+        SegmentedButton<_FiltroMovimientoCaja>(
+          showSelectedIcon: false,
+          segments: const <ButtonSegment<_FiltroMovimientoCaja>>[
+            ButtonSegment<_FiltroMovimientoCaja>(
+              value: _FiltroMovimientoCaja.todos,
+              icon: Icon(Icons.receipt_long_rounded),
+              label: Text('Todos'),
+            ),
+            ButtonSegment<_FiltroMovimientoCaja>(
+              value: _FiltroMovimientoCaja.entradas,
+              icon: Icon(Icons.arrow_upward_rounded),
+              label: Text('Entradas'),
+            ),
+            ButtonSegment<_FiltroMovimientoCaja>(
+              value: _FiltroMovimientoCaja.salidas,
+              icon: Icon(Icons.arrow_downward_rounded),
+              label: Text('Salidas'),
+            ),
+          ],
+          selected: <_FiltroMovimientoCaja>{_filtroMovimientoCaja},
+          onSelectionChanged: (Set<_FiltroMovimientoCaja> value) {
+            setState(() => _filtroMovimientoCaja = value.first);
+          },
+        ),
+        OutlinedButton.icon(
+          onPressed: () => _seleccionarFechaCaja(esDesde: true),
+          icon: const Icon(Icons.calendar_month_rounded),
+          label: Text(
+            _fechaCajaDesde == null
+                ? 'Desde'
+                : 'Desde ${_fechaEtiqueta(_fechaCajaDesde)}',
+          ),
+        ),
+        OutlinedButton.icon(
+          onPressed: () => _seleccionarFechaCaja(esDesde: false),
+          icon: const Icon(Icons.event_available_rounded),
+          label: Text(
+            _fechaCajaHasta == null
+                ? 'Hasta'
+                : 'Hasta ${_fechaEtiqueta(_fechaCajaHasta)}',
+          ),
+        ),
+        if (_hayFiltrosCaja)
+          Tooltip(
+            message: 'Limpiar filtros',
+            child: IconButton.outlined(
+              onPressed: _limpiarFiltrosCaja,
+              icon: const Icon(Icons.filter_alt_off_rounded),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Future<void> _seleccionarFechaCaja({required bool esDesde}) async {
+    final DateTime ahora = DateTime.now();
+    final DateTime? actual = esDesde ? _fechaCajaDesde : _fechaCajaHasta;
+    final DateTime? selected = await showDatePicker(
+      context: context,
+      initialDate: actual ?? ahora,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+
+    if (selected == null) {
+      return;
+    }
+
+    setState(() {
+      if (esDesde) {
+        _fechaCajaDesde = selected;
+        if (_fechaCajaHasta != null &&
+            _soloFecha(_fechaCajaHasta!).isBefore(_soloFecha(selected))) {
+          _fechaCajaHasta = selected;
+        }
+      } else {
+        _fechaCajaHasta = selected;
+        if (_fechaCajaDesde != null &&
+            _soloFecha(_fechaCajaDesde!).isAfter(_soloFecha(selected))) {
+          _fechaCajaDesde = selected;
+        }
+      }
+    });
+  }
+
+  void _limpiarFiltrosCaja() {
+    setState(() {
+      _filtroMovimientoCaja = _FiltroMovimientoCaja.todos;
+      _fechaCajaDesde = null;
+      _fechaCajaHasta = null;
+    });
+  }
+
+  bool get _hayFiltrosCaja =>
+      _filtroMovimientoCaja != _FiltroMovimientoCaja.todos ||
+      _fechaCajaDesde != null ||
+      _fechaCajaHasta != null;
 
   Widget _construirClientes(BuildContext context) {
     final List<Cliente> clientes = _filtrarClientes();
@@ -1418,18 +1527,51 @@ class _HomePageState extends State<HomePage> {
 
   List<MovimientoCaja> _filtrarMovimientosCaja() {
     final String consulta = _buscarCajaController.text.trim().toLowerCase();
-    if (consulta.isEmpty) {
-      return _movimientosCaja;
-    }
+    final DateTime? desde =
+        _fechaCajaDesde == null ? null : _soloFecha(_fechaCajaDesde!);
+    final DateTime? hasta =
+        _fechaCajaHasta == null ? null : _soloFecha(_fechaCajaHasta!);
 
-    return _movimientosCaja
-        .where(
-          (MovimientoCaja movimiento) =>
-              movimiento.cajaMenor.toLowerCase().contains(consulta) ||
-              movimiento.motivo.toLowerCase().contains(consulta) ||
-              movimiento.tipoMovimiento.nombre.toLowerCase().contains(consulta),
-        )
-        .toList(growable: false);
+    return _movimientosCaja.where(
+      (MovimientoCaja movimiento) {
+        final String naturaleza =
+            movimiento.tipoMovimiento.naturaleza.toUpperCase();
+        final DateTime fechaMovimiento = _soloFecha(movimiento.fechaMovimiento);
+
+        if (_filtroMovimientoCaja == _FiltroMovimientoCaja.entradas &&
+            naturaleza != 'E') {
+          return false;
+        }
+
+        if (_filtroMovimientoCaja == _FiltroMovimientoCaja.salidas &&
+            naturaleza != 'S') {
+          return false;
+        }
+
+        if (desde != null && fechaMovimiento.isBefore(desde)) {
+          return false;
+        }
+
+        if (hasta != null && fechaMovimiento.isAfter(hasta)) {
+          return false;
+        }
+
+        if (consulta.isEmpty) {
+          return true;
+        }
+
+        return movimiento.cajaMenor.toLowerCase().contains(consulta) ||
+            movimiento.motivo.toLowerCase().contains(consulta) ||
+            movimiento.tipoMovimiento.nombre.toLowerCase().contains(consulta) ||
+            (movimiento.usuario?.nombreCompleto ?? '')
+                .toLowerCase()
+                .contains(consulta);
+      },
+    ).toList(growable: false);
+  }
+
+  DateTime _soloFecha(DateTime value) {
+    return DateTime(value.year, value.month, value.day);
   }
 
   PresupuestoItem? _presupuestoPorCaja(String cajaMenorId) {
@@ -3375,7 +3517,7 @@ class _TarjetaTotalPresupuesto extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               Text(
-                'Caja menor + Recaudado - Gastos - Créditos',
+                'Caja menor + Recaudado - Gastos',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: Colors.white.withValues(alpha: 0.88),
                       fontWeight: FontWeight.w700,
@@ -3465,7 +3607,7 @@ class _ComposicionPresupuesto extends StatelessWidget {
       _DatoPresupuesto(
         icono: Icons.trending_down_rounded,
         etiqueta: 'Créditos',
-        valor: _dinero(-totales.creditos),
+        valor: _dinero(totales.creditos),
         color: CobroAppTheme.danger,
       ),
     ];
@@ -3885,7 +4027,7 @@ class _PresupuestoItem extends StatelessWidget {
           _LineaMonto(label: 'Caja menor', value: item.cajaMenor),
           _LineaMonto(label: 'Recaudado', value: item.recaudado),
           _LineaMonto(label: 'Gastos', value: -item.gastos),
-          _LineaMonto(label: 'Créditos', value: -item.creditos),
+          _LineaMonto(label: 'Créditos', value: item.creditos),
           const Divider(height: 20),
           _LineaMonto(
             label: 'Presupuesto',
@@ -5375,15 +5517,24 @@ class _MovimientoCajaItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool salida = movimiento.tipoMovimiento.naturaleza == 'S';
     final Color color = salida ? CobroAppTheme.danger : CobroAppTheme.success;
+    final String detalle = <String>[
+      movimiento.cajaMenor,
+      movimiento.tipoMovimiento.nombre,
+      _fechaEtiqueta(movimiento.fechaMovimiento),
+      if (movimiento.usuario != null) movimiento.usuario!.nombreCompleto,
+    ].join(' - ');
+
     return ClaySurface(
       radius: 14,
       padding: const EdgeInsets.all(16),
       child: Row(
         children: <Widget>[
           ClayIcon(
-            icon: salida
-                ? Icons.arrow_downward_rounded
-                : Icons.arrow_upward_rounded,
+            icon: movimiento.esPago
+                ? Icons.payments_rounded
+                : salida
+                    ? Icons.arrow_downward_rounded
+                    : Icons.arrow_upward_rounded,
             backgroundColor: color.withValues(alpha: 0.12),
             color: color,
           ),
@@ -5402,7 +5553,7 @@ class _MovimientoCajaItem extends StatelessWidget {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  '${movimiento.cajaMenor} · ${movimiento.tipoMovimiento.nombre} · ${_fechaEtiqueta(movimiento.fechaMovimiento)}',
+                  detalle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -5569,6 +5720,12 @@ enum _AccionSesion {
   cambiarTema,
   crearEmpleado,
   cerrarSesion,
+}
+
+enum _FiltroMovimientoCaja {
+  todos,
+  entradas,
+  salidas,
 }
 
 class Sesion {
@@ -5936,9 +6093,13 @@ class MovimientoCaja {
     required this.monto,
     required this.montoConNaturaleza,
     required this.motivo,
+    this.usuario,
+    this.referenciaTabla,
+    this.referenciaId,
   });
 
   factory MovimientoCaja.fromJson(Map<String, dynamic> json) {
+    final Object? usuario = json['usuario'];
     return MovimientoCaja(
       id: json['id'] as String,
       cajaMenor: json['cajaMenor'] as String,
@@ -5949,6 +6110,11 @@ class MovimientoCaja {
       monto: _doble(json['monto']),
       montoConNaturaleza: _doble(json['montoConNaturaleza']),
       motivo: json['motivo'] as String,
+      usuario: usuario is Map<String, dynamic>
+          ? UsuarioCatalogo.fromJson(usuario)
+          : null,
+      referenciaTabla: json['referenciaTabla'] as String?,
+      referenciaId: json['referenciaId'] as String?,
     );
   }
 
@@ -5959,6 +6125,11 @@ class MovimientoCaja {
   final double monto;
   final double montoConNaturaleza;
   final String motivo;
+  final UsuarioCatalogo? usuario;
+  final String? referenciaTabla;
+  final String? referenciaId;
+
+  bool get esPago => referenciaTabla == 'pago';
 }
 
 class Presupuesto {

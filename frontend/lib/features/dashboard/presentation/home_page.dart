@@ -37,6 +37,7 @@ class _HomePageState extends State<HomePage> {
   static const double _mobileBreakpoint = 760;
   static const String _interesCreditoPredeterminado = '20';
   static const String _plazoCreditoPredeterminado = '30';
+  static const String _todasLasCajasFiltro = '__todas_las_cajas__';
   static const List<_DestinoMenu> _destinosMenu = <_DestinoMenu>[
     _DestinoMenu(
       icono: Icons.home_outlined,
@@ -66,6 +67,8 @@ class _HomePageState extends State<HomePage> {
   ];
 
   final TextEditingController _buscarRutaController = TextEditingController();
+  final TextEditingController _buscarCreditoController =
+      TextEditingController();
   final TextEditingController _buscarCajaController = TextEditingController();
   final TextEditingController _buscarClienteController =
       TextEditingController();
@@ -87,6 +90,7 @@ class _HomePageState extends State<HomePage> {
   Presupuesto? _presupuesto;
   List<Cliente> _clientes = const <Cliente>[];
   List<CobroRuta> _cobrosRuta = const <CobroRuta>[];
+  List<CreditoRegistro> _creditos = const <CreditoRegistro>[];
   List<MovimientoCaja> _movimientosCaja = const <MovimientoCaja>[];
 
   int _seccionActual = 0;
@@ -95,6 +99,8 @@ class _HomePageState extends State<HomePage> {
   bool _exportando = false;
   bool _mostrarContrasenaLogin = false;
   bool _menuLateralExpandido = true;
+  _FiltroEstadoRuta _filtroEstadoRuta = _FiltroEstadoRuta.todos;
+  _FiltroEstadoCredito _filtroCredito = _FiltroEstadoCredito.todos;
   _FiltroMovimientoCaja _filtroMovimientoCaja = _FiltroMovimientoCaja.todos;
   final Set<String> _cuotasEnPago = <String>{};
   String? _error;
@@ -104,6 +110,9 @@ class _HomePageState extends State<HomePage> {
   int _cargaSerial = 0;
   DateTime? _fechaCajaDesde;
   DateTime? _fechaCajaHasta;
+  DateTime? _fechaCreditoDesde;
+  DateTime? _fechaCreditoHasta;
+  String? _cajaMenorFiltroId;
 
   String? _rutaFiltroId;
   String? _clienteCreditoId;
@@ -120,6 +129,7 @@ class _HomePageState extends State<HomePage> {
     _apiClient = widget.apiClient ?? ApiClient(baseUrl: widget.apiBaseUrl);
     _cerrarApiClientAlSalir = widget.apiClient == null;
     _buscarRutaController.addListener(_refrescar);
+    _buscarCreditoController.addListener(_refrescar);
     _buscarCajaController.addListener(_refrescar);
     _buscarClienteController.addListener(_refrescar);
   }
@@ -133,6 +143,7 @@ class _HomePageState extends State<HomePage> {
       _apiClient.close();
     }
     _buscarRutaController.dispose();
+    _buscarCreditoController.dispose();
     _buscarCajaController.dispose();
     _buscarClienteController.dispose();
     _valorCreditoController.dispose();
@@ -720,14 +731,15 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _construirRutaActiva(BuildContext context) {
+    final List<CobroRuta> cobrosBase = _filtrarCobros(incluirEstado: false);
     final List<CobroRuta> cobros = _filtrarCobros();
-    final int atrasados = cobros
+    final int atrasados = cobrosBase
         .where((CobroRuta cobro) => cobro.estadoCobro == EstadoCobro.atrasado)
         .length;
-    final int pendientes = cobros
+    final int pendientes = cobrosBase
         .where((CobroRuta cobro) => cobro.estadoCobro == EstadoCobro.pendiente)
         .length;
-    final int alDia = cobros
+    final int alDia = cobrosBase
         .where((CobroRuta cobro) => cobro.estadoCobro == EstadoCobro.alDia)
         .length;
 
@@ -752,6 +764,14 @@ class _HomePageState extends State<HomePage> {
           alDia: alDia,
           pendientes: pendientes,
           atrasados: atrasados,
+          filtro: _filtroEstadoRuta,
+          onFiltroChanged: (_FiltroEstadoRuta filtro) {
+            setState(() {
+              _filtroEstadoRuta = _filtroEstadoRuta == filtro
+                  ? _FiltroEstadoRuta.todos
+                  : filtro;
+            });
+          },
         ),
         const SizedBox(height: 16),
         if (cobros.isEmpty)
@@ -787,6 +807,9 @@ class _HomePageState extends State<HomePage> {
 
   Widget _construirNuevoCredito(BuildContext context) {
     final Catalogos? catalogos = _catalogos;
+    final List<CreditoRegistro> creditos = _filtrarCreditos();
+    final bool hayCreditoActivo =
+        _creditos.any((CreditoRegistro credito) => credito.activo);
     final bool listo = catalogos != null &&
         _clientes.isNotEmpty &&
         catalogos.frecuenciasPago.isNotEmpty &&
@@ -799,12 +822,26 @@ class _HomePageState extends State<HomePage> {
     final bool faltanClientes = _clientes.isEmpty;
 
     return _Pagina(
-      titulo: 'Nuevo crédito',
-      subtitulo: 'Plan de pago y cuotas generadas por la base',
+      titulo: 'Credito',
+      subtitulo: 'Creacion, refinanciacion e historial',
       error: _error,
       onRefresh: _cargar,
+      acciones: <Widget>[
+        OutlinedButton.icon(
+          onPressed: _guardando || !hayCreditoActivo
+              ? null
+              : _abrirSeleccionRefinanciacion,
+          icon: const Icon(Icons.currency_exchange_rounded),
+          label: const Text('Refinanciar'),
+        ),
+        FilledButton.icon(
+          onPressed: _guardando ? null : _abrirCrearCreditoModal,
+          icon: const Icon(Icons.add_business_rounded),
+          label: const Text('Crear credito'),
+        ),
+      ],
       children: <Widget>[
-        if (!listo)
+        if (!listo && _creditos.isEmpty)
           _EstadoVacio(
             icono: Icons.add_business_outlined,
             titulo: 'Faltan datos base',
@@ -816,50 +853,112 @@ class _HomePageState extends State<HomePage> {
               icon: const Icon(Icons.add_business_rounded),
               label: const Text('Añadir crédito'),
             ),
+          ),
+        TextField(
+          controller: _buscarCreditoController,
+          decoration: const InputDecoration(
+            prefixIcon: Icon(Icons.search_rounded),
+            labelText: 'Buscar credito, cliente o ruta',
+          ),
+        ),
+        const SizedBox(height: 12),
+        _construirFiltrosCredito(context),
+        const SizedBox(height: 16),
+        if (creditos.isEmpty)
+          _EstadoVacio(
+            icono: Icons.request_quote_outlined,
+            titulo: 'Sin creditos',
+            mensaje: 'No hay creditos para mostrar con el filtro actual.',
+            accion: FilledButton.icon(
+              onPressed: _guardando ? null : _abrirCrearCreditoModal,
+              icon: const Icon(Icons.add_business_rounded),
+              label: const Text('Crear credito'),
+            ),
           )
         else
-          _FormularioCredito(
-            clientes: _clientes,
-            rutas: catalogos.rutasAbiertas,
-            monedas: catalogos.monedas,
-            frecuencias: catalogos.frecuenciasPago,
-            cajasMenores: catalogos.cajasMenoresActivas,
-            clienteId: _clienteCreditoId,
-            rutaId: _rutaCreditoId,
-            monedaCodigo: _monedaCreditoCodigo,
-            frecuenciaPagoId: _frecuenciaPagoId,
-            cajaMenorId: _cajaMenorCreditoId,
-            fechaInicio: _fechaInicioCredito,
-            omitirDomingos: _omitirDomingos,
-            valorController: _valorCreditoController,
-            interesController: _interesController,
-            plazoController: _plazoController,
-            observacionController: _observacionCreditoController,
-            guardando: _guardando,
-            onClienteChanged: (String? value) {
-              setState(() => _clienteCreditoId = value);
-            },
-            onRutaChanged: (String? value) {
-              setState(() => _rutaCreditoId = value);
-            },
-            onMonedaChanged: (String? value) {
-              setState(() => _monedaCreditoCodigo = value);
-            },
-            onFrecuenciaChanged: (int? value) {
-              setState(() => _frecuenciaPagoId = value);
-            },
-            onCajaMenorChanged: (String? value) {
-              setState(() => _cajaMenorCreditoId = value);
-            },
-            onFechaChanged: (DateTime value) {
-              setState(() => _fechaInicioCredito = value);
-            },
-            onOmitirDomingosChanged: (bool value) {
-              setState(() => _omitirDomingos = value);
-            },
-            onCrear: () {
-              _crearCredito();
-            },
+          ...creditos.map(
+            (CreditoRegistro credito) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _TarjetaCreditoRegistro(
+                credito: credito,
+                esAdministrador: _usuarioSesion?.esAdministrador ?? false,
+                onModificar: () => _abrirModificarCredito(credito),
+                onEliminar: () => _confirmarEliminarCredito(credito),
+                onRefinanciar: credito.activo && !_guardando
+                    ? () => _abrirRefinanciarCredito(credito)
+                    : null,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _construirFiltrosCredito(BuildContext context) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: <Widget>[
+        SegmentedButton<_FiltroEstadoCredito>(
+          showSelectedIcon: false,
+          segments: const <ButtonSegment<_FiltroEstadoCredito>>[
+            ButtonSegment<_FiltroEstadoCredito>(
+              value: _FiltroEstadoCredito.todos,
+              icon: Icon(Icons.receipt_long_rounded),
+              label: Text('Todos'),
+            ),
+            ButtonSegment<_FiltroEstadoCredito>(
+              value: _FiltroEstadoCredito.activos,
+              icon: Icon(Icons.check_circle_outline_rounded),
+              label: Text('Activos'),
+            ),
+            ButtonSegment<_FiltroEstadoCredito>(
+              value: _FiltroEstadoCredito.inactivos,
+              icon: Icon(Icons.pause_circle_outline_rounded),
+              label: Text('Inactivos'),
+            ),
+          ],
+          selected: <_FiltroEstadoCredito>{_filtroCredito},
+          onSelectionChanged: (Set<_FiltroEstadoCredito> value) {
+            setState(() => _filtroCredito = value.first);
+          },
+        ),
+        OutlinedButton.icon(
+          onPressed: () => _seleccionarFechaCredito(esDesde: true),
+          icon: const Icon(Icons.calendar_month_rounded),
+          label: Text(
+            _fechaCreditoDesde == null
+                ? 'Desde'
+                : 'Desde ${_fechaEtiqueta(_fechaCreditoDesde)}',
+          ),
+        ),
+        OutlinedButton.icon(
+          onPressed: () => _seleccionarFechaCredito(esDesde: false),
+          icon: const Icon(Icons.event_available_rounded),
+          label: Text(
+            _fechaCreditoHasta == null
+                ? 'Hasta'
+                : 'Hasta ${_fechaEtiqueta(_fechaCreditoHasta)}',
+          ),
+        ),
+        OutlinedButton.icon(
+          onPressed: _exportando ? null : _exportarCreditos,
+          icon: _exportando
+              ? const SizedBox.square(
+                  dimension: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.file_download_outlined),
+          label: Text(_exportando ? 'Exportando' : 'Exportar'),
+        ),
+        if (_hayFiltrosCredito)
+          Tooltip(
+            message: 'Limpiar filtros',
+            child: IconButton.outlined(
+              onPressed: _limpiarFiltrosCredito,
+              icon: const Icon(Icons.filter_alt_off_rounded),
+            ),
           ),
       ],
     );
@@ -927,7 +1026,12 @@ class _HomePageState extends State<HomePage> {
           ...movimientos.map(
             (MovimientoCaja movimiento) => Padding(
               padding: const EdgeInsets.only(bottom: 10),
-              child: _MovimientoCajaItem(movimiento: movimiento),
+              child: _MovimientoCajaItem(
+                movimiento: movimiento,
+                esAdministrador: _usuarioSesion?.esAdministrador ?? false,
+                onModificar: () => _abrirEditarMovimientoCaja(movimiento),
+                onEliminar: () => _confirmarEliminarMovimientoCaja(movimiento),
+              ),
             ),
           ),
       ],
@@ -935,11 +1039,60 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _construirFiltrosCaja(BuildContext context) {
+    final List<CajaMenorCatalogo> cajas =
+        _catalogos?.cajasMenores ?? const <CajaMenorCatalogo>[];
+    final bool filtroCajaValido = cajas.any(
+      (CajaMenorCatalogo caja) => caja.id == _cajaMenorFiltroId,
+    );
+
     return Wrap(
       spacing: 8,
       runSpacing: 8,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: <Widget>[
+        if (cajas.isNotEmpty)
+          SizedBox(
+            width: 260,
+            child: DropdownButtonFormField<String>(
+              key: ValueKey<String>(
+                'filtro-caja-${_cajaMenorFiltroId ?? _todasLasCajasFiltro}',
+              ),
+              initialValue: filtroCajaValido
+                  ? _cajaMenorFiltroId
+                  : _todasLasCajasFiltro,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: 'Caja',
+                prefixIcon: Icon(Icons.account_balance_wallet_outlined),
+              ),
+              items: <DropdownMenuItem<String>>[
+                const DropdownMenuItem<String>(
+                  value: _todasLasCajasFiltro,
+                  child: Text('Todas las cajas'),
+                ),
+                ...cajas.map(
+                  (CajaMenorCatalogo caja) => DropdownMenuItem<String>(
+                    value: caja.id,
+                    child: Text(
+                      caja.nombre,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+              ],
+              onChanged: (String? value) {
+                if (value == null) {
+                  return;
+                }
+
+                setState(() {
+                  _cajaMenorFiltroId =
+                      value == _todasLasCajasFiltro ? null : value;
+                });
+                _recargarDatos(movimientosCaja: true);
+              },
+            ),
+          ),
         SegmentedButton<_FiltroMovimientoCaja>(
           showSelectedIcon: false,
           segments: const <ButtonSegment<_FiltroMovimientoCaja>>[
@@ -1035,18 +1188,103 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
+  Future<void> _seleccionarFechaCredito({required bool esDesde}) async {
+    final DateTime ahora = DateTime.now();
+    final DateTime? actual =
+        esDesde ? _fechaCreditoDesde : _fechaCreditoHasta;
+    final DateTime? selected = await showDatePicker(
+      context: context,
+      initialDate: actual ?? ahora,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+
+    if (selected == null) {
+      return;
+    }
+
+    setState(() {
+      if (esDesde) {
+        _fechaCreditoDesde = selected;
+        if (_fechaCreditoHasta != null &&
+            _soloFecha(_fechaCreditoHasta!).isBefore(_soloFecha(selected))) {
+          _fechaCreditoHasta = selected;
+        }
+      } else {
+        _fechaCreditoHasta = selected;
+        if (_fechaCreditoDesde != null &&
+            _soloFecha(_fechaCreditoDesde!).isAfter(_soloFecha(selected))) {
+          _fechaCreditoDesde = selected;
+        }
+      }
+    });
+  }
+
+  Future<DateTime?> _seleccionarFechaHora({
+    required BuildContext context,
+    required DateTime initialDateTime,
+  }) async {
+    final DateTime? selectedDate = await showDatePicker(
+      context: context,
+      initialDate: initialDateTime,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+
+    if (selectedDate == null) {
+      return null;
+    }
+
+    if (!context.mounted) {
+      return null;
+    }
+
+    final TimeOfDay? selectedTime = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(initialDateTime),
+    );
+
+    if (selectedTime == null) {
+      return null;
+    }
+
+    return DateTime(
+      selectedDate.year,
+      selectedDate.month,
+      selectedDate.day,
+      selectedTime.hour,
+      selectedTime.minute,
+    );
+  }
+
   void _limpiarFiltrosCaja() {
     setState(() {
+      _cajaMenorFiltroId = null;
       _filtroMovimientoCaja = _FiltroMovimientoCaja.todos;
       _fechaCajaDesde = null;
       _fechaCajaHasta = null;
     });
+    _recargarDatos(movimientosCaja: true);
   }
 
   bool get _hayFiltrosCaja =>
+      _cajaMenorFiltroId != null ||
       _filtroMovimientoCaja != _FiltroMovimientoCaja.todos ||
       _fechaCajaDesde != null ||
       _fechaCajaHasta != null;
+
+  void _limpiarFiltrosCredito() {
+    setState(() {
+      _filtroCredito = _FiltroEstadoCredito.todos;
+      _fechaCreditoDesde = null;
+      _fechaCreditoHasta = null;
+    });
+  }
+
+  bool get _hayFiltrosCredito =>
+      _filtroCredito != _FiltroEstadoCredito.todos ||
+      _fechaCreditoDesde != null ||
+      _fechaCreditoHasta != null;
 
   Widget _construirClientes(BuildContext context) {
     final List<Cliente> clientes = _filtrarClientes();
@@ -1135,6 +1373,7 @@ class _HomePageState extends State<HomePage> {
         _clientes = const <Cliente>[];
         _cobrosRuta = const <CobroRuta>[];
         _movimientosCaja = const <MovimientoCaja>[];
+        _cajaMenorFiltroId = null;
       });
 
       await _cargar();
@@ -1358,8 +1597,10 @@ class _HomePageState extends State<HomePage> {
       _presupuesto = null;
       _clientes = const <Cliente>[];
       _cobrosRuta = const <CobroRuta>[];
+      _creditos = const <CreditoRegistro>[];
       _movimientosCaja = const <MovimientoCaja>[];
       _seccionActual = 0;
+      _cajaMenorFiltroId = null;
       _cargando = false;
       _guardando = false;
       _error = null;
@@ -1384,6 +1625,7 @@ class _HomePageState extends State<HomePage> {
         _obtenerPresupuesto(),
         _obtenerClientes(),
         _obtenerCobrosRuta(),
+        _obtenerCreditos(),
         _obtenerMovimientosCaja(),
       ]);
 
@@ -1396,7 +1638,8 @@ class _HomePageState extends State<HomePage> {
         _presupuesto = resultados[1] as Presupuesto;
         _clientes = resultados[2] as List<Cliente>;
         _cobrosRuta = resultados[3] as List<CobroRuta>;
-        _movimientosCaja = resultados[4] as List<MovimientoCaja>;
+        _creditos = resultados[4] as List<CreditoRegistro>;
+        _movimientosCaja = resultados[5] as List<MovimientoCaja>;
         _ajustarSelecciones();
       });
     } catch (error) {
@@ -1431,8 +1674,20 @@ class _HomePageState extends State<HomePage> {
         .toList(growable: false);
   }
 
+  Future<List<CreditoRegistro>> _obtenerCreditos() async {
+    return (await _apiClient.getList('/creditos'))
+        .map(
+          (dynamic item) =>
+              CreditoRegistro.fromJson(item as Map<String, dynamic>),
+        )
+        .toList(growable: false);
+  }
+
   Future<List<MovimientoCaja>> _obtenerMovimientosCaja() async {
-    return (await _apiClient.getList('/caja-menor/movimientos'))
+    return (await _apiClient.getList(
+      '/caja-menor/movimientos',
+      query: <String, String?>{'cajaMenorId': _cajaMenorFiltroId},
+    ))
         .map(
           (dynamic item) =>
               MovimientoCaja.fromJson(item as Map<String, dynamic>),
@@ -1445,6 +1700,7 @@ class _HomePageState extends State<HomePage> {
     bool presupuesto = false,
     bool clientes = false,
     bool cobrosRuta = false,
+    bool creditos = false,
     bool movimientosCaja = false,
   }) async {
     if (_usuarioSesion == null) {
@@ -1457,6 +1713,7 @@ class _HomePageState extends State<HomePage> {
     int? presupuestoIndex;
     int? clientesIndex;
     int? cobrosRutaIndex;
+    int? creditosIndex;
     int? movimientosCajaIndex;
 
     void agregar(Future<dynamic> tarea, void Function(int index) asignar) {
@@ -1475,6 +1732,9 @@ class _HomePageState extends State<HomePage> {
     }
     if (cobrosRuta) {
       agregar(_obtenerCobrosRuta(), (int index) => cobrosRutaIndex = index);
+    }
+    if (creditos) {
+      agregar(_obtenerCreditos(), (int index) => creditosIndex = index);
     }
     if (movimientosCaja) {
       agregar(
@@ -1505,6 +1765,9 @@ class _HomePageState extends State<HomePage> {
         }
         if (cobrosRutaIndex != null) {
           _cobrosRuta = resultados[cobrosRutaIndex!] as List<CobroRuta>;
+        }
+        if (creditosIndex != null) {
+          _creditos = resultados[creditosIndex!] as List<CreditoRegistro>;
         }
         if (movimientosCajaIndex != null) {
           _movimientosCaja =
@@ -1571,6 +1834,11 @@ class _HomePageState extends State<HomePage> {
     _cajaMenorCreditoId = _mantenerSeleccion(
       _cajaMenorCreditoId,
       catalogos.cajasMenoresActivas.map((CajaMenorCatalogo caja) => caja.id),
+    );
+    _cajaMenorFiltroId = _mantenerSeleccion(
+      _cajaMenorFiltroId,
+      catalogos.cajasMenores.map((CajaMenorCatalogo caja) => caja.id),
+      permitirNulo: true,
     );
   }
 
@@ -1657,9 +1925,15 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  List<CobroRuta> _filtrarCobros() {
+  List<CobroRuta> _filtrarCobros({bool incluirEstado = true}) {
     final String consulta = _buscarRutaController.text.trim().toLowerCase();
     return _cobrosRuta.where((CobroRuta cobro) {
+      if (incluirEstado &&
+          _filtroEstadoRuta.estadoCobro != null &&
+          cobro.estadoCobro != _filtroEstadoRuta.estadoCobro) {
+        return false;
+      }
+
       final bool coincideRuta =
           _rutaFiltroId == null || cobro.rutaId == _rutaFiltroId;
       final bool coincideBusqueda = consulta.isEmpty ||
@@ -1669,6 +1943,48 @@ class _HomePageState extends State<HomePage> {
           (cobro.direccion ?? '').toLowerCase().contains(consulta) ||
           cobro.ruta.toLowerCase().contains(consulta);
       return coincideRuta && coincideBusqueda;
+    }).toList(growable: false);
+  }
+
+  List<CreditoRegistro> _filtrarCreditos() {
+    final String consulta = _buscarCreditoController.text.trim().toLowerCase();
+    final DateTime? desde =
+        _fechaCreditoDesde == null ? null : _soloFecha(_fechaCreditoDesde!);
+    final DateTime? hasta =
+        _fechaCreditoHasta == null ? null : _soloFecha(_fechaCreditoHasta!);
+
+    return _creditos.where((CreditoRegistro credito) {
+      final DateTime fechaInicio = _soloFecha(credito.fechaInicio);
+
+      if (_filtroCredito == _FiltroEstadoCredito.activos &&
+          !credito.activo) {
+        return false;
+      }
+
+      if (_filtroCredito == _FiltroEstadoCredito.inactivos &&
+          credito.activo) {
+        return false;
+      }
+
+      if (desde != null && fechaInicio.isBefore(desde)) {
+        return false;
+      }
+
+      if (hasta != null && fechaInicio.isAfter(hasta)) {
+        return false;
+      }
+
+      if (consulta.isEmpty) {
+        return true;
+      }
+
+      return credito.cliente.toLowerCase().contains(consulta) ||
+          (credito.cedula ?? '').toLowerCase().contains(consulta) ||
+          (credito.negocio ?? '').toLowerCase().contains(consulta) ||
+          (credito.direccion ?? '').toLowerCase().contains(consulta) ||
+          credito.ruta.toLowerCase().contains(consulta) ||
+          (credito.cajaMenor ?? '').toLowerCase().contains(consulta) ||
+          credito.estado.nombre.toLowerCase().contains(consulta);
     }).toList(growable: false);
   }
 
@@ -1720,6 +2036,11 @@ class _HomePageState extends State<HomePage> {
         final String naturaleza =
             movimiento.tipoMovimiento.naturaleza.toUpperCase();
         final DateTime fechaMovimiento = _soloFecha(movimiento.fechaMovimiento);
+
+        if (_cajaMenorFiltroId != null &&
+            movimiento.cajaMenorId != _cajaMenorFiltroId) {
+          return false;
+        }
 
         if (_filtroMovimientoCaja == _FiltroMovimientoCaja.entradas &&
             naturaleza != 'E') {
@@ -1990,6 +2311,580 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  Future<void> _abrirSeleccionRefinanciacion() async {
+    final List<CreditoRegistro> activos = _filtrarCreditos()
+        .where((CreditoRegistro credito) => credito.activo)
+        .toList(growable: false);
+    final List<CreditoRegistro> opciones = activos.isNotEmpty
+        ? activos
+        : _creditos
+            .where((CreditoRegistro credito) => credito.activo)
+            .toList(growable: false);
+
+    if (opciones.isEmpty) {
+      _mostrarMensaje('No hay creditos activos para refinanciar');
+      return;
+    }
+
+    final CreditoRegistro? seleccionado = await showDialog<CreditoRegistro>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('Refinanciar credito'),
+          content: _DialogContent(
+            maxWidth: 520,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 420),
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemBuilder: (BuildContext context, int index) {
+                  final CreditoRegistro credito = opciones[index];
+                  return ListTile(
+                    leading: const Icon(Icons.currency_exchange_rounded),
+                    title: Text(
+                      credito.cliente,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(
+                      '${_dinero(credito.valorPrincipal)} - ${credito.ruta}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    onTap: () => Navigator.of(dialogContext).pop(credito),
+                  );
+                },
+                separatorBuilder: (BuildContext context, int index) =>
+                    const Divider(height: 1),
+                itemCount: opciones.length,
+              ),
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancelar'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (seleccionado != null) {
+      await _abrirRefinanciarCredito(seleccionado);
+    }
+  }
+
+  Future<void> _abrirRefinanciarCredito(CreditoRegistro credito) async {
+    if (!credito.activo) {
+      _mostrarMensaje('Solo se pueden refinanciar creditos activos');
+      return;
+    }
+
+    final Catalogos? catalogos = _catalogos;
+    if (catalogos == null ||
+        catalogos.frecuenciasPago.isEmpty ||
+        catalogos.cajasMenoresActivas.isEmpty) {
+      _mostrarMensaje('Necesitas catalogos y caja menor activa');
+      return;
+    }
+
+    final List<CajaMenorCatalogo> cajasCompatibles = catalogos
+        .cajasMenoresActivas
+        .where((CajaMenorCatalogo caja) =>
+            caja.monedaCodigo == credito.monedaCodigo)
+        .toList(growable: false);
+    if (cajasCompatibles.isEmpty) {
+      _mostrarMensaje('No hay caja menor activa para esa moneda');
+      return;
+    }
+
+    final TextEditingController valorController = TextEditingController(
+      text: _numero(credito.valorPrincipal),
+    );
+    final TextEditingController interesController = TextEditingController(
+      text: _numero(credito.porcentajeInteres),
+    );
+    final TextEditingController plazoController = TextEditingController(
+      text: credito.plazoDias.toString(),
+    );
+    final TextEditingController observacionController = TextEditingController(
+      text: credito.observacion ?? '',
+    );
+
+    String? rutaId = catalogos.rutasAbiertas
+            .any((RutaCatalogo ruta) => ruta.id == credito.rutaId)
+        ? credito.rutaId
+        : null;
+    String? cajaMenorId = cajasCompatibles
+            .any((CajaMenorCatalogo caja) => caja.id == credito.cajaMenorId)
+        ? credito.cajaMenorId
+        : cajasCompatibles.first.id;
+    int? frecuenciaPagoId = catalogos.frecuenciasPago
+            .any((FrecuenciaPago frecuencia) =>
+                frecuencia.id == credito.frecuenciaPago.id)
+        ? credito.frecuenciaPago.id
+        : catalogos.frecuenciasPago.first.id;
+    DateTime fechaInicio = DateTime.now();
+    bool omitirDomingos = credito.omitirDomingos;
+    final List<Cliente> clientesFormulario = _clientes
+            .any((Cliente cliente) => cliente.id == credito.clienteId)
+        ? _clientes
+        : <Cliente>[
+            Cliente(
+              id: credito.clienteId,
+              nombreCompleto: credito.cliente,
+              cedula: credito.cedula,
+              direccion: credito.direccion,
+              nombreComercial: credito.negocio,
+              estadoNombre: 'Activo',
+            ),
+            ..._clientes,
+          ];
+    final List<Moneda> monedasFormulario = catalogos.monedas
+            .any((Moneda moneda) => moneda.codigo == credito.monedaCodigo)
+        ? catalogos.monedas
+            .where((Moneda moneda) => moneda.codigo == credito.monedaCodigo)
+            .toList(growable: false)
+        : <Moneda>[
+            Moneda(
+              codigo: credito.monedaCodigo,
+              nombre: credito.monedaCodigo,
+            ),
+          ];
+
+    try {
+      await showDialog<bool>(
+        context: context,
+        builder: (BuildContext dialogContext) {
+          bool guardandoDialogo = false;
+
+          return StatefulBuilder(
+            builder: (BuildContext context, StateSetter setDialogState) {
+              return AlertDialog(
+                title: Text('Refinanciar ${credito.cliente}'),
+                content: _DialogContent(
+                  maxWidth: 600,
+                  child: _FormularioCredito(
+                    clientes: clientesFormulario,
+                    rutas: catalogos.rutasAbiertas,
+                    monedas: monedasFormulario,
+                    frecuencias: catalogos.frecuenciasPago,
+                    cajasMenores: cajasCompatibles,
+                    clienteId: credito.clienteId,
+                    rutaId: rutaId,
+                    monedaCodigo: credito.monedaCodigo,
+                    frecuenciaPagoId: frecuenciaPagoId,
+                    cajaMenorId: cajaMenorId,
+                    fechaInicio: fechaInicio,
+                    omitirDomingos: omitirDomingos,
+                    valorController: valorController,
+                    interesController: interesController,
+                    plazoController: plazoController,
+                    observacionController: observacionController,
+                    guardando: guardandoDialogo,
+                    clienteBloqueado: true,
+                    monedaBloqueada: true,
+                    accionLabel: 'Refinanciar',
+                    usarSuperficie: false,
+                    onClienteChanged: (_) {},
+                    onRutaChanged: (String? value) {
+                      setDialogState(() => rutaId = value);
+                    },
+                    onMonedaChanged: (_) {},
+                    onFrecuenciaChanged: (int? value) {
+                      setDialogState(() => frecuenciaPagoId = value);
+                    },
+                    onCajaMenorChanged: (String? value) {
+                      setDialogState(() => cajaMenorId = value);
+                    },
+                    onFechaChanged: (DateTime value) {
+                      setDialogState(() => fechaInicio = value);
+                    },
+                    onOmitirDomingosChanged: (bool value) {
+                      setDialogState(() => omitirDomingos = value);
+                    },
+                    onCrear: () async {
+                      if (guardandoDialogo || _guardando) {
+                        return;
+                      }
+
+                      final String? cajaId = cajaMenorId;
+                      final int? frecuenciaId = frecuenciaPagoId;
+                      if (cajaId == null || frecuenciaId == null) {
+                        _mostrarMensaje('Faltan datos para refinanciar');
+                        return;
+                      }
+
+                      final double valorNuevo;
+                      final double porcentajeInteres;
+                      final int plazoDias;
+                      try {
+                        valorNuevo = _leerMonto(valorController.text);
+                        porcentajeInteres =
+                            _leerPorcentaje(interesController.text);
+                        plazoDias = _leerEnteroPositivo(plazoController.text);
+                      } catch (error) {
+                        _mostrarMensaje(_mensajeError(error));
+                        return;
+                      }
+
+                      if (valorNuevo <= credito.valorPrincipal) {
+                        _mostrarMensaje(
+                          'El nuevo valor debe superar el valor actual',
+                        );
+                        return;
+                      }
+
+                      final double incremento =
+                          valorNuevo - credito.valorPrincipal;
+                      if (!_validarPresupuestoCaja(cajaId, incremento)) {
+                        return;
+                      }
+
+                      setDialogState(() => guardandoDialogo = true);
+                      final bool refinanciado = await _ejecutarAccion(
+                        () async {
+                          await _apiClient.patchObject(
+                            '/creditos/${credito.id}/refinanciar',
+                            <String, dynamic>{
+                              if (rutaId != null) 'rutaId': rutaId,
+                              'monedaCodigo': credito.monedaCodigo,
+                              'frecuenciaPagoId': frecuenciaId,
+                              'fechaInicio': _fechaValor(fechaInicio),
+                              'valorPrincipal': valorNuevo,
+                              'porcentajeInteres': porcentajeInteres,
+                              'plazoDias': plazoDias,
+                              'omitirDomingos': omitirDomingos,
+                              'cajaMenorId': cajaId,
+                              if (observacionController.text.trim().isNotEmpty)
+                                'observacion':
+                                    observacionController.text.trim(),
+                            },
+                          );
+                          _recargarEnSegundoPlano(catalogos: rutaId == null);
+                        },
+                      );
+
+                      if (!dialogContext.mounted) {
+                        return;
+                      }
+
+                      if (refinanciado) {
+                        Navigator.of(dialogContext).pop(true);
+                        _mostrarMensaje('Credito refinanciado');
+                        return;
+                      }
+
+                      setDialogState(() => guardandoDialogo = false);
+                    },
+                  ),
+                ),
+                actions: <Widget>[
+                  TextButton(
+                    onPressed: guardandoDialogo
+                        ? null
+                        : () => Navigator.of(dialogContext).pop(false),
+                    child: const Text('Cancelar'),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      );
+    } finally {
+      valorController.dispose();
+      interesController.dispose();
+      plazoController.dispose();
+      observacionController.dispose();
+    }
+  }
+
+  Future<void> _abrirModificarCredito(CreditoRegistro credito) async {
+    if (!(_usuarioSesion?.esAdministrador ?? false)) {
+      _mostrarMensaje('Solo los administradores pueden modificar creditos');
+      return;
+    }
+
+    final Catalogos? catalogos = _catalogos;
+    if (catalogos == null ||
+        catalogos.frecuenciasPago.isEmpty ||
+        catalogos.cajasMenoresActivas.isEmpty) {
+      _mostrarMensaje('Necesitas catalogos y caja menor activa');
+      return;
+    }
+
+    final List<CajaMenorCatalogo> cajasCompatibles = catalogos
+        .cajasMenoresActivas
+        .where(
+          (CajaMenorCatalogo caja) =>
+              caja.monedaCodigo == credito.monedaCodigo,
+        )
+        .toList(growable: false);
+    if (cajasCompatibles.isEmpty) {
+      _mostrarMensaje('No hay caja menor activa para esa moneda');
+      return;
+    }
+
+    final TextEditingController valorController = TextEditingController(
+      text: _numero(credito.valorPrincipal),
+    );
+    final TextEditingController interesController = TextEditingController(
+      text: _numero(credito.porcentajeInteres),
+    );
+    final TextEditingController plazoController = TextEditingController(
+      text: credito.plazoDias.toString(),
+    );
+    final TextEditingController observacionController = TextEditingController(
+      text: credito.observacion ?? '',
+    );
+
+    String? clienteId = credito.clienteId;
+    String? rutaId = catalogos.rutasAbiertas
+            .any((RutaCatalogo ruta) => ruta.id == credito.rutaId)
+        ? credito.rutaId
+        : null;
+    String? cajaMenorId = cajasCompatibles
+            .any((CajaMenorCatalogo caja) => caja.id == credito.cajaMenorId)
+        ? credito.cajaMenorId
+        : cajasCompatibles.first.id;
+    int? frecuenciaPagoId = catalogos.frecuenciasPago
+            .any((FrecuenciaPago frecuencia) =>
+                frecuencia.id == credito.frecuenciaPago.id)
+        ? credito.frecuenciaPago.id
+        : catalogos.frecuenciasPago.first.id;
+    DateTime fechaInicio = credito.fechaInicio;
+    bool omitirDomingos = credito.omitirDomingos;
+    final List<Cliente> clientesFormulario = _clientes
+            .any((Cliente cliente) => cliente.id == credito.clienteId)
+        ? _clientes
+        : <Cliente>[
+            Cliente(
+              id: credito.clienteId,
+              nombreCompleto: credito.cliente,
+              cedula: credito.cedula,
+              direccion: credito.direccion,
+              nombreComercial: credito.negocio,
+              estadoNombre: 'Activo',
+            ),
+            ..._clientes,
+          ];
+    final List<Moneda> monedasFormulario = catalogos.monedas
+            .any((Moneda moneda) => moneda.codigo == credito.monedaCodigo)
+        ? catalogos.monedas
+            .where((Moneda moneda) => moneda.codigo == credito.monedaCodigo)
+            .toList(growable: false)
+        : <Moneda>[
+            Moneda(
+              codigo: credito.monedaCodigo,
+              nombre: credito.monedaCodigo,
+            ),
+          ];
+
+    try {
+      await showDialog<bool>(
+        context: context,
+        builder: (BuildContext dialogContext) {
+          bool guardandoDialogo = false;
+
+          return StatefulBuilder(
+            builder: (BuildContext context, StateSetter setDialogState) {
+              return AlertDialog(
+                title: Text('Modificar ${credito.cliente}'),
+                content: _DialogContent(
+                  maxWidth: 600,
+                  child: _FormularioCredito(
+                    clientes: clientesFormulario,
+                    rutas: catalogos.rutasAbiertas,
+                    monedas: monedasFormulario,
+                    frecuencias: catalogos.frecuenciasPago,
+                    cajasMenores: cajasCompatibles,
+                    clienteId: clienteId,
+                    rutaId: rutaId,
+                    monedaCodigo: credito.monedaCodigo,
+                    frecuenciaPagoId: frecuenciaPagoId,
+                    cajaMenorId: cajaMenorId,
+                    fechaInicio: fechaInicio,
+                    omitirDomingos: omitirDomingos,
+                    valorController: valorController,
+                    interesController: interesController,
+                    plazoController: plazoController,
+                    observacionController: observacionController,
+                    guardando: guardandoDialogo,
+                    monedaBloqueada: true,
+                    accionLabel: 'Guardar',
+                    usarSuperficie: false,
+                    onClienteChanged: (String? value) {
+                      setDialogState(() => clienteId = value);
+                    },
+                    onRutaChanged: (String? value) {
+                      setDialogState(() => rutaId = value);
+                    },
+                    onMonedaChanged: (_) {},
+                    onFrecuenciaChanged: (int? value) {
+                      setDialogState(() => frecuenciaPagoId = value);
+                    },
+                    onCajaMenorChanged: (String? value) {
+                      setDialogState(() => cajaMenorId = value);
+                    },
+                    onFechaChanged: (DateTime value) {
+                      setDialogState(() => fechaInicio = value);
+                    },
+                    onOmitirDomingosChanged: (bool value) {
+                      setDialogState(() => omitirDomingos = value);
+                    },
+                    onCrear: () async {
+                      if (guardandoDialogo || _guardando) {
+                        return;
+                      }
+
+                      final String? clienteSeleccionado = clienteId;
+                      final String? cajaId = cajaMenorId;
+                      final int? frecuenciaId = frecuenciaPagoId;
+                      if (clienteSeleccionado == null ||
+                          cajaId == null ||
+                          frecuenciaId == null) {
+                        _mostrarMensaje('Faltan datos para modificar');
+                        return;
+                      }
+
+                      final double valorPrincipal;
+                      final double porcentajeInteres;
+                      final int plazoDias;
+                      try {
+                        valorPrincipal = _leerMonto(valorController.text);
+                        porcentajeInteres =
+                            _leerPorcentaje(interesController.text);
+                        plazoDias = _leerEnteroPositivo(plazoController.text);
+                      } catch (error) {
+                        _mostrarMensaje(_mensajeError(error));
+                        return;
+                      }
+
+                      setDialogState(() => guardandoDialogo = true);
+                      final bool actualizado = await _ejecutarAccion(
+                        () async {
+                          await _apiClient.patchObject(
+                            '/creditos/${credito.id}',
+                            <String, dynamic>{
+                              'clienteId': clienteSeleccionado,
+                              if (rutaId != null) 'rutaId': rutaId,
+                              'monedaCodigo': credito.monedaCodigo,
+                              'frecuenciaPagoId': frecuenciaId,
+                              'fechaInicio': _fechaValor(fechaInicio),
+                              'valorPrincipal': valorPrincipal,
+                              'porcentajeInteres': porcentajeInteres,
+                              'plazoDias': plazoDias,
+                              'omitirDomingos': omitirDomingos,
+                              'cajaMenorId': cajaId,
+                              if (observacionController.text.trim().isNotEmpty)
+                                'observacion':
+                                    observacionController.text.trim(),
+                            },
+                          );
+                          _recargarEnSegundoPlano(
+                            catalogos: rutaId == null,
+                            presupuesto: true,
+                            cobrosRuta: true,
+                            creditos: true,
+                            movimientosCaja: true,
+                          );
+                        },
+                      );
+
+                      if (!dialogContext.mounted) {
+                        return;
+                      }
+
+                      if (actualizado) {
+                        Navigator.of(dialogContext).pop(true);
+                        _mostrarMensaje('Credito modificado');
+                        return;
+                      }
+
+                      setDialogState(() => guardandoDialogo = false);
+                    },
+                  ),
+                ),
+                actions: <Widget>[
+                  TextButton(
+                    onPressed: guardandoDialogo
+                        ? null
+                        : () => Navigator.of(dialogContext).pop(false),
+                    child: const Text('Cancelar'),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      );
+    } finally {
+      valorController.dispose();
+      interesController.dispose();
+      plazoController.dispose();
+      observacionController.dispose();
+    }
+  }
+
+  Future<void> _confirmarEliminarCredito(CreditoRegistro credito) async {
+    if (!(_usuarioSesion?.esAdministrador ?? false)) {
+      _mostrarMensaje('Solo los administradores pueden eliminar creditos');
+      return;
+    }
+
+    final bool? confirmado = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('Eliminar credito'),
+          content: Text(
+            'Se eliminara el credito de "${credito.cliente}" y su desembolso de caja.',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              icon: const Icon(Icons.delete_outline_rounded),
+              label: const Text('Eliminar'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmado != true) {
+      return;
+    }
+
+    final bool eliminado = await _ejecutarAccion(() async {
+      await _apiClient.deleteObject('/creditos/${credito.id}');
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _creditos = _creditos
+            .where((CreditoRegistro item) => item.id != credito.id)
+            .toList(growable: false);
+      });
+      _recargarEnSegundoPlano(
+        catalogos: false,
+        presupuesto: true,
+        cobrosRuta: true,
+        creditos: true,
+        movimientosCaja: true,
+      );
+    });
+
+    if (eliminado) {
+      _mostrarMensaje('Credito eliminado');
+    }
+  }
+
   Future<void> _abrirRegistrarPago(CobroRuta cobro) async {
     final List<MedioPago> mediosPago =
         _catalogos?.mediosPago ?? const <MedioPago>[];
@@ -2180,6 +3075,7 @@ class _HomePageState extends State<HomePage> {
     bool presupuesto = true,
     bool clientes = false,
     bool cobrosRuta = true,
+    bool creditos = true,
     bool movimientosCaja = true,
   }) {
     unawaited(() async {
@@ -2188,6 +3084,7 @@ class _HomePageState extends State<HomePage> {
         presupuesto: presupuesto,
         clientes: clientes,
         cobrosRuta: cobrosRuta,
+        creditos: creditos,
         movimientosCaja: movimientosCaja,
       );
     }());
@@ -2211,6 +3108,52 @@ class _HomePageState extends State<HomePage> {
           query: <String, String?>{
             'rutaId': _rutaFiltroId,
             'search': _buscarRutaController.text.trim(),
+            'estadoCobro': _filtroEstadoRuta.wire,
+          },
+        ),
+      );
+      if (mounted) {
+        setState(() => _exportando = false);
+      }
+      await _mostrarExportacionLista(exportacion);
+    } catch (error) {
+      if (mounted) {
+        setState(() => _error = _mensajeError(error));
+        _mostrarMensaje(_mensajeError(error));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _exportando = false);
+      }
+    }
+  }
+
+  Future<void> _exportarCreditos() async {
+    if (_exportando) {
+      return;
+    }
+
+    setState(() {
+      _exportando = true;
+      _error = null;
+    });
+    _mostrarMensaje('Generando Excel...');
+
+    try {
+      final ExportacionExcel exportacion = ExportacionExcel.fromJson(
+        await _apiClient.getObject(
+          '/exportaciones/creditos',
+          query: <String, String?>{
+            'search': _buscarCreditoController.text.trim(),
+            'estado': _filtroCredito == _FiltroEstadoCredito.todos
+                ? null
+                : _filtroCredito.name,
+            'fechaDesde': _fechaCreditoDesde == null
+                ? null
+                : _fechaValor(_fechaCreditoDesde!),
+            'fechaHasta': _fechaCreditoHasta == null
+                ? null
+                : _fechaValor(_fechaCreditoHasta!),
           },
         ),
       );
@@ -2246,6 +3189,7 @@ class _HomePageState extends State<HomePage> {
         await _apiClient.getObject(
           '/exportaciones/caja-menor',
           query: <String, String?>{
+            'cajaMenorId': _cajaMenorFiltroId,
             'search': _buscarCajaController.text.trim(),
             'tipo': _filtroMovimientoCaja == _FiltroMovimientoCaja.todos
                 ? null
@@ -2823,63 +3767,120 @@ class _HomePageState extends State<HomePage> {
     final bool? creada = await showDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) {
-        final TextEditingController nombreController = TextEditingController();
+        final TextEditingController nombreController = TextEditingController(
+          text: _nombreCajaMenorPorDefecto(),
+        );
+        DateTime fechaApertura = DateTime.now();
+        DateTime fechaCierre = DateTime(
+          fechaApertura.year,
+          fechaApertura.month,
+          fechaApertura.day,
+          23,
+          59,
+        );
 
-        return AlertDialog(
-          title: const Text('Crear caja menor'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                TextField(
-                  controller: nombreController,
-                  autofocus: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Nombre',
-                    prefixIcon: Icon(Icons.savings_rounded),
-                  ),
+        if (!fechaCierre.isAfter(fechaApertura)) {
+          fechaCierre = fechaApertura.add(const Duration(hours: 1));
+        }
+
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setDialogState) {
+            return AlertDialog(
+              title: const Text('Crear caja menor'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    TextField(
+                      controller: nombreController,
+                      autofocus: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Nombre',
+                        prefixIcon: Icon(Icons.savings_rounded),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    InputDecorator(
+                      decoration: const InputDecoration(
+                        labelText: 'Apertura',
+                        prefixIcon: Icon(Icons.lock_clock_rounded),
+                      ),
+                      child: Text(_fechaHoraEtiqueta(fechaApertura)),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          final DateTime? selected = await _seleccionarFechaHora(
+                            context: context,
+                            initialDateTime: fechaCierre,
+                          );
+
+                          if (selected != null) {
+                            setDialogState(() => fechaCierre = selected);
+                          }
+                        },
+                        icon: const Icon(Icons.event_available_rounded),
+                        label: Text(
+                          'Cierre ${_fechaHoraEtiqueta(fechaCierre)}',
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('Cancelar'),
+                ),
+                FilledButton.icon(
+                  onPressed: () async {
+                    final String nombre = nombreController.text.trim();
+                    if (nombre.length < 2) {
+                      _mostrarMensaje('Escribe un nombre para la caja menor');
+                      return;
+                    }
+                    final DateTime fechaAperturaActual = DateTime.now();
+                    if (!fechaCierre.isAfter(fechaAperturaActual)) {
+                      setDialogState(() => fechaApertura = fechaAperturaActual);
+                      _mostrarMensaje(
+                        'El cierre debe ser posterior a la apertura',
+                      );
+                      return;
+                    }
+
+                    final bool guardada = await _ejecutarAccion(() async {
+                      final CajaMenorCatalogo caja = CajaMenorCatalogo.fromJson(
+                        await _apiClient.postObject(
+                          '/caja-menor',
+                          <String, dynamic>{
+                            'nombre': nombre,
+                            'fechaApertura':
+                                _fechaHoraValor(fechaAperturaActual),
+                            'fechaCierre': _fechaHoraValor(fechaCierre),
+                          },
+                        ),
+                      );
+                      _guardarCajaMenorLocal(caja);
+                      _recargarEnSegundoPlano(
+                        catalogos: true,
+                        cobrosRuta: false,
+                        movimientosCaja: false,
+                      );
+                    });
+
+                    if (guardada && dialogContext.mounted) {
+                      Navigator.of(dialogContext).pop(true);
+                    }
+                  },
+                  icon: const Icon(Icons.check_rounded),
+                  label: const Text('Crear'),
                 ),
               ],
-            ),
-          ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('Cancelar'),
-            ),
-            FilledButton.icon(
-              onPressed: () async {
-                final String nombre = nombreController.text.trim();
-                if (nombre.length < 2) {
-                  _mostrarMensaje('Escribe un nombre para la caja menor');
-                  return;
-                }
-
-                final bool guardada = await _ejecutarAccion(() async {
-                  final CajaMenorCatalogo caja = CajaMenorCatalogo.fromJson(
-                    await _apiClient.postObject(
-                      '/caja-menor',
-                      <String, dynamic>{
-                        'nombre': nombre,
-                      },
-                    ),
-                  );
-                  _guardarCajaMenorLocal(caja);
-                  _recargarEnSegundoPlano(
-                    catalogos: true,
-                    cobrosRuta: false,
-                    movimientosCaja: false,
-                  );
-                });
-
-                if (guardada && dialogContext.mounted) {
-                  Navigator.of(dialogContext).pop(true);
-                }
-              },
-              icon: const Icon(Icons.check_rounded),
-              label: const Text('Crear'),
-            ),
-          ],
+            );
+          },
         );
       },
     );
@@ -2909,7 +3910,11 @@ class _HomePageState extends State<HomePage> {
       builder: (BuildContext dialogContext) {
         final TextEditingController montoController = TextEditingController();
         final TextEditingController motivoController = TextEditingController();
-        String cajaMenorId = catalogos.cajasMenoresActivas.first.id;
+        String cajaMenorId = catalogos.cajasMenoresActivas.any(
+          (CajaMenorCatalogo caja) => caja.id == _cajaMenorFiltroId,
+        )
+            ? _cajaMenorFiltroId!
+            : catalogos.cajasMenoresActivas.first.id;
         String tipoMovimientoCodigo =
             catalogos.tiposMovimientoCaja.first.codigo;
         DateTime fechaMovimiento = DateTime.now();
@@ -3076,6 +4081,272 @@ class _HomePageState extends State<HomePage> {
 
     if (creado == true) {
       _mostrarMensaje('Movimiento registrado');
+    }
+  }
+
+  Future<void> _abrirEditarMovimientoCaja(MovimientoCaja movimiento) async {
+    if (!(_usuarioSesion?.esAdministrador ?? false)) {
+      _mostrarMensaje('Solo los administradores pueden modificar movimientos');
+      return;
+    }
+    if (!movimiento.esEditablePorAdmin) {
+      _mostrarMensaje('Este movimiento no se puede modificar desde caja menor');
+      return;
+    }
+
+    final Catalogos? catalogos = _catalogos;
+    if (catalogos == null) {
+      _mostrarMensaje(
+        'Los datos todavia estan cargando. Intenta nuevamente.',
+      );
+      return;
+    }
+    if (!catalogos.cajasMenoresActivas.any(
+      (CajaMenorCatalogo caja) => caja.id == movimiento.cajaMenorId,
+    )) {
+      _mostrarMensaje('La caja menor del movimiento no esta activa');
+      return;
+    }
+    if (!catalogos.tiposMovimientoCaja.any(
+      (TipoMovimientoCaja tipo) =>
+          tipo.codigo == movimiento.tipoMovimiento.codigo,
+    )) {
+      _mostrarMensaje('El tipo del movimiento ya no esta disponible');
+      return;
+    }
+
+    final bool? guardado = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        final TextEditingController montoController = TextEditingController(
+          text: _numero(movimiento.monto),
+        );
+        final TextEditingController motivoController = TextEditingController(
+          text: movimiento.motivo,
+        );
+        String cajaMenorId = movimiento.cajaMenorId;
+        String tipoMovimientoCodigo = movimiento.tipoMovimiento.codigo;
+        DateTime fechaMovimiento = movimiento.fechaMovimiento;
+        final bool tipoBloqueado = movimiento.referenciaTabla != null;
+
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setDialogState) {
+            return AlertDialog(
+              title: const Text('Modificar movimiento'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    DropdownButtonFormField<String>(
+                      initialValue: cajaMenorId,
+                      decoration: const InputDecoration(
+                        labelText: 'Caja menor',
+                        prefixIcon: Icon(Icons.savings_rounded),
+                      ),
+                      items: catalogos.cajasMenoresActivas
+                          .map(
+                            (CajaMenorCatalogo caja) =>
+                                DropdownMenuItem<String>(
+                              value: caja.id,
+                              child: Text(caja.nombre),
+                            ),
+                          )
+                          .toList(growable: false),
+                      onChanged: (String? value) {
+                        if (value != null) {
+                          setDialogState(() => cajaMenorId = value);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      initialValue: tipoMovimientoCodigo,
+                      decoration: const InputDecoration(
+                        labelText: 'Tipo',
+                        prefixIcon: Icon(Icons.swap_vert_rounded),
+                      ),
+                      items: catalogos.tiposMovimientoCaja
+                          .map(
+                            (TipoMovimientoCaja tipo) =>
+                                DropdownMenuItem<String>(
+                              value: tipo.codigo,
+                              child: Text(tipo.nombre),
+                            ),
+                          )
+                          .toList(growable: false),
+                      onChanged: tipoBloqueado
+                          ? null
+                          : (String? value) {
+                              if (value != null) {
+                                setDialogState(
+                                  () => tipoMovimientoCodigo = value,
+                                );
+                              }
+                            },
+                    ),
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      onPressed: () async {
+                        final DateTime? selected = await showDatePicker(
+                          context: context,
+                          initialDate: fechaMovimiento,
+                          firstDate: DateTime(2000),
+                          lastDate: DateTime(2100),
+                        );
+
+                        if (selected != null) {
+                          setDialogState(() => fechaMovimiento = selected);
+                        }
+                      },
+                      icon: const Icon(Icons.calendar_month_rounded),
+                      label: Text(_fechaEtiqueta(fechaMovimiento)),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: montoController,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(
+                        labelText: 'Monto',
+                        prefixIcon: Icon(Icons.attach_money_rounded),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: motivoController,
+                      maxLines: 2,
+                      decoration: const InputDecoration(
+                        labelText: 'Motivo',
+                        prefixIcon: Icon(Icons.notes_rounded),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('Cancelar'),
+                ),
+                FilledButton.icon(
+                  onPressed: () async {
+                    final double monto;
+                    try {
+                      monto = _leerMonto(montoController.text);
+                    } catch (error) {
+                      _mostrarMensaje(_mensajeError(error));
+                      return;
+                    }
+
+                    if (motivoController.text.trim().length < 2) {
+                      _mostrarMensaje('El motivo es obligatorio');
+                      return;
+                    }
+
+                    final bool actualizado = await _ejecutarAccion(() async {
+                      final MovimientoCaja respuesta = MovimientoCaja.fromJson(
+                        await _apiClient.patchObject(
+                          '/caja-menor/movimientos/${movimiento.id}',
+                          <String, dynamic>{
+                            'cajaMenorId': cajaMenorId,
+                            'tipoMovimientoCodigo': tipoMovimientoCodigo,
+                            'fechaMovimiento': _fechaValor(fechaMovimiento),
+                            'monto': monto,
+                            'motivo': motivoController.text.trim(),
+                          },
+                        ),
+                      );
+                      _guardarMovimientoCajaLocal(respuesta);
+                      _recargarEnSegundoPlano(
+                        catalogos: false,
+                        presupuesto: true,
+                        clientes: false,
+                        cobrosRuta: true,
+                        creditos: true,
+                        movimientosCaja: true,
+                      );
+                    });
+
+                    if (actualizado && dialogContext.mounted) {
+                      Navigator.of(dialogContext).pop(true);
+                    }
+                  },
+                  icon: const Icon(Icons.check_rounded),
+                  label: const Text('Guardar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (guardado == true) {
+      _mostrarMensaje('Movimiento modificado');
+    }
+  }
+
+  Future<void> _confirmarEliminarMovimientoCaja(
+    MovimientoCaja movimiento,
+  ) async {
+    if (!(_usuarioSesion?.esAdministrador ?? false)) {
+      _mostrarMensaje('Solo los administradores pueden eliminar movimientos');
+      return;
+    }
+    if (!movimiento.esEditablePorAdmin) {
+      _mostrarMensaje('Este movimiento no se puede eliminar desde caja menor');
+      return;
+    }
+
+    final bool? confirmado = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('Eliminar movimiento'),
+          content: Text(
+            'Se eliminara "${movimiento.motivoVisible}" y quedara un registro en caja menor.',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              icon: const Icon(Icons.delete_outline_rounded),
+              label: const Text('Eliminar'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmado != true) {
+      return;
+    }
+
+    final bool eliminado = await _ejecutarAccion(() async {
+      await _apiClient.deleteObject('/caja-menor/movimientos/${movimiento.id}');
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _movimientosCaja = _movimientosCaja
+            .where((MovimientoCaja item) => item.id != movimiento.id)
+            .toList(growable: false);
+      });
+      _recargarEnSegundoPlano(
+        catalogos: false,
+        presupuesto: true,
+        clientes: false,
+        cobrosRuta: true,
+        creditos: true,
+        movimientosCaja: true,
+      );
+    });
+
+    if (eliminado) {
+      _mostrarMensaje('Movimiento eliminado');
     }
   }
 
@@ -4779,11 +6050,15 @@ class _ResumenEstados extends StatelessWidget {
     required this.alDia,
     required this.pendientes,
     required this.atrasados,
+    required this.filtro,
+    required this.onFiltroChanged,
   });
 
   final int alDia;
   final int pendientes;
   final int atrasados;
+  final _FiltroEstadoRuta filtro;
+  final ValueChanged<_FiltroEstadoRuta> onFiltroChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -4795,16 +6070,22 @@ class _ResumenEstados extends StatelessWidget {
           label: 'Al día',
           value: alDia,
           color: CobroAppTheme.success,
+          selected: filtro == _FiltroEstadoRuta.alDia,
+          onTap: () => onFiltroChanged(_FiltroEstadoRuta.alDia),
         ),
         _EstadoContador(
           label: 'Debe hoy',
           value: pendientes,
           color: CobroAppTheme.warning,
+          selected: filtro == _FiltroEstadoRuta.pendiente,
+          onTap: () => onFiltroChanged(_FiltroEstadoRuta.pendiente),
         ),
         _EstadoContador(
           label: 'Atrasado',
           value: atrasados,
           color: CobroAppTheme.danger,
+          selected: filtro == _FiltroEstadoRuta.atrasado,
+          onTap: () => onFiltroChanged(_FiltroEstadoRuta.atrasado),
         ),
       ],
     );
@@ -4816,29 +6097,277 @@ class _EstadoContador extends StatelessWidget {
     required this.label,
     required this.value,
     required this.color,
+    required this.selected,
+    required this.onTap,
   });
 
   final String label;
   final int value;
   final Color color;
+  final bool selected;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: 'Filtrar $label',
+      child: ClaySurface(
+        radius: 14,
+        padding: EdgeInsets.zero,
+        color: color.withValues(alpha: selected ? 0.18 : 0.08),
+        borderColor: color.withValues(alpha: selected ? 0.48 : 0.22),
+        child: Material(
+          type: MaterialType.transparency,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(14),
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Icon(
+                    selected
+                        ? Icons.radio_button_checked_rounded
+                        : Icons.circle,
+                    size: selected ? 16 : 10,
+                    color: color,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '$label: $value',
+                    style: TextStyle(
+                      color: color,
+                      fontWeight: selected ? FontWeight.w900 : FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TarjetaCreditoRegistro extends StatelessWidget {
+  const _TarjetaCreditoRegistro({
+    required this.credito,
+    required this.esAdministrador,
+    required this.onModificar,
+    required this.onEliminar,
+    required this.onRefinanciar,
+  });
+
+  final CreditoRegistro credito;
+  final bool esAdministrador;
+  final VoidCallback onModificar;
+  final VoidCallback onEliminar;
+  final VoidCallback? onRefinanciar;
+
+  @override
+  Widget build(BuildContext context) {
+    final CreditoRefinanciacion? refinanciacion = credito.refinanciacion;
     return ClaySurface(
       radius: 14,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      color: color.withValues(alpha: 0.08),
-      borderColor: color.withValues(alpha: 0.22),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Icon(Icons.circle, size: 10, color: color),
-          const SizedBox(width: 8),
-          Text(
-            '$label: $value',
-            style: TextStyle(color: color, fontWeight: FontWeight.w800),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      credito.cliente,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w900,
+                          ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      [
+                        if ((credito.cedula ?? '').isNotEmpty)
+                          'CC ${credito.cedula!}',
+                        if ((credito.negocio ?? '').isNotEmpty)
+                          credito.negocio!,
+                        credito.ruta,
+                      ].join(' - '),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: context.clay.subtleText,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+              _EstadoCreditoChip(credito: credito),
+              if (esAdministrador) ...<Widget>[
+                const SizedBox(width: 4),
+                PopupMenuButton<_AccionCredito>(
+                  tooltip: 'Acciones',
+                  icon: const Icon(Icons.more_horiz_rounded),
+                  onSelected: (_AccionCredito accion) {
+                    switch (accion) {
+                      case _AccionCredito.modificar:
+                        onModificar();
+                      case _AccionCredito.eliminar:
+                        onEliminar();
+                    }
+                  },
+                  itemBuilder: (BuildContext context) {
+                    return const <PopupMenuEntry<_AccionCredito>>[
+                      PopupMenuItem<_AccionCredito>(
+                        value: _AccionCredito.modificar,
+                        child: Row(
+                          children: <Widget>[
+                            Icon(Icons.edit_outlined),
+                            SizedBox(width: 12),
+                            Text('Modificar'),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem<_AccionCredito>(
+                        value: _AccionCredito.eliminar,
+                        child: Row(
+                          children: <Widget>[
+                            Icon(Icons.delete_outline_rounded),
+                            SizedBox(width: 12),
+                            Text('Eliminar'),
+                          ],
+                        ),
+                      ),
+                    ];
+                  },
+                ),
+              ],
+            ],
           ),
+          if (refinanciacion != null) ...<Widget>[
+            const SizedBox(height: 10),
+            _EtiquetaRefinanciacion(refinanciacion: refinanciacion),
+          ],
+          const SizedBox(height: 14),
+          _BarraSaldo(
+            abonado: credito.totalAbonado,
+            total: credito.valorTotal,
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 16,
+            runSpacing: 8,
+            children: <Widget>[
+              _DatoResumen(
+                label: 'Principal',
+                value: _dinero(credito.valorPrincipal),
+              ),
+              _DatoResumen(label: 'Saldo', value: _dinero(credito.saldo)),
+              _DatoResumen(label: 'Cuota', value: _dinero(credito.valorCuota)),
+              _DatoResumen(
+                label: 'Cuotas',
+                value:
+                    '${credito.cuotasRestantes} / ${credito.numeroCuotas}',
+              ),
+              _DatoResumen(
+                label: 'Inicio',
+                value: _fechaEtiqueta(credito.fechaInicio),
+              ),
+              _DatoResumen(
+                label: 'Maxima',
+                value: _fechaEtiqueta(credito.fechaMaxima),
+              ),
+            ],
+          ),
+          if ((credito.cajaMenor ?? '').isNotEmpty) ...<Widget>[
+            const SizedBox(height: 10),
+            Text(
+              'Caja menor: ${credito.cajaMenor}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: context.clay.subtleText,
+                    fontWeight: FontWeight.w700,
+                  ),
+            ),
+          ],
+          if (onRefinanciar != null) ...<Widget>[
+            const SizedBox(height: 14),
+            Align(
+              alignment: Alignment.centerRight,
+              child: OutlinedButton.icon(
+                onPressed: onRefinanciar,
+                icon: const Icon(Icons.currency_exchange_rounded),
+                label: const Text('Refinanciar'),
+              ),
+            ),
+          ],
         ],
+      ),
+    );
+  }
+}
+
+class _EstadoCreditoChip extends StatelessWidget {
+  const _EstadoCreditoChip({required this.credito});
+
+  final CreditoRegistro credito;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color color =
+        credito.activo ? CobroAppTheme.success : context.clay.subtleText;
+    return ClaySurface(
+      radius: 999,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      color: color.withValues(alpha: 0.1),
+      borderColor: color.withValues(alpha: 0.25),
+      elevated: false,
+      child: Text(
+        credito.estado.nombre,
+        style: TextStyle(
+          color: color,
+          fontSize: 12,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
+class _EtiquetaRefinanciacion extends StatelessWidget {
+  const _EtiquetaRefinanciacion({required this.refinanciacion});
+
+  final CreditoRefinanciacion refinanciacion;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: CobroAppTheme.warning.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: CobroAppTheme.warning.withValues(alpha: 0.24),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        child: Text(
+          'Refinanciado ${_dinero(refinanciacion.valorAnterior)} a '
+          '${_dinero(refinanciacion.valorNuevo)}',
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: CobroAppTheme.warning,
+                fontWeight: FontWeight.w900,
+              ),
+        ),
       ),
     );
   }
@@ -5643,6 +7172,9 @@ class _FormularioCredito extends StatelessWidget {
     required this.onOmitirDomingosChanged,
     required this.onCrear,
     this.usarSuperficie = true,
+    this.accionLabel = 'Crear credito',
+    this.clienteBloqueado = false,
+    this.monedaBloqueada = false,
   });
 
   final List<Cliente> clientes;
@@ -5671,6 +7203,9 @@ class _FormularioCredito extends StatelessWidget {
   final ValueChanged<bool> onOmitirDomingosChanged;
   final VoidCallback onCrear;
   final bool usarSuperficie;
+  final String accionLabel;
+  final bool clienteBloqueado;
+  final bool monedaBloqueada;
 
   @override
   Widget build(BuildContext context) {
@@ -5693,7 +7228,7 @@ class _FormularioCredito extends StatelessWidget {
                 ),
               )
               .toList(growable: false),
-          onChanged: guardando ? null : onClienteChanged,
+          onChanged: guardando || clienteBloqueado ? null : onClienteChanged,
         ),
         const SizedBox(height: 12),
         DropdownButtonFormField<String?>(
@@ -5737,7 +7272,7 @@ class _FormularioCredito extends StatelessWidget {
                   ),
                 )
                 .toList(growable: false),
-            onChanged: guardando ? null : onMonedaChanged,
+            onChanged: guardando || monedaBloqueada ? null : onMonedaChanged,
           ),
           right: DropdownButtonFormField<int>(
             key: ValueKey<String>('frecuencia-$frecuenciaPagoId'),
@@ -5868,7 +7403,7 @@ class _FormularioCredito extends StatelessWidget {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.check_rounded),
-            label: const Text('Crear crédito'),
+            label: Text(accionLabel),
           ),
         ),
       ],
@@ -6168,14 +7703,27 @@ class _DosColumnas extends StatelessWidget {
 }
 
 class _MovimientoCajaItem extends StatelessWidget {
-  const _MovimientoCajaItem({required this.movimiento});
+  const _MovimientoCajaItem({
+    required this.movimiento,
+    required this.esAdministrador,
+    required this.onModificar,
+    required this.onEliminar,
+  });
 
   final MovimientoCaja movimiento;
+  final bool esAdministrador;
+  final VoidCallback onModificar;
+  final VoidCallback onEliminar;
 
   @override
   Widget build(BuildContext context) {
     final bool salida = movimiento.tipoMovimiento.naturaleza == 'S';
-    final Color color = salida ? CobroAppTheme.danger : CobroAppTheme.success;
+    final bool auditoria = movimiento.esAuditoria;
+    final Color color = auditoria
+        ? context.clay.subtleText
+        : salida
+            ? CobroAppTheme.danger
+            : CobroAppTheme.success;
     final String? cliente = movimiento.cliente?.trim().isEmpty ?? true
         ? null
         : movimiento.cliente!.trim();
@@ -6198,11 +7746,13 @@ class _MovimientoCajaItem extends StatelessWidget {
       child: Row(
         children: <Widget>[
           ClayIcon(
-            icon: movimiento.esPago
-                ? Icons.payments_rounded
-                : salida
-                    ? Icons.arrow_downward_rounded
-                    : Icons.arrow_upward_rounded,
+            icon: auditoria
+                ? Icons.history_rounded
+                : movimiento.esPago
+                    ? Icons.payments_rounded
+                    : salida
+                        ? Icons.arrow_downward_rounded
+                        : Icons.arrow_upward_rounded,
             backgroundColor: color.withValues(alpha: 0.12),
             color: color,
           ),
@@ -6236,6 +7786,45 @@ class _MovimientoCajaItem extends StatelessWidget {
             _dinero(movimiento.montoConNaturaleza),
             style: TextStyle(color: color, fontWeight: FontWeight.w900),
           ),
+          if (esAdministrador && movimiento.esEditablePorAdmin) ...<Widget>[
+            const SizedBox(width: 4),
+            PopupMenuButton<_AccionMovimientoCaja>(
+              tooltip: 'Acciones',
+              icon: const Icon(Icons.more_vert_rounded),
+              onSelected: (_AccionMovimientoCaja accion) {
+                switch (accion) {
+                  case _AccionMovimientoCaja.modificar:
+                    onModificar();
+                  case _AccionMovimientoCaja.eliminar:
+                    onEliminar();
+                }
+              },
+              itemBuilder: (BuildContext context) {
+                return const <PopupMenuEntry<_AccionMovimientoCaja>>[
+                  PopupMenuItem<_AccionMovimientoCaja>(
+                    value: _AccionMovimientoCaja.modificar,
+                    child: Row(
+                      children: <Widget>[
+                        Icon(Icons.edit_outlined),
+                        SizedBox(width: 12),
+                        Text('Modificar'),
+                      ],
+                    ),
+                  ),
+                  PopupMenuItem<_AccionMovimientoCaja>(
+                    value: _AccionMovimientoCaja.eliminar,
+                    child: Row(
+                      children: <Widget>[
+                        Icon(Icons.delete_outline_rounded),
+                        SizedBox(width: 12),
+                        Text('Eliminar'),
+                      ],
+                    ),
+                  ),
+                ];
+              },
+            ),
+          ],
         ],
       ),
     );
@@ -6395,6 +7984,47 @@ enum _FiltroMovimientoCaja {
   todos,
   entradas,
   salidas,
+}
+
+enum _FiltroEstadoRuta {
+  todos,
+  alDia,
+  pendiente,
+  atrasado;
+
+  EstadoCobro? get estadoCobro {
+    return switch (this) {
+      _FiltroEstadoRuta.todos => null,
+      _FiltroEstadoRuta.alDia => EstadoCobro.alDia,
+      _FiltroEstadoRuta.pendiente => EstadoCobro.pendiente,
+      _FiltroEstadoRuta.atrasado => EstadoCobro.atrasado,
+    };
+  }
+
+  String? get wire {
+    return switch (this) {
+      _FiltroEstadoRuta.todos => null,
+      _FiltroEstadoRuta.alDia => 'AL_DIA',
+      _FiltroEstadoRuta.pendiente => 'PENDIENTE',
+      _FiltroEstadoRuta.atrasado => 'ATRASADO',
+    };
+  }
+}
+
+enum _FiltroEstadoCredito {
+  todos,
+  activos,
+  inactivos,
+}
+
+enum _AccionCredito {
+  modificar,
+  eliminar,
+}
+
+enum _AccionMovimientoCaja {
+  modificar,
+  eliminar,
 }
 
 class ExportacionExcel {
@@ -6692,6 +8322,8 @@ class CajaMenorCatalogo {
     required this.nombre,
     required this.activa,
     required this.monedaCodigo,
+    this.fechaApertura,
+    this.fechaCierre,
   });
 
   factory CajaMenorCatalogo.fromJson(Map<String, dynamic> json) {
@@ -6700,6 +8332,8 @@ class CajaMenorCatalogo {
       nombre: json['nombre'] as String,
       activa: json['activa'] as bool,
       monedaCodigo: json['monedaCodigo'] as String,
+      fechaApertura: _fechaNullable(json['fechaApertura']),
+      fechaCierre: _fechaNullable(json['fechaCierre']),
     );
   }
 
@@ -6707,6 +8341,8 @@ class CajaMenorCatalogo {
   final String nombre;
   final bool activa;
   final String monedaCodigo;
+  final DateTime? fechaApertura;
+  final DateTime? fechaCierre;
 }
 
 class Cliente {
@@ -6743,6 +8379,141 @@ class Cliente {
   final String? correo;
   final String? telefono;
   final String estadoNombre;
+}
+
+class CreditoRegistro {
+  const CreditoRegistro({
+    required this.id,
+    required this.clienteId,
+    required this.cliente,
+    required this.rutaId,
+    required this.ruta,
+    required this.monedaCodigo,
+    required this.frecuenciaPago,
+    required this.estado,
+    required this.fechaInicio,
+    required this.valorPrincipal,
+    required this.porcentajeInteres,
+    required this.plazoDias,
+    required this.omitirDomingos,
+    required this.valorTotal,
+    required this.valorCuota,
+    required this.totalAbonado,
+    required this.saldo,
+    required this.numeroCuotas,
+    required this.cuotasRestantes,
+    required this.fechaMaxima,
+    this.cedula,
+    this.negocio,
+    this.direccion,
+    this.cajaMenorId,
+    this.cajaMenor,
+    this.refinanciacion,
+    this.observacion,
+  });
+
+  factory CreditoRegistro.fromJson(Map<String, dynamic> json) {
+    final Object? refinanciacion = json['refinanciacion'];
+    return CreditoRegistro(
+      id: json['id'] as String,
+      clienteId: json['clienteId'] as String,
+      cliente: json['cliente'] as String,
+      cedula: json['cedula'] as String?,
+      negocio: json['negocio'] as String?,
+      direccion: json['direccion'] as String?,
+      rutaId: json['rutaId'] as String,
+      ruta: json['ruta'] as String,
+      cajaMenorId: json['cajaMenorId'] as String?,
+      cajaMenor: json['cajaMenor'] as String?,
+      monedaCodigo: json['monedaCodigo'] as String,
+      frecuenciaPago: FrecuenciaPago.fromJson(
+        json['frecuenciaPago'] as Map<String, dynamic>,
+      ),
+      estado: EstadoCreditoRegistro.fromJson(
+        json['estado'] as Map<String, dynamic>,
+      ),
+      fechaInicio: DateTime.parse(json['fechaInicio'] as String),
+      valorPrincipal: _doble(json['valorPrincipal']),
+      porcentajeInteres: _doble(json['porcentajeInteres']),
+      plazoDias: json['plazoDias'] as int,
+      omitirDomingos: json['omitirDomingos'] as bool? ?? true,
+      valorTotal: _doble(json['valorTotal']),
+      valorCuota: _doble(json['valorCuota']),
+      totalAbonado: _doble(json['totalAbonado']),
+      saldo: _doble(json['saldo']),
+      numeroCuotas: json['numeroCuotas'] as int,
+      cuotasRestantes: json['cuotasRestantes'] as int,
+      fechaMaxima: DateTime.parse(json['fechaMaxima'] as String),
+      refinanciacion: refinanciacion is Map<String, dynamic>
+          ? CreditoRefinanciacion.fromJson(refinanciacion)
+          : null,
+      observacion: json['observacion'] as String?,
+    );
+  }
+
+  final String id;
+  final String clienteId;
+  final String cliente;
+  final String? cedula;
+  final String? negocio;
+  final String? direccion;
+  final String rutaId;
+  final String ruta;
+  final String? cajaMenorId;
+  final String? cajaMenor;
+  final String monedaCodigo;
+  final FrecuenciaPago frecuenciaPago;
+  final EstadoCreditoRegistro estado;
+  final DateTime fechaInicio;
+  final double valorPrincipal;
+  final double porcentajeInteres;
+  final int plazoDias;
+  final bool omitirDomingos;
+  final double valorTotal;
+  final double valorCuota;
+  final double totalAbonado;
+  final double saldo;
+  final int numeroCuotas;
+  final int cuotasRestantes;
+  final DateTime fechaMaxima;
+  final CreditoRefinanciacion? refinanciacion;
+  final String? observacion;
+
+  bool get activo => !<String>{'PAGADO', 'ANULADO'}.contains(estado.codigo);
+}
+
+class EstadoCreditoRegistro {
+  const EstadoCreditoRegistro({required this.codigo, required this.nombre});
+
+  factory EstadoCreditoRegistro.fromJson(Map<String, dynamic> json) {
+    return EstadoCreditoRegistro(
+      codigo: json['codigo'] as String,
+      nombre: json['nombre'] as String,
+    );
+  }
+
+  final String codigo;
+  final String nombre;
+}
+
+class CreditoRefinanciacion {
+  const CreditoRefinanciacion({
+    required this.fecha,
+    required this.valorAnterior,
+    required this.valorNuevo,
+  });
+
+  factory CreditoRefinanciacion.fromJson(Map<String, dynamic> json) {
+    return CreditoRefinanciacion(
+      fecha: DateTime.parse(json['fecha'] as String),
+      valorAnterior: _doble(json['valorAnterior']),
+      valorNuevo: _doble(json['valorNuevo']),
+    );
+  }
+
+  final DateTime fecha;
+  final double valorAnterior;
+  final double valorNuevo;
 }
 
 class CobroRuta {
@@ -6846,6 +8617,7 @@ class CobroRuta {
 class MovimientoCaja {
   const MovimientoCaja({
     required this.id,
+    required this.cajaMenorId,
     required this.cajaMenor,
     required this.tipoMovimiento,
     required this.fechaMovimiento,
@@ -6863,6 +8635,7 @@ class MovimientoCaja {
     final Object? usuario = json['usuario'];
     return MovimientoCaja(
       id: json['id'] as String,
+      cajaMenorId: json['cajaMenorId'] as String? ?? '',
       cajaMenor: json['cajaMenor'] as String,
       tipoMovimiento: TipoMovimientoCaja.fromJson(
         json['tipoMovimiento'] as Map<String, dynamic>,
@@ -6882,6 +8655,7 @@ class MovimientoCaja {
   }
 
   final String id;
+  final String cajaMenorId;
   final String cajaMenor;
   final TipoMovimientoCaja tipoMovimiento;
   final DateTime fechaMovimiento;
@@ -6895,6 +8669,8 @@ class MovimientoCaja {
   final String? referenciaId;
 
   bool get esPago => referenciaTabla == 'pago';
+  bool get esAuditoria => referenciaTabla == 'auditoria_caja_menor';
+  bool get esEditablePorAdmin => !esAuditoria;
 
   String get motivoVisible {
     final String? clienteNombre =
@@ -7050,6 +8826,23 @@ String _fechaValor(DateTime value) {
   return '${value.year.toString().padLeft(4, '0')}-'
       '${value.month.toString().padLeft(2, '0')}-'
       '${value.day.toString().padLeft(2, '0')}';
+}
+
+String _fechaHoraValor(DateTime value) {
+  return value.toUtc().toIso8601String();
+}
+
+DateTime _fechaHoraColombia([DateTime? value]) {
+  return (value ?? DateTime.now()).toUtc().subtract(const Duration(hours: 5));
+}
+
+String _nombreCajaMenorPorDefecto([DateTime? value]) {
+  final DateTime colombia = _fechaHoraColombia(value);
+  return '${colombia.day.toString().padLeft(2, '0')}/'
+      '${colombia.month.toString().padLeft(2, '0')}/'
+      '${colombia.year.toString().padLeft(4, '0')} '
+      '${colombia.hour.toString().padLeft(2, '0')}:'
+      '${colombia.minute.toString().padLeft(2, '0')}';
 }
 
 String _fechaEtiqueta(DateTime? value) {

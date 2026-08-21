@@ -1,9 +1,10 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
-  ParseUUIDPipe,
+  Patch,
   Post,
   Query,
   UseGuards,
@@ -14,6 +15,8 @@ import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { CobrosService } from './cobros.service';
 import {
+  ActualizarCreditoDto,
+  ActualizarMovimientoCajaDto,
   CrearCajaMenorDto,
   CrearClienteDto,
   CrearCreditoDto,
@@ -21,8 +24,10 @@ import {
   ExportarMovimientosCajaQueryDto,
   ListarClientesQueryDto,
   ListarCobrosRutaQueryDto,
+  ListarCreditosQueryDto,
   ListarMovimientosCajaQueryDto,
   RegistrarPagoDto,
+  RefinanciarCreditoDto,
 } from './dto';
 
 @Controller()
@@ -80,10 +85,52 @@ export class CobrosController {
     return this.cobros.crearCredito(body, usuario);
   }
 
+  @Get('creditos')
+  listarCreditos(
+    @CurrentUser() usuario: AuthenticatedUser,
+    @Query() query: ListarCreditosQueryDto,
+  ) {
+    return this.cobros.listarCreditos(query, usuario);
+  }
+
+  @Get('exportaciones/creditos')
+  exportarCreditos(
+    @CurrentUser() usuario: AuthenticatedUser,
+    @Query() query: ListarCreditosQueryDto,
+  ) {
+    return this.cobros.exportarCreditos(query, usuario);
+  }
+
+  @Patch('creditos/:id/refinanciar')
+  refinanciarCredito(
+    @CurrentUser() usuario: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: RefinanciarCreditoDto,
+  ) {
+    return this.cobros.refinanciarCredito(id, body, usuario);
+  }
+
+  @Patch('creditos/:id')
+  actualizarCredito(
+    @CurrentUser() usuario: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: ActualizarCreditoDto,
+  ) {
+    return this.cobros.actualizarCredito(id, body, usuario);
+  }
+
+  @Delete('creditos/:id')
+  eliminarCredito(
+    @CurrentUser() usuario: AuthenticatedUser,
+    @Param('id') id: string,
+  ) {
+    return this.cobros.eliminarCredito(id, usuario);
+  }
+
   @Get('creditos/:id')
   obtenerCredito(
     @CurrentUser() usuario: AuthenticatedUser,
-    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param('id') id: string,
   ) {
     return this.cobros.obtenerCredito(id, usuario);
   }
@@ -91,7 +138,7 @@ export class CobrosController {
   @Get('creditos/:id/cuotas')
   listarCuotasCredito(
     @CurrentUser() usuario: AuthenticatedUser,
-    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param('id') id: string,
   ) {
     return this.cobros.listarCuotasCredito(id, usuario);
   }
@@ -126,6 +173,23 @@ export class CobrosController {
     @Body() body: CrearMovimientoCajaDto,
   ) {
     return this.cobros.crearMovimientoCaja(body, usuario);
+  }
+
+  @Patch('caja-menor/movimientos/:id')
+  actualizarMovimientoCaja(
+    @CurrentUser() usuario: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: ActualizarMovimientoCajaDto,
+  ) {
+    return this.cobros.actualizarMovimientoCaja(id, body, usuario);
+  }
+
+  @Delete('caja-menor/movimientos/:id')
+  eliminarMovimientoCaja(
+    @CurrentUser() usuario: AuthenticatedUser,
+    @Param('id') id: string,
+  ) {
+    return this.cobros.eliminarMovimientoCaja(id, usuario);
   }
 
   @Post('caja-menor')

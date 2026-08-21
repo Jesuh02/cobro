@@ -57,8 +57,20 @@ class ApiClient {
     return _decodeObject(response);
   }
 
-  Future<Map<String, dynamic>> patchObject(String path) async {
-    final response = await _client.patch(_uri(path), headers: _headers);
+  Future<Map<String, dynamic>> patchObject(
+    String path, [
+    Map<String, dynamic>? body,
+  ]) async {
+    final response = await _client.patch(
+      _uri(path),
+      headers: _headers,
+      body: body == null ? null : jsonEncode(body),
+    );
+    return _decodeObject(response);
+  }
+
+  Future<Map<String, dynamic>> deleteObject(String path) async {
+    final response = await _client.delete(_uri(path), headers: _headers);
     return _decodeObject(response);
   }
 

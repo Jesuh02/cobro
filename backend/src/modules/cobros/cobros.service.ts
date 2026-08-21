@@ -571,7 +571,7 @@ export class CobrosService {
         id: tipo.tipoMovimientoCajaId,
         codigo: tipo.codigo,
         nombre: tipo.nombre,
-        naturaleza: tipo.naturaleza,
+        naturaleza: this.naturalezaMovimientoCaja(tipo),
       })),
       categoriasGasto: categoriasGasto.map((categoria) => ({
         id: categoria.categoriaGastoId,
@@ -1569,13 +1569,7 @@ export class CobrosService {
         const pagosAplicados = await tx.pagoAplicacion.count({
           where: { creditoCuota: { planPago: { creditoId } } },
         });
-
-        if (pagosAplicados > 0) {
-          throw DomainError.conflict(
-            'No se puede modificar un credito con pagos registrados',
-            'CREDITO_CON_PAGOS_NO_EDITABLE',
-          );
-        }
+        const tienePagosAplicados = pagosAplicados > 0;
 
         const [cliente, moneda, frecuenciaPago, estadoPendiente, tipoDesembolso] =
           await Promise.all([
@@ -1684,15 +1678,38 @@ export class CobrosService {
           );
         }
 
-        const plan = this.calcularPlan({
-          fechaInicio,
-          valorPrincipal,
-          porcentajeInteres,
-          plazoDias: dto.plazoDias,
-          diasIntervalo: frecuenciaPago.diasIntervalo,
-          omitirDomingos: dto.omitirDomingos ?? credito.omitirDomingos,
-          decimales: moneda.decimales,
-        });
+        const omitirDomingos = dto.omitirDomingos ?? credito.omitirDomingos;
+        const cambiaCondicionesFinancieras =
+          moneda.codigoMoneda !== credito.monedaCodigo ||
+          frecuenciaPago.frecuenciaPagoId !== credito.frecuenciaPagoId ||
+          this.fechaIso(fechaInicio) !== this.fechaIso(credito.fechaInicio) ||
+          this.redondear(this.decimalANumero(credito.valorPrincipal)) !==
+            valorPrincipal ||
+          this.redondear(
+            this.decimalANumero(credito.porcentajeInteres),
+            4,
+          ) !== porcentajeInteres ||
+          dto.plazoDias !== credito.plazoDias ||
+          omitirDomingos !== credito.omitirDomingos;
+
+        if (tienePagosAplicados && cambiaCondicionesFinancieras) {
+          throw DomainError.conflict(
+            'No se pueden modificar valor, interes, plazo, frecuencia, moneda, fecha u omitir domingos en un credito con pagos registrados',
+            'CREDITO_CON_PAGOS_CAMPOS_FINANCIEROS_NO_EDITABLES',
+          );
+        }
+
+        const plan = tienePagosAplicados
+          ? null
+          : this.calcularPlan({
+              fechaInicio,
+              valorPrincipal,
+              porcentajeInteres,
+              plazoDias: dto.plazoDias,
+              diasIntervalo: frecuenciaPago.diasIntervalo,
+              omitirDomingos,
+              decimales: moneda.decimales,
+            });
 
         const movimientoAnterior = credito.desembolso?.cajaMenorMovimiento;
         let cajaMenorMovimientoId = movimientoAnterior?.cajaMenorMovimientoId;
@@ -1841,31 +1858,33 @@ export class CobrosService {
           });
         }
 
-        await tx.creditoCuota.deleteMany({
-          where: { creditoPlanPagoId: credito.planPago.creditoPlanPagoId },
-        });
+        if (plan) {
+          await tx.creditoCuota.deleteMany({
+            where: { creditoPlanPagoId: credito.planPago.creditoPlanPagoId },
+          });
 
-        await tx.creditoPlanPago.update({
-          where: { creditoPlanPagoId: credito.planPago.creditoPlanPagoId },
-          data: {
-            numeroCuotas: plan.numeroCuotas,
-            valorCuota: this.decimal(plan.valorCuota),
-            valorTotal: this.decimal(plan.valorTotal),
-            fechaMaxima: plan.fechaMaxima,
-            domingosOmitidos: plan.domingosOmitidos,
-          },
-        });
+          await tx.creditoPlanPago.update({
+            where: { creditoPlanPagoId: credito.planPago.creditoPlanPagoId },
+            data: {
+              numeroCuotas: plan.numeroCuotas,
+              valorCuota: this.decimal(plan.valorCuota),
+              valorTotal: this.decimal(plan.valorTotal),
+              fechaMaxima: plan.fechaMaxima,
+              domingosOmitidos: plan.domingosOmitidos,
+            },
+          });
 
-        await tx.creditoCuota.createMany({
-          data: plan.cuotas.map((cuota) => ({
-            creditoPlanPagoId: credito.planPago!.creditoPlanPagoId,
-            estadoCuotaId: estadoPendiente.estadoCuotaId,
-            numeroCuota: cuota.numeroCuota,
-            fechaVencimiento: cuota.fechaVencimiento,
-            valorCapital: this.decimal(cuota.valorCapital),
-            valorInteres: this.decimal(cuota.valorInteres),
-          })),
-        });
+          await tx.creditoCuota.createMany({
+            data: plan.cuotas.map((cuota) => ({
+              creditoPlanPagoId: credito.planPago!.creditoPlanPagoId,
+              estadoCuotaId: estadoPendiente.estadoCuotaId,
+              numeroCuota: cuota.numeroCuota,
+              fechaVencimiento: cuota.fechaVencimiento,
+              valorCapital: this.decimal(cuota.valorCapital),
+              valorInteres: this.decimal(cuota.valorInteres),
+            })),
+          });
+        }
 
         await tx.credito.update({
           where: { creditoId },
@@ -1878,7 +1897,7 @@ export class CobrosService {
             valorPrincipal: this.decimal(valorPrincipal),
             porcentajeInteres: this.decimal(porcentajeInteres, 4),
             plazoDias: dto.plazoDias,
-            omitirDomingos: dto.omitirDomingos ?? credito.omitirDomingos,
+            omitirDomingos,
             observacion: this.normalizarTextoOpcional(dto.observacion),
           },
         });
@@ -1911,7 +1930,7 @@ export class CobrosService {
             valorPrincipal,
             porcentajeInteres,
             plazoDias: dto.plazoDias,
-            omitirDomingos: dto.omitirDomingos ?? credito.omitirDomingos,
+            omitirDomingos,
             observacion: this.normalizarTextoOpcional(dto.observacion),
           },
         });
@@ -2981,6 +3000,10 @@ export class CobrosService {
       const referenciaTabla =
         movimiento.referenciaTabla ??
         (movimiento.desembolsoCredito ? 'credito_desembolso' : null);
+      const monto = this.decimalANumero(movimiento.monto);
+      const naturaleza = this.naturalezaMovimientoCaja(
+        movimiento.tipoMovimientoCaja,
+      );
 
       return {
         id: movimiento.cajaMenorMovimientoId,
@@ -2994,17 +3017,14 @@ export class CobrosService {
           id: movimiento.tipoMovimientoCajaId,
           codigo: movimiento.tipoMovimientoCaja.codigo,
           nombre: movimiento.tipoMovimientoCaja.nombre,
-          naturaleza: movimiento.tipoMovimientoCaja.naturaleza,
+          naturaleza,
         },
         usuario: movimiento.usuario
           ? this.formatearUsuario(movimiento.usuario)
           : null,
         fechaMovimiento: this.fechaIso(movimiento.fechaMovimiento),
-        monto: this.decimalANumero(movimiento.monto),
-        montoConNaturaleza:
-          movimiento.tipoMovimientoCaja.naturaleza === 'S'
-            ? -this.decimalANumero(movimiento.monto)
-            : this.decimalANumero(movimiento.monto),
+        monto,
+        montoConNaturaleza: naturaleza === 'S' ? -monto : monto,
         motivo: this.formatearMotivoMovimientoCaja(
           movimiento.motivo,
           referenciaTabla,
@@ -3241,7 +3261,8 @@ export class CobrosService {
         );
       }
 
-      if (tipo.naturaleza === 'S') {
+      const naturalezaTipo = this.naturalezaMovimientoCaja(tipo);
+      if (naturalezaTipo === 'S') {
         await this.asegurarSalidaCajaConPresupuesto(
           tx,
           caja.cajaMenorId,
@@ -3384,7 +3405,7 @@ export class CobrosService {
       await this.asegurarPresupuestoDespuesDeCambioMovimientoCaja(tx, actual, {
         cajaMenorId: caja.cajaMenorId,
         monto,
-        naturaleza: tipo.naturaleza,
+        naturaleza: this.naturalezaMovimientoCaja(tipo),
       });
 
       const actualizado = await tx.cajaMenorMovimiento.update({
@@ -6426,6 +6447,20 @@ export class CobrosService {
     return naturaleza === 'S' ? -monto : monto;
   }
 
+  private naturalezaMovimientoCaja(tipo: { codigo: string; naturaleza: string }) {
+    if (
+      ['GASTO', 'DESEMBOLSO_CREDITO', 'AJUSTE_SALIDA'].includes(tipo.codigo)
+    ) {
+      return 'S';
+    }
+
+    if (['RECAUDO', 'AJUSTE_ENTRADA'].includes(tipo.codigo)) {
+      return 'E';
+    }
+
+    return tipo.naturaleza;
+  }
+
   private detalleMovimientoCajaModificado(
     anterior: MovimientoCajaConRelaciones,
     actualizado: MovimientoCajaConRelaciones,
@@ -6625,6 +6660,9 @@ export class CobrosService {
 
   private formatearMovimientoCaja(movimiento: MovimientoCajaConRelaciones) {
     const monto = this.decimalANumero(movimiento.monto);
+    const naturaleza = this.naturalezaMovimientoCaja(
+      movimiento.tipoMovimientoCaja,
+    );
 
     return {
       id: movimiento.cajaMenorMovimientoId,
@@ -6634,15 +6672,14 @@ export class CobrosService {
         id: movimiento.tipoMovimientoCajaId,
         codigo: movimiento.tipoMovimientoCaja.codigo,
         nombre: movimiento.tipoMovimientoCaja.nombre,
-        naturaleza: movimiento.tipoMovimientoCaja.naturaleza,
+        naturaleza,
       },
       usuario: movimiento.usuario
         ? this.formatearUsuario(movimiento.usuario)
         : null,
       fechaMovimiento: this.fechaIso(movimiento.fechaMovimiento),
       monto,
-      montoConNaturaleza:
-        movimiento.tipoMovimientoCaja.naturaleza === 'S' ? -monto : monto,
+      montoConNaturaleza: naturaleza === 'S' ? -monto : monto,
       motivo: movimiento.motivo,
       cliente: null,
       clienteIdentificacion: null,

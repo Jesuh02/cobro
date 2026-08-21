@@ -1,5 +1,15 @@
 BEGIN;
 
+UPDATE public.tipo_movimiento_caja
+SET naturaleza = 'S'
+WHERE codigo IN ('GASTO', 'DESEMBOLSO_CREDITO', 'AJUSTE_SALIDA')
+  AND naturaleza <> 'S';
+
+UPDATE public.tipo_movimiento_caja
+SET naturaleza = 'E'
+WHERE codigo IN ('RECAUDO', 'AJUSTE_ENTRADA')
+  AND naturaleza <> 'E';
+
 CREATE OR REPLACE VIEW public.vista_presupuesto_actual AS
 WITH caja_recaudo AS (
   SELECT DISTINCT ON (cm.responsable_usuario_id, cm.moneda_codigo)
@@ -59,6 +69,7 @@ LEFT JOIN LATERAL (
     ON tmc.tipo_movimiento_caja_id = cmm.tipo_movimiento_caja_id
   WHERE cmm.caja_menor_id = cm.caja_menor_id
     AND tmc.naturaleza = 'E'
+    AND tmc.codigo NOT IN ('GASTO', 'DESEMBOLSO_CREDITO', 'AJUSTE_SALIDA')
 ) entradas_caja ON TRUE
 LEFT JOIN LATERAL (
   SELECT SUM(g.monto) AS total_gastos

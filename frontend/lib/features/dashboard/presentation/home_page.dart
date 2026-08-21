@@ -97,6 +97,7 @@ class _HomePageState extends State<HomePage> {
   int _siguienteOffsetMovimientosCaja = 0;
   bool _hayMasCreditos = false;
   bool _hayMasMovimientosCaja = false;
+  bool _cargandoCreditos = false;
   bool _cargandoMasCreditos = false;
   bool _cargandoMasMovimientosCaja = false;
 
@@ -817,6 +818,8 @@ class _HomePageState extends State<HomePage> {
   Widget _construirNuevoCredito(BuildContext context) {
     final Catalogos? catalogos = _catalogos;
     final List<CreditoRegistro> creditos = _filtrarCreditos();
+    final bool mostrandoCargaInicialCreditos =
+        _cargandoCreditos && creditos.isEmpty;
     final bool hayCreditoActivo =
         _creditos.any((CreditoRegistro credito) => credito.activo);
     final bool listo = catalogos != null &&
@@ -851,7 +854,7 @@ class _HomePageState extends State<HomePage> {
         ),
       ],
       children: <Widget>[
-        if (!listo && _creditos.isEmpty)
+        if (!mostrandoCargaInicialCreditos && !listo && _creditos.isEmpty)
           _EstadoVacio(
             icono: Icons.add_business_outlined,
             titulo: 'Faltan datos base',
@@ -874,10 +877,12 @@ class _HomePageState extends State<HomePage> {
         const SizedBox(height: 12),
         _construirFiltrosCredito(context),
         const SizedBox(height: 16),
-        if (creditos.isEmpty)
+        if (mostrandoCargaInicialCreditos)
+          const _SkeletonListaCreditos()
+        else if (creditos.isEmpty)
           _EstadoVacio(
             icono: Icons.request_quote_outlined,
-            titulo: 'Sin creditos',
+            titulo: 'No hay nada',
             mensaje: 'No hay creditos para mostrar con el filtro actual.',
             accion: FilledButton.icon(
               onPressed: _guardando ? null : _abrirCrearCreditoModal,
@@ -1629,6 +1634,7 @@ class _HomePageState extends State<HomePage> {
       _siguienteOffsetMovimientosCaja = 0;
       _hayMasCreditos = false;
       _hayMasMovimientosCaja = false;
+      _cargandoCreditos = false;
       _cargandoMasCreditos = false;
       _cargandoMasMovimientosCaja = false;
       _seccionActual = 0;
@@ -1647,6 +1653,7 @@ class _HomePageState extends State<HomePage> {
     final int cargaActual = ++_cargaSerial;
     setState(() {
       _cargando = true;
+      _cargandoCreditos = true;
       _cargandoMasCreditos = false;
       _cargandoMasMovimientosCaja = false;
       _error = null;
@@ -1692,7 +1699,10 @@ class _HomePageState extends State<HomePage> {
       _manejarErrorCarga(error);
     } finally {
       if (mounted && cargaActual == _cargaSerial) {
-        setState(() => _cargando = false);
+        setState(() {
+          _cargando = false;
+          _cargandoCreditos = false;
+        });
       }
     }
   }
@@ -1798,6 +1808,7 @@ class _HomePageState extends State<HomePage> {
     if (creditos || movimientosCaja) {
       setState(() {
         if (creditos) {
+          _cargandoCreditos = true;
           _cargandoMasCreditos = false;
         }
         if (movimientosCaja) {
@@ -1889,6 +1900,10 @@ class _HomePageState extends State<HomePage> {
         return;
       }
       _manejarErrorCarga(error);
+    } finally {
+      if (mounted && cargaActual == _cargaSerial && creditos) {
+        setState(() => _cargandoCreditos = false);
+      }
     }
   }
 
@@ -4563,7 +4578,10 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _cargarMasCreditosSiHaceFalta() {
-    if (!_hayMasCreditos || _cargandoMasCreditos || _usuarioSesion == null) {
+    if (!_hayMasCreditos ||
+        _cargandoCreditos ||
+        _cargandoMasCreditos ||
+        _usuarioSesion == null) {
       return;
     }
 
@@ -4715,6 +4733,13 @@ class _HomePageState extends State<HomePage> {
     }
     if (error is FormatException) {
       return error.message;
+    }
+    final String detalle = error.toString().toLowerCase();
+    if (detalle.contains('connection refused') ||
+        detalle.contains('failed to fetch') ||
+        detalle.contains('xmlhttprequest error') ||
+        detalle.contains('socketexception')) {
+      return 'No se pudo conectar con la API. Verifica que el backend este encendido y que API_BASE_URL apunte al puerto correcto.';
     }
     return 'No se pudo completar la acción';
   }
@@ -6465,6 +6490,203 @@ class _EstadoContador extends StatelessWidget {
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SkeletonListaCreditos extends StatefulWidget {
+  const _SkeletonListaCreditos();
+
+  @override
+  State<_SkeletonListaCreditos> createState() => _SkeletonListaCreditosState();
+}
+
+class _SkeletonListaCreditosState extends State<_SkeletonListaCreditos>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (BuildContext context, Widget? child) {
+        return Column(
+          children: List<Widget>.generate(
+            3,
+            (int index) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _SkeletonTarjetaCredito(progreso: _controller.value),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _SkeletonTarjetaCredito extends StatelessWidget {
+  const _SkeletonTarjetaCredito({required this.progreso});
+
+  final double progreso;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClaySurface(
+      radius: 14,
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    _SkeletonCreditoBloque(
+                      progreso: progreso,
+                      width: 210,
+                      height: 18,
+                    ),
+                    const SizedBox(height: 8),
+                    _SkeletonCreditoBloque(
+                      progreso: progreso,
+                      width: 280,
+                      height: 12,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              _SkeletonCreditoBloque(
+                progreso: progreso,
+                width: 78,
+                height: 28,
+                radius: 999,
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          _SkeletonCreditoBloque(
+            progreso: progreso,
+            width: double.infinity,
+            height: 9,
+            radius: 999,
+          ),
+          const SizedBox(height: 8),
+          _SkeletonCreditoBloque(
+            progreso: progreso,
+            width: 230,
+            height: 12,
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 16,
+            runSpacing: 10,
+            children: List<Widget>.generate(
+              6,
+              (int index) => _SkeletonDatoCredito(progreso: progreso),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SkeletonDatoCredito extends StatelessWidget {
+  const _SkeletonDatoCredito({required this.progreso});
+
+  final double progreso;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 104,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          _SkeletonCreditoBloque(
+            progreso: progreso,
+            width: 58,
+            height: 10,
+          ),
+          const SizedBox(height: 6),
+          _SkeletonCreditoBloque(
+            progreso: progreso,
+            width: 94,
+            height: 15,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SkeletonCreditoBloque extends StatelessWidget {
+  const _SkeletonCreditoBloque({
+    required this.progreso,
+    required this.width,
+    required this.height,
+    this.radius = 7,
+  });
+
+  final double progreso;
+  final double width;
+  final double height;
+  final double radius;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool oscuro = Theme.of(context).brightness == Brightness.dark;
+    final Color base = context.clay.border.withValues(
+      alpha: oscuro ? 0.38 : 0.5,
+    );
+    final Color brillo = Colors.white.withValues(alpha: oscuro ? 0.14 : 0.58);
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(radius),
+      child: SizedBox(
+        width: width,
+        height: height,
+        child: Stack(
+          fit: StackFit.expand,
+          children: <Widget>[
+            ColoredBox(color: base),
+            FractionalTranslation(
+              translation: Offset((progreso * 2.4) - 1.2, 0),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: <Color>[
+                      Colors.transparent,
+                      brillo,
+                      Colors.transparent,
+                    ],
+                    stops: const <double>[0.24, 0.5, 0.76],
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

@@ -3,6 +3,8 @@ import { Prisma } from '@prisma/client';
 import { Workbook, type Worksheet } from 'exceljs';
 import { Buffer } from 'node:buffer';
 
+import { cacheKeyFromCriteria } from '../../common/cache/cache-key';
+import { InMemoryCacheService } from '../../common/cache/in-memory-cache.service';
 import { DomainError } from '../../common/domain/domain-error';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuthenticatedUser } from '../auth/auth.types';
@@ -438,6 +440,14 @@ type ColumnaExportacion = {
 
 type FilaExportacion = Record<string, string | number | null | undefined>;
 
+type PaginaRespuesta<T> = {
+  items: T[];
+  limit: number;
+  offset: number;
+  nextOffset: number | null;
+  hasMore: boolean;
+};
+
 @Injectable()
 export class CobrosService {
   private esquemaTblDisponible?: boolean;
@@ -446,7 +456,49 @@ export class CobrosService {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly exportacionesR2: ExportacionesR2Service,
+    private readonly cache: InMemoryCacheService,
   ) {}
+
+  private usuarioCacheKey(usuario: AuthenticatedUser) {
+    return `${usuario.usuarioId}:${[...usuario.roles].sort().join(',')}`;
+  }
+
+  private invalidarCacheLecturas() {
+    this.cache.deleteByPrefix('cobros:');
+  }
+
+  private hayPaginacion(query: { limit?: number; offset?: number }) {
+    return query.limit !== undefined || query.offset !== undefined;
+  }
+
+  private limitePagina(
+    query: { limit?: number },
+    predeterminado: number,
+    maximo = 100,
+  ) {
+    return Math.min(Math.max(query.limit ?? predeterminado, 1), maximo);
+  }
+
+  private offsetPagina(query: { offset?: number }) {
+    return Math.max(query.offset ?? 0, 0);
+  }
+
+  private paginaRespuesta<T>(
+    rows: T[],
+    limit: number,
+    offset: number,
+  ): PaginaRespuesta<T> {
+    const items = rows.slice(0, limit);
+    const hasMore = rows.length > limit;
+
+    return {
+      items,
+      limit,
+      offset,
+      nextOffset: hasMore ? offset + items.length : null,
+      hasMore,
+    };
+  }
 
   async obtenerCatalogos(usuario: AuthenticatedUser) {
     if (await this.usarEsquemaTbl()) {
@@ -984,7 +1036,41 @@ export class CobrosService {
     query: ListarCreditosQueryDto,
     usuario: AuthenticatedUser,
   ) {
-    return this.consultarCreditos(query, usuario, 250);
+    const paginado = this.hayPaginacion(query);
+    const limit = this.limitePagina(
+      query,
+      paginado ? 40 : 250,
+      paginado ? 100 : 250,
+    );
+    const offset = paginado ? this.offsetPagina(query) : 0;
+    const cacheKey = `cobros:${this.usuarioCacheKey(usuario)}:creditos:${cacheKeyFromCriteria(
+      {
+        estado: query.estado,
+        estadoCobro: query.estadoCobro,
+        fechaDesde: query.fechaDesde,
+        fechaHasta: query.fechaHasta,
+        limit,
+        offset,
+        rutaId: query.rutaId,
+        search: query.search,
+      },
+    )}`;
+
+    return this.cache.remember(
+      cacheKey,
+      async () => {
+        const rows = await this.consultarCreditos(
+          query,
+          usuario,
+          paginado ? limit + 1 : limit,
+          offset,
+        );
+
+        const pageRows: unknown[] = [...rows];
+        return paginado ? this.paginaRespuesta(pageRows, limit, offset) : rows;
+      },
+      { ttlMs: 15_000 },
+    );
   }
 
   async exportarCreditos(
@@ -1074,6 +1160,7 @@ export class CobrosService {
     query: ListarCreditosQueryDto,
     usuario: AuthenticatedUser,
     limite?: number,
+    offset = 0,
   ) {
     const conditions: Prisma.Sql[] = [Prisma.sql`1 = 1`];
     const search = this.normalizarTextoOpcional(query.search);
@@ -1237,6 +1324,7 @@ export class CobrosService {
       WHERE ${Prisma.join(conditions, ' AND ')}
       ORDER BY c.fecha_inicio DESC, c.creado_en DESC, cl.nombre_completo ASC
       ${limite ? Prisma.sql`LIMIT ${limite}` : Prisma.empty}
+      ${offset > 0 ? Prisma.sql`OFFSET ${offset}` : Prisma.empty}
     `);
 
     return rows.map((row) => this.formatearCreditoListado(row));
@@ -1422,6 +1510,7 @@ export class CobrosService {
       return credito.creditoId;
     });
 
+    this.invalidarCacheLecturas();
     const credito = await this.obtenerCredito(creditoId, usuario);
     void this.notifications.notifyCreditApproved(creditoId);
     return credito;
@@ -1642,7 +1731,7 @@ export class CobrosService {
           });
 
           await this.registrarAuditoriaMovimientoCaja(tx, {
-            cajaMenorId: movimientoAnterior.cajaMenorId,
+            cajaMenorId: movimientoActualizado.cajaMenorId,
             cajaMenorMovimientoId: movimientoAnterior.cajaMenorMovimientoId,
             usuarioId: usuario.usuarioId,
             accion: 'MODIFICAR',
@@ -1650,6 +1739,38 @@ export class CobrosService {
               movimientoAnterior,
               movimientoActualizado,
             ),
+          });
+          await this.registrarAuditoria(tx, {
+            usuarioId: usuario.usuarioId,
+            tabla: 'caja_menor_movimiento',
+            registroId: movimientoAnterior.cajaMenorMovimientoId,
+            accion: 'MODIFICAR',
+            descripcion: this.detalleMovimientoCajaModificado(
+              movimientoAnterior,
+              movimientoActualizado,
+            ),
+            valoresAnteriores: {
+              cajaMenorId: movimientoAnterior.cajaMenorId,
+              tipoMovimientoCodigo:
+                movimientoAnterior.tipoMovimientoCaja.codigo,
+              fechaMovimiento: this.fechaIso(
+                movimientoAnterior.fechaMovimiento,
+              ),
+              monto: this.decimalANumero(movimientoAnterior.monto),
+              motivo: movimientoAnterior.motivo,
+              creditoId,
+            },
+            valoresNuevos: {
+              cajaMenorId: movimientoActualizado.cajaMenorId,
+              tipoMovimientoCodigo:
+                movimientoActualizado.tipoMovimientoCaja.codigo,
+              fechaMovimiento: this.fechaIso(
+                movimientoActualizado.fechaMovimiento,
+              ),
+              monto: this.decimalANumero(movimientoActualizado.monto),
+              motivo: movimientoActualizado.motivo,
+              creditoId,
+            },
           });
         } else {
           await this.asegurarSalidaCajaConPresupuesto(
@@ -1673,6 +1794,31 @@ export class CobrosService {
             },
           });
           cajaMenorMovimientoId = movimientoCreado.cajaMenorMovimientoId;
+          const detalle =
+            `Se modifico credito de ${credito.cliente.nombreCompleto} ` +
+            `y se registro desembolso por ${valorPrincipal}`;
+          await this.registrarAuditoriaMovimientoCaja(tx, {
+            cajaMenorId: caja.cajaMenorId,
+            cajaMenorMovimientoId,
+            usuarioId: usuario.usuarioId,
+            accion: 'MODIFICAR',
+            detalle,
+          });
+          await this.registrarAuditoria(tx, {
+            usuarioId: usuario.usuarioId,
+            tabla: 'caja_menor_movimiento',
+            registroId: cajaMenorMovimientoId,
+            accion: 'MODIFICAR',
+            descripcion: detalle,
+            valoresNuevos: {
+              cajaMenorId: caja.cajaMenorId,
+              tipoMovimientoCodigo: tipoDesembolso.codigo,
+              fechaMovimiento: this.fechaIso(fechaInicio),
+              monto: valorPrincipal,
+              motivo: this.motivoDesembolsoCredito(cliente.nombreCompleto),
+              creditoId,
+            },
+          });
         }
 
         if (credito.desembolso) {
@@ -1775,6 +1921,7 @@ export class CobrosService {
       { maxWait: 10_000, timeout: 20_000 },
     );
 
+    this.invalidarCacheLecturas();
     return this.obtenerCredito(creditoActualizadoId, usuario);
   }
 
@@ -1872,6 +2019,7 @@ export class CobrosService {
       { maxWait: 10_000, timeout: 20_000 },
     );
 
+    this.invalidarCacheLecturas();
     return { ok: true };
   }
 
@@ -2210,6 +2358,7 @@ export class CobrosService {
       { maxWait: 10_000, timeout: 20_000 },
     );
 
+    this.invalidarCacheLecturas();
     return this.obtenerCredito(creditoRefinanciadoId, usuario);
   }
 
@@ -2527,6 +2676,7 @@ export class CobrosService {
       { maxWait: 10_000, timeout: 15_000 },
     );
 
+    this.invalidarCacheLecturas();
     const pago = await this.obtenerPago(resultadoPago.pagoId, usuario);
     if (resultadoPago.creado) {
       void this.notifications.notifyPaymentReceived(resultadoPago.pagoId);
@@ -2587,14 +2737,75 @@ export class CobrosService {
     query: ListarMovimientosCajaQueryDto,
     usuario: AuthenticatedUser,
   ) {
+    const paginado = this.hayPaginacion(query);
+    const limit = this.limitePagina(query, paginado ? 40 : 100);
+    const offset = paginado ? this.offsetPagina(query) : 0;
+    const cacheKey = `cobros:${this.usuarioCacheKey(
+      usuario,
+    )}:caja-menor:${cacheKeyFromCriteria({
+      cajaMenorId: query.cajaMenorId,
+      fechaDesde: query.fechaDesde,
+      fechaHasta: query.fechaHasta,
+      limit,
+      offset,
+      search: query.search,
+      tipo: query.tipo,
+    })}`;
+
+    return this.cache.remember(
+      cacheKey,
+      async () => {
+        const rows = await this.listarMovimientosCajaSinCache(
+          query,
+          usuario,
+          paginado ? limit + 1 : limit,
+          offset,
+          paginado,
+        );
+
+        const pageRows: unknown[] = [...rows];
+        return paginado ? this.paginaRespuesta(pageRows, limit, offset) : rows;
+      },
+      { ttlMs: 12_000 },
+    );
+  }
+
+  private async listarMovimientosCajaSinCache(
+    query: ListarMovimientosCajaQueryDto,
+    usuario: AuthenticatedUser,
+    limit: number,
+    offset: number,
+    paginado: boolean,
+  ) {
     if (await this.usarEsquemaTbl()) {
-      return this.listarMovimientosCajaTbl(query, usuario);
+      return this.listarMovimientosCajaTbl(query, usuario, limit, offset);
     }
 
     const search = this.normalizarTextoOpcional(query.search);
+    const sourceTake = paginado ? offset + limit : limit;
+    const fechaDesde = query.fechaDesde
+      ? this.parsearFecha(query.fechaDesde, 'fechaDesde')
+      : null;
+    const fechaHasta = query.fechaHasta
+      ? this.finDia(this.parsearFecha(query.fechaHasta, 'fechaHasta'))
+      : null;
+    const tipo = query.tipo ?? 'todos';
     const where: Prisma.CajaMenorMovimientoWhereInput = {
       cajaMenorId: query.cajaMenorId,
     };
+
+    if (fechaDesde || fechaHasta) {
+      where.fechaMovimiento = {
+        ...(fechaDesde ? { gte: fechaDesde } : {}),
+        ...(fechaHasta ? { lte: fechaHasta } : {}),
+      };
+    }
+
+    if (tipo === 'entradas') {
+      where.tipoMovimientoCaja = { naturaleza: 'E' };
+    } else if (tipo === 'salidas') {
+      where.tipoMovimientoCaja = { naturaleza: 'S' };
+    }
 
     if (!this.esAdministrador(usuario)) {
       where.cajaMenor = { responsableUsuarioId: usuario.usuarioId };
@@ -2659,6 +2870,8 @@ export class CobrosService {
 
     if (query.cajaMenorId && !cajaFiltroVisible) {
       pagoWhere.pagoId = '00000000-0000-0000-0000-000000000000';
+    } else if (tipo === 'salidas') {
+      pagoWhere.pagoId = '00000000-0000-0000-0000-000000000000';
     } else if (cajaFiltroVisible) {
       pagoWhere.monedaCodigo = cajaFiltroVisible.monedaCodigo;
       pagoWhere.ruta = {
@@ -2666,6 +2879,13 @@ export class CobrosService {
       };
     } else if (!this.esAdministrador(usuario)) {
       pagoWhere.ruta = { responsableUsuarioId: usuario.usuarioId };
+    }
+
+    if (fechaDesde || fechaHasta) {
+      pagoWhere.fechaPago = {
+        ...(fechaDesde ? { gte: fechaDesde } : {}),
+        ...(fechaHasta ? { lte: fechaHasta } : {}),
+      };
     }
 
     if (search) {
@@ -2717,7 +2937,7 @@ export class CobrosService {
           },
         },
         orderBy: [{ fechaMovimiento: 'desc' }, { creadoEn: 'desc' }],
-        take: 100,
+        take: sourceTake,
       }),
       this.prisma.pago.findMany({
         where: pagoWhere,
@@ -2732,9 +2952,9 @@ export class CobrosService {
           ruta: true,
         },
         orderBy: [{ fechaPago: 'desc' }, { creadoEn: 'desc' }],
-        take: 100,
+        take: sourceTake,
       }),
-      this.listarAuditoriasMovimientoCaja(query, usuario, search),
+      this.listarAuditoriasMovimientoCaja(query, usuario, search, sourceTake),
       this.prisma.tipoMovimientoCaja.findUnique({
         where: { codigo: 'RECAUDO' },
       }),
@@ -2856,7 +3076,29 @@ export class CobrosService {
       };
     });
 
-    return [...movimientosCaja, ...movimientosPago, ...movimientosAuditoria]
+    const rows = [...movimientosCaja, ...movimientosPago, ...movimientosAuditoria]
+      .filter((movimiento) => {
+        const naturaleza = movimiento.tipoMovimiento.naturaleza.toUpperCase();
+        const fechaMovimiento = new Date(movimiento.fechaMovimiento);
+
+        if (tipo === 'entradas' && naturaleza !== 'E') {
+          return false;
+        }
+
+        if (tipo === 'salidas' && naturaleza !== 'S') {
+          return false;
+        }
+
+        if (fechaDesde && fechaMovimiento < fechaDesde) {
+          return false;
+        }
+
+        if (fechaHasta && fechaMovimiento > fechaHasta) {
+          return false;
+        }
+
+        return true;
+      })
       .sort((left, right) => {
         const fecha =
           Date.parse(right.fechaMovimiento) - Date.parse(left.fechaMovimiento);
@@ -2866,8 +3108,9 @@ export class CobrosService {
         }
 
         return Date.parse(right.creadoEn) - Date.parse(left.creadoEn);
-      })
-      .slice(0, 100);
+      });
+
+    return rows.slice(offset, offset + limit);
   }
 
   async exportarMovimientosCaja(
@@ -2882,7 +3125,7 @@ export class CobrosService {
       ? this.parsearFecha(query.fechaDesde, 'fechaDesde')
       : null;
     const fechaHasta = query.fechaHasta
-      ? this.parsearFecha(query.fechaHasta, 'fechaHasta')
+      ? this.finDia(this.parsearFecha(query.fechaHasta, 'fechaHasta'))
       : null;
     const tipo = query.tipo ?? 'todos';
     const filtrados = movimientos.filter((movimiento) => {
@@ -3028,6 +3271,7 @@ export class CobrosService {
       });
     });
 
+    this.invalidarCacheLecturas();
     return this.formatearMovimientoCaja(movimiento);
   }
 
@@ -3039,11 +3283,13 @@ export class CobrosService {
     this.asegurarAdministrador(usuario);
 
     if (this.esIdPagoCaja(id)) {
-      return this.actualizarPagoComoMovimientoCaja(
+      const movimiento = await this.actualizarPagoComoMovimientoCaja(
         this.idPagoDesdeMovimientoCaja(id),
         dto,
         usuario,
       );
+      this.invalidarCacheLecturas();
+      return movimiento;
     }
 
     const fechaMovimiento = this.parsearFecha(
@@ -3200,6 +3446,7 @@ export class CobrosService {
       return actualizado;
     });
 
+    this.invalidarCacheLecturas();
     return this.formatearMovimientoCaja(movimiento);
   }
 
@@ -3211,6 +3458,7 @@ export class CobrosService {
         this.idPagoDesdeMovimientoCaja(id),
         usuario,
       );
+      this.invalidarCacheLecturas();
       return { ok: true };
     }
 
@@ -3272,6 +3520,7 @@ export class CobrosService {
       });
     });
 
+    this.invalidarCacheLecturas();
     return { ok: true };
   }
 
@@ -3341,6 +3590,7 @@ export class CobrosService {
       include: { responsable: true },
     });
 
+    this.invalidarCacheLecturas();
     return {
       id: caja.cajaMenorId,
       nombre: caja.nombre,
@@ -3997,6 +4247,8 @@ export class CobrosService {
   private async listarMovimientosCajaTbl(
     query: ListarMovimientosCajaQueryDto,
     usuario: AuthenticatedUser,
+    limit = 100,
+    offset = 0,
   ) {
     const search = this.normalizarTextoOpcional(query.search);
     const conditions: Prisma.Sql[] = [];
@@ -4018,6 +4270,24 @@ export class CobrosService {
         OR tipo_nombre ILIKE ${pattern}
         OR motivo ILIKE ${pattern}
       )`);
+    }
+
+    if (query.tipo === 'entradas') {
+      conditions.push(Prisma.sql`naturaleza = 'E'`);
+    } else if (query.tipo === 'salidas') {
+      conditions.push(Prisma.sql`naturaleza = 'S'`);
+    }
+
+    if (query.fechaDesde) {
+      const fechaDesde = this.parsearFecha(query.fechaDesde, 'fechaDesde');
+      conditions.push(Prisma.sql`fecha_movimiento >= ${fechaDesde}`);
+    }
+
+    if (query.fechaHasta) {
+      const fechaHasta = this.finDia(
+        this.parsearFecha(query.fechaHasta, 'fechaHasta'),
+      );
+      conditions.push(Prisma.sql`fecha_movimiento <= ${fechaHasta}`);
     }
 
     const where =
@@ -4134,7 +4404,8 @@ export class CobrosService {
       FROM base
       ${where}
       ORDER BY creado_en DESC
-      LIMIT 100
+      LIMIT ${limit}
+      ${offset > 0 ? Prisma.sql`OFFSET ${offset}` : Prisma.empty}
     `);
 
     return rows.map((movimiento) => {
@@ -6193,6 +6464,7 @@ export class CobrosService {
     query: ListarMovimientosCajaQueryDto,
     usuario: AuthenticatedUser,
     search: string | null,
+    limit = 100,
   ): Promise<AuditoriaMovimientoCajaRow[]> {
     if (!(await this.tablaExiste(this.prisma, 'public.auditoria'))) {
       return [];
@@ -6250,7 +6522,7 @@ export class CobrosService {
       LEFT JOIN public.usuario u ON u.usuario_id = a.usuario_id
       WHERE ${Prisma.join(condiciones, ' AND ')}
       ORDER BY a.creado_en DESC
-      LIMIT 100
+      LIMIT ${limit}
     `);
   }
 
@@ -6596,6 +6868,12 @@ export class CobrosService {
     return new Date(
       Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()),
     );
+  }
+
+  private finDia(value: Date) {
+    const next = this.fechaUtc(value);
+    next.setUTCHours(23, 59, 59, 999);
+    return next;
   }
 
   private sumarDias(value: Date, days: number) {

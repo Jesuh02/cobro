@@ -9,6 +9,7 @@ import {
   IsOptional,
   IsString,
   Length,
+  Max,
   MaxLength,
   Min,
   MinLength,
@@ -91,6 +92,19 @@ export class ListarCreditosQueryDto extends ListarCobrosRutaQueryDto {
   @IsOptional()
   @IsDateString()
   fechaHasta?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  offset?: number;
 }
 
 export class CrearCreditoDto {
@@ -236,9 +250,7 @@ export class ListarMovimientosCajaQueryDto {
   @IsString()
   @MaxLength(120)
   search?: string;
-}
 
-export class ExportarMovimientosCajaQueryDto extends ListarMovimientosCajaQueryDto {
   @IsOptional()
   @IsIn(['todos', 'entradas', 'salidas'])
   tipo?: 'todos' | 'entradas' | 'salidas';
@@ -250,7 +262,22 @@ export class ExportarMovimientosCajaQueryDto extends ListarMovimientosCajaQueryD
   @IsOptional()
   @IsDateString()
   fechaHasta?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  offset?: number;
 }
+
+export class ExportarMovimientosCajaQueryDto extends ListarMovimientosCajaQueryDto {}
 
 export class CrearCajaMenorDto {
   @IsOptional()

@@ -35,6 +35,7 @@ class _HomePageState extends State<HomePage> {
   late final ApiClient _apiClient;
   late final bool _cerrarApiClientAlSalir;
   static const double _mobileBreakpoint = 760;
+  static const int _pageSize = 40;
   static const String _interesCreditoPredeterminado = '20';
   static const String _plazoCreditoPredeterminado = '30';
   static const String _todasLasCajasFiltro = '__todas_las_cajas__';
@@ -92,6 +93,12 @@ class _HomePageState extends State<HomePage> {
   List<CobroRuta> _cobrosRuta = const <CobroRuta>[];
   List<CreditoRegistro> _creditos = const <CreditoRegistro>[];
   List<MovimientoCaja> _movimientosCaja = const <MovimientoCaja>[];
+  int _siguienteOffsetCreditos = 0;
+  int _siguienteOffsetMovimientosCaja = 0;
+  bool _hayMasCreditos = false;
+  bool _hayMasMovimientosCaja = false;
+  bool _cargandoMasCreditos = false;
+  bool _cargandoMasMovimientosCaja = false;
 
   int _seccionActual = 0;
   bool _cargando = false;
@@ -107,6 +114,7 @@ class _HomePageState extends State<HomePage> {
   OverlayEntry? _mensajeOverlay;
   Timer? _mensajeTimer;
   Timer? _refrescoTimer;
+  Timer? _filtrosListasTimer;
   int _cargaSerial = 0;
   DateTime? _fechaCajaDesde;
   DateTime? _fechaCajaHasta;
@@ -129,8 +137,8 @@ class _HomePageState extends State<HomePage> {
     _apiClient = widget.apiClient ?? ApiClient(baseUrl: widget.apiBaseUrl);
     _cerrarApiClientAlSalir = widget.apiClient == null;
     _buscarRutaController.addListener(_refrescar);
-    _buscarCreditoController.addListener(_refrescar);
-    _buscarCajaController.addListener(_refrescar);
+    _buscarCreditoController.addListener(_programarRecargaListasPesadas);
+    _buscarCajaController.addListener(_programarRecargaListasPesadas);
     _buscarClienteController.addListener(_refrescar);
   }
 
@@ -138,6 +146,7 @@ class _HomePageState extends State<HomePage> {
   void dispose() {
     _mensajeTimer?.cancel();
     _refrescoTimer?.cancel();
+    _filtrosListasTimer?.cancel();
     _mensajeOverlay?.remove();
     if (_cerrarApiClientAlSalir) {
       _apiClient.close();
@@ -826,6 +835,7 @@ class _HomePageState extends State<HomePage> {
       subtitulo: 'Creacion, refinanciacion e historial',
       error: _error,
       onRefresh: _cargar,
+      onNearEnd: _cargarMasCreditosSiHaceFalta,
       acciones: <Widget>[
         OutlinedButton.icon(
           onPressed: _guardando || !hayCreditoActivo
@@ -890,6 +900,11 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
           ),
+        if (_cargandoMasCreditos)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 14),
+            child: Center(child: CircularProgressIndicator()),
+          ),
       ],
     );
   }
@@ -922,6 +937,7 @@ class _HomePageState extends State<HomePage> {
           selected: <_FiltroEstadoCredito>{_filtroCredito},
           onSelectionChanged: (Set<_FiltroEstadoCredito> value) {
             setState(() => _filtroCredito = value.first);
+            _recargarDatos(creditos: true);
           },
         ),
         OutlinedButton.icon(
@@ -973,6 +989,7 @@ class _HomePageState extends State<HomePage> {
       subtitulo: 'Movimientos y pagos registrados  ',
       error: _error,
       onRefresh: _cargar,
+      onNearEnd: _cargarMasMovimientosCajaSiHaceFalta,
       acciones: <Widget>[
         if (hayCajaMenor)
           OutlinedButton.icon(
@@ -1033,6 +1050,11 @@ class _HomePageState extends State<HomePage> {
                 onEliminar: () => _confirmarEliminarMovimientoCaja(movimiento),
               ),
             ),
+          ),
+        if (_cargandoMasMovimientosCaja)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 14),
+            child: Center(child: CircularProgressIndicator()),
           ),
       ],
     );
@@ -1115,6 +1137,7 @@ class _HomePageState extends State<HomePage> {
           selected: <_FiltroMovimientoCaja>{_filtroMovimientoCaja},
           onSelectionChanged: (Set<_FiltroMovimientoCaja> value) {
             setState(() => _filtroMovimientoCaja = value.first);
+            _recargarDatos(movimientosCaja: true);
           },
         ),
         OutlinedButton.icon(
@@ -1186,6 +1209,7 @@ class _HomePageState extends State<HomePage> {
         }
       }
     });
+    _recargarDatos(movimientosCaja: true);
   }
 
   Future<void> _seleccionarFechaCredito({required bool esDesde}) async {
@@ -1218,6 +1242,7 @@ class _HomePageState extends State<HomePage> {
         }
       }
     });
+    _recargarDatos(creditos: true);
   }
 
   Future<DateTime?> _seleccionarFechaHora({
@@ -1279,6 +1304,7 @@ class _HomePageState extends State<HomePage> {
       _fechaCreditoDesde = null;
       _fechaCreditoHasta = null;
     });
+    _recargarDatos(creditos: true);
   }
 
   bool get _hayFiltrosCredito =>
@@ -1599,6 +1625,12 @@ class _HomePageState extends State<HomePage> {
       _cobrosRuta = const <CobroRuta>[];
       _creditos = const <CreditoRegistro>[];
       _movimientosCaja = const <MovimientoCaja>[];
+      _siguienteOffsetCreditos = 0;
+      _siguienteOffsetMovimientosCaja = 0;
+      _hayMasCreditos = false;
+      _hayMasMovimientosCaja = false;
+      _cargandoMasCreditos = false;
+      _cargandoMasMovimientosCaja = false;
       _seccionActual = 0;
       _cajaMenorFiltroId = null;
       _cargando = false;
@@ -1615,6 +1647,8 @@ class _HomePageState extends State<HomePage> {
     final int cargaActual = ++_cargaSerial;
     setState(() {
       _cargando = true;
+      _cargandoMasCreditos = false;
+      _cargandoMasMovimientosCaja = false;
       _error = null;
     });
 
@@ -1625,8 +1659,8 @@ class _HomePageState extends State<HomePage> {
         _obtenerPresupuesto(),
         _obtenerClientes(),
         _obtenerCobrosRuta(),
-        _obtenerCreditos(),
-        _obtenerMovimientosCaja(),
+        _obtenerCreditosPagina(),
+        _obtenerMovimientosCajaPagina(),
       ]);
 
       if (!mounted || cargaActual != _cargaSerial) {
@@ -1638,8 +1672,17 @@ class _HomePageState extends State<HomePage> {
         _presupuesto = resultados[1] as Presupuesto;
         _clientes = resultados[2] as List<Cliente>;
         _cobrosRuta = resultados[3] as List<CobroRuta>;
-        _creditos = resultados[4] as List<CreditoRegistro>;
-        _movimientosCaja = resultados[5] as List<MovimientoCaja>;
+        final _PaginaDatos<CreditoRegistro> creditos =
+            resultados[4] as _PaginaDatos<CreditoRegistro>;
+        final _PaginaDatos<MovimientoCaja> movimientosCaja =
+            resultados[5] as _PaginaDatos<MovimientoCaja>;
+        _creditos = creditos.items;
+        _siguienteOffsetCreditos = creditos.nextOffset ?? _creditos.length;
+        _hayMasCreditos = creditos.hasMore;
+        _movimientosCaja = movimientosCaja.items;
+        _siguienteOffsetMovimientosCaja =
+            movimientosCaja.nextOffset ?? _movimientosCaja.length;
+        _hayMasMovimientosCaja = movimientosCaja.hasMore;
         _ajustarSelecciones();
       });
     } catch (error) {
@@ -1674,25 +1717,69 @@ class _HomePageState extends State<HomePage> {
         .toList(growable: false);
   }
 
-  Future<List<CreditoRegistro>> _obtenerCreditos() async {
-    return (await _apiClient.getList('/creditos'))
-        .map(
-          (dynamic item) =>
-              CreditoRegistro.fromJson(item as Map<String, dynamic>),
-        )
-        .toList(growable: false);
+  Future<_PaginaDatos<CreditoRegistro>> _obtenerCreditosPagina({
+    int offset = 0,
+  }) async {
+    final Map<String, dynamic> response = await _apiClient.getObject(
+      '/creditos',
+      query: _queryCreditos(offset: offset),
+    );
+    return _PaginaDatos.fromJson(
+      response,
+      CreditoRegistro.fromJson,
+    );
   }
 
-  Future<List<MovimientoCaja>> _obtenerMovimientosCaja() async {
-    return (await _apiClient.getList(
+  Future<_PaginaDatos<MovimientoCaja>> _obtenerMovimientosCajaPagina({
+    int offset = 0,
+  }) async {
+    final Map<String, dynamic> response = await _apiClient.getObject(
       '/caja-menor/movimientos',
-      query: <String, String?>{'cajaMenorId': _cajaMenorFiltroId},
-    ))
-        .map(
-          (dynamic item) =>
-              MovimientoCaja.fromJson(item as Map<String, dynamic>),
-        )
-        .toList(growable: false);
+      query: _queryMovimientosCaja(offset: offset),
+    );
+    return _PaginaDatos.fromJson(
+      response,
+      MovimientoCaja.fromJson,
+    );
+  }
+
+  Map<String, String?> _queryCreditos({required int offset}) {
+    final String search = _buscarCreditoController.text.trim();
+    return <String, String?>{
+      'limit': _pageSize.toString(),
+      'offset': offset.toString(),
+      'search': search.isEmpty ? null : search,
+      'estado': switch (_filtroCredito) {
+        _FiltroEstadoCredito.todos => 'todos',
+        _FiltroEstadoCredito.activos => 'activos',
+        _FiltroEstadoCredito.inactivos => 'inactivos',
+      },
+      'fechaDesde': _fechaCreditoDesde == null
+          ? null
+          : _fechaValor(_fechaCreditoDesde!),
+      'fechaHasta': _fechaCreditoHasta == null
+          ? null
+          : _fechaValor(_fechaCreditoHasta!),
+    };
+  }
+
+  Map<String, String?> _queryMovimientosCaja({required int offset}) {
+    final String search = _buscarCajaController.text.trim();
+    return <String, String?>{
+      'limit': _pageSize.toString(),
+      'offset': offset.toString(),
+      'cajaMenorId': _cajaMenorFiltroId,
+      'search': search.isEmpty ? null : search,
+      'tipo': switch (_filtroMovimientoCaja) {
+        _FiltroMovimientoCaja.todos => 'todos',
+        _FiltroMovimientoCaja.entradas => 'entradas',
+        _FiltroMovimientoCaja.salidas => 'salidas',
+      },
+      'fechaDesde':
+          _fechaCajaDesde == null ? null : _fechaValor(_fechaCajaDesde!),
+      'fechaHasta':
+          _fechaCajaHasta == null ? null : _fechaValor(_fechaCajaHasta!),
+    };
   }
 
   Future<void> _recargarDatos({
@@ -1708,6 +1795,16 @@ class _HomePageState extends State<HomePage> {
     }
 
     final int cargaActual = ++_cargaSerial;
+    if (creditos || movimientosCaja) {
+      setState(() {
+        if (creditos) {
+          _cargandoMasCreditos = false;
+        }
+        if (movimientosCaja) {
+          _cargandoMasMovimientosCaja = false;
+        }
+      });
+    }
     final List<Future<dynamic>> tareas = <Future<dynamic>>[];
     int? catalogosIndex;
     int? presupuestoIndex;
@@ -1734,11 +1831,14 @@ class _HomePageState extends State<HomePage> {
       agregar(_obtenerCobrosRuta(), (int index) => cobrosRutaIndex = index);
     }
     if (creditos) {
-      agregar(_obtenerCreditos(), (int index) => creditosIndex = index);
+      agregar(
+        _obtenerCreditosPagina(),
+        (int index) => creditosIndex = index,
+      );
     }
     if (movimientosCaja) {
       agregar(
-        _obtenerMovimientosCaja(),
+        _obtenerMovimientosCajaPagina(),
         (int index) => movimientosCajaIndex = index,
       );
     }
@@ -1767,11 +1867,20 @@ class _HomePageState extends State<HomePage> {
           _cobrosRuta = resultados[cobrosRutaIndex!] as List<CobroRuta>;
         }
         if (creditosIndex != null) {
-          _creditos = resultados[creditosIndex!] as List<CreditoRegistro>;
+          final _PaginaDatos<CreditoRegistro> pagina =
+              resultados[creditosIndex!] as _PaginaDatos<CreditoRegistro>;
+          _creditos = pagina.items;
+          _siguienteOffsetCreditos = pagina.nextOffset ?? _creditos.length;
+          _hayMasCreditos = pagina.hasMore;
         }
         if (movimientosCajaIndex != null) {
-          _movimientosCaja =
-              resultados[movimientosCajaIndex!] as List<MovimientoCaja>;
+          final _PaginaDatos<MovimientoCaja> pagina =
+              resultados[movimientosCajaIndex!]
+                  as _PaginaDatos<MovimientoCaja>;
+          _movimientosCaja = pagina.items;
+          _siguienteOffsetMovimientosCaja =
+              pagina.nextOffset ?? _movimientosCaja.length;
+          _hayMasMovimientosCaja = pagina.hasMore;
         }
         _ajustarSelecciones();
       });
@@ -1921,7 +2030,25 @@ class _HomePageState extends State<HomePage> {
         ..._movimientosCaja.where(
           (MovimientoCaja item) => item.id != movimiento.id,
         ),
-      ].take(100).toList(growable: false);
+      ].toList(growable: false);
+    });
+  }
+
+  void _guardarCreditoLocal(CreditoRegistro credito) {
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      final List<CreditoRegistro> actualizados = _creditos
+          .where((CreditoRegistro item) => item.id != credito.id)
+          .toList(growable: true)
+        ..add(credito)
+        ..sort(
+          (CreditoRegistro left, CreditoRegistro right) =>
+              right.fechaInicio.compareTo(left.fechaInicio),
+        );
+      _creditos = actualizados.toList(growable: false);
     });
   }
 
@@ -2162,27 +2289,35 @@ class _HomePageState extends State<HomePage> {
     _mostrarMensaje('Creando credito...');
 
     return _ejecutarAccion(() async {
-      await _apiClient.postObject('/creditos', <String, dynamic>{
-        'clienteId': clienteId,
-        if (rutaId != null) 'rutaId': rutaId,
-        'monedaCodigo': monedaCodigo,
-        'frecuenciaPagoId': frecuenciaPagoId,
-        'fechaInicio': _fechaValor(_fechaInicioCredito),
-        'valorPrincipal': valorPrincipal,
-        'porcentajeInteres': porcentajeInteres,
-        'plazoDias': plazoDias,
-        'omitirDomingos': _omitirDomingos,
-        'cajaMenorId': cajaMenorId,
-        if (_observacionCreditoController.text.trim().isNotEmpty)
-          'observacion': _observacionCreditoController.text.trim(),
-      });
+      final CreditoRegistro credito = CreditoRegistro.fromJson(
+        await _apiClient.postObject('/creditos', <String, dynamic>{
+          'clienteId': clienteId,
+          if (rutaId != null) 'rutaId': rutaId,
+          'monedaCodigo': monedaCodigo,
+          'frecuenciaPagoId': frecuenciaPagoId,
+          'fechaInicio': _fechaValor(_fechaInicioCredito),
+          'valorPrincipal': valorPrincipal,
+          'porcentajeInteres': porcentajeInteres,
+          'plazoDias': plazoDias,
+          'omitirDomingos': _omitirDomingos,
+          'cajaMenorId': cajaMenorId,
+          if (_observacionCreditoController.text.trim().isNotEmpty)
+            'observacion': _observacionCreditoController.text.trim(),
+        }),
+      );
+      _guardarCreditoLocal(credito);
       _valorCreditoController.clear();
       _interesController.text = _interesCreditoPredeterminado;
       _plazoController.text = _plazoCreditoPredeterminado;
       _observacionCreditoController.clear();
       _mostrarCuotasRegistradas();
       _mostrarMensaje('Crédito creado con sus cuotas');
-      _recargarEnSegundoPlano(catalogos: rutaId == null);
+      _recargarEnSegundoPlano(
+        catalogos: rutaId == null,
+        presupuesto: true,
+        cobrosRuta: true,
+        movimientosCaja: true,
+      );
     });
   }
 
@@ -2545,24 +2680,35 @@ class _HomePageState extends State<HomePage> {
                       setDialogState(() => guardandoDialogo = true);
                       final bool refinanciado = await _ejecutarAccion(
                         () async {
-                          await _apiClient.patchObject(
-                            '/creditos/${credito.id}/refinanciar',
-                            <String, dynamic>{
-                              if (rutaId != null) 'rutaId': rutaId,
-                              'monedaCodigo': credito.monedaCodigo,
-                              'frecuenciaPagoId': frecuenciaId,
-                              'fechaInicio': _fechaValor(fechaInicio),
-                              'valorPrincipal': valorNuevo,
-                              'porcentajeInteres': porcentajeInteres,
-                              'plazoDias': plazoDias,
-                              'omitirDomingos': omitirDomingos,
-                              'cajaMenorId': cajaId,
-                              if (observacionController.text.trim().isNotEmpty)
-                                'observacion':
-                                    observacionController.text.trim(),
-                            },
+                          final CreditoRegistro actualizado =
+                              CreditoRegistro.fromJson(
+                            await _apiClient.patchObject(
+                              '/creditos/${credito.id}/refinanciar',
+                              <String, dynamic>{
+                                if (rutaId != null) 'rutaId': rutaId,
+                                'monedaCodigo': credito.monedaCodigo,
+                                'frecuenciaPagoId': frecuenciaId,
+                                'fechaInicio': _fechaValor(fechaInicio),
+                                'valorPrincipal': valorNuevo,
+                                'porcentajeInteres': porcentajeInteres,
+                                'plazoDias': plazoDias,
+                                'omitirDomingos': omitirDomingos,
+                                'cajaMenorId': cajaId,
+                                if (observacionController.text
+                                    .trim()
+                                    .isNotEmpty)
+                                  'observacion':
+                                      observacionController.text.trim(),
+                              },
+                            ),
                           );
-                          _recargarEnSegundoPlano(catalogos: rutaId == null);
+                          _guardarCreditoLocal(actualizado);
+                          _recargarEnSegundoPlano(
+                            catalogos: rutaId == null,
+                            presupuesto: true,
+                            cobrosRuta: true,
+                            movimientosCaja: true,
+                          );
                         },
                       );
 
@@ -2765,24 +2911,30 @@ class _HomePageState extends State<HomePage> {
                       setDialogState(() => guardandoDialogo = true);
                       final bool actualizado = await _ejecutarAccion(
                         () async {
-                          await _apiClient.patchObject(
-                            '/creditos/${credito.id}',
-                            <String, dynamic>{
-                              'clienteId': clienteSeleccionado,
-                              if (rutaId != null) 'rutaId': rutaId,
-                              'monedaCodigo': credito.monedaCodigo,
-                              'frecuenciaPagoId': frecuenciaId,
-                              'fechaInicio': _fechaValor(fechaInicio),
-                              'valorPrincipal': valorPrincipal,
-                              'porcentajeInteres': porcentajeInteres,
-                              'plazoDias': plazoDias,
-                              'omitirDomingos': omitirDomingos,
-                              'cajaMenorId': cajaId,
-                              if (observacionController.text.trim().isNotEmpty)
-                                'observacion':
-                                    observacionController.text.trim(),
-                            },
+                          final CreditoRegistro respuesta =
+                              CreditoRegistro.fromJson(
+                            await _apiClient.patchObject(
+                              '/creditos/${credito.id}',
+                              <String, dynamic>{
+                                'clienteId': clienteSeleccionado,
+                                if (rutaId != null) 'rutaId': rutaId,
+                                'monedaCodigo': credito.monedaCodigo,
+                                'frecuenciaPagoId': frecuenciaId,
+                                'fechaInicio': _fechaValor(fechaInicio),
+                                'valorPrincipal': valorPrincipal,
+                                'porcentajeInteres': porcentajeInteres,
+                                'plazoDias': plazoDias,
+                                'omitirDomingos': omitirDomingos,
+                                'cajaMenorId': cajaId,
+                                if (observacionController.text
+                                    .trim()
+                                    .isNotEmpty)
+                                  'observacion':
+                                      observacionController.text.trim(),
+                              },
+                            ),
                           );
+                          _guardarCreditoLocal(respuesta);
                           _recargarEnSegundoPlano(
                             catalogos: rutaId == null,
                             presupuesto: true,
@@ -2838,9 +2990,9 @@ class _HomePageState extends State<HomePage> {
       context: context,
       builder: (BuildContext dialogContext) {
         return AlertDialog(
-          title: const Text('Eliminar credito'),
+          title: const Text('¿Seguro que quieres eliminar?'),
           content: Text(
-            'Se eliminara el credito de "${credito.cliente}" y su desembolso de caja.',
+            'Se eliminara el credito de "${credito.cliente}" y la caja quedara como estaba antes de hacer el credito.',
           ),
           actions: <Widget>[
             TextButton(
@@ -2861,8 +3013,8 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
+    final List<CreditoRegistro> creditosAntes = _creditos;
     final bool eliminado = await _ejecutarAccion(() async {
-      await _apiClient.deleteObject('/creditos/${credito.id}');
       if (!mounted) {
         return;
       }
@@ -2871,6 +3023,14 @@ class _HomePageState extends State<HomePage> {
             .where((CreditoRegistro item) => item.id != credito.id)
             .toList(growable: false);
       });
+      try {
+        await _apiClient.deleteObject('/creditos/${credito.id}');
+      } catch (_) {
+        if (mounted) {
+          setState(() => _creditos = creditosAntes);
+        }
+        rethrow;
+      }
       _recargarEnSegundoPlano(
         catalogos: false,
         presupuesto: true,
@@ -4302,9 +4462,9 @@ class _HomePageState extends State<HomePage> {
       context: context,
       builder: (BuildContext dialogContext) {
         return AlertDialog(
-          title: const Text('Eliminar movimiento'),
+          title: const Text('¿Seguro que quieres eliminar?'),
           content: Text(
-            'Se eliminara "${movimiento.motivoVisible}" y quedara un registro en caja menor.',
+            'Se eliminara "${movimiento.motivoVisible}" y caja, recaudado, gastos y presupuesto quedaran como si no se hubiera hecho.',
           ),
           actions: <Widget>[
             TextButton(
@@ -4325,8 +4485,8 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
+    final List<MovimientoCaja> movimientosAntes = _movimientosCaja;
     final bool eliminado = await _ejecutarAccion(() async {
-      await _apiClient.deleteObject('/caja-menor/movimientos/${movimiento.id}');
       if (!mounted) {
         return;
       }
@@ -4335,6 +4495,16 @@ class _HomePageState extends State<HomePage> {
             .where((MovimientoCaja item) => item.id != movimiento.id)
             .toList(growable: false);
       });
+      try {
+        await _apiClient.deleteObject(
+          '/caja-menor/movimientos/${movimiento.id}',
+        );
+      } catch (_) {
+        if (mounted) {
+          setState(() => _movimientosCaja = movimientosAntes);
+        }
+        rethrow;
+      }
       _recargarEnSegundoPlano(
         catalogos: false,
         presupuesto: true,
@@ -4374,6 +4544,119 @@ class _HomePageState extends State<HomePage> {
         setState(() => _guardando = false);
       }
     }
+  }
+
+  void _programarRecargaListasPesadas() {
+    _filtrosListasTimer?.cancel();
+    _filtrosListasTimer = Timer(const Duration(milliseconds: 260), () {
+      if (!mounted || _usuarioSesion == null) {
+        return;
+      }
+
+      _recargarDatos(
+        creditos: true,
+        movimientosCaja: true,
+      );
+    });
+
+    _refrescar();
+  }
+
+  void _cargarMasCreditosSiHaceFalta() {
+    if (!_hayMasCreditos || _cargandoMasCreditos || _usuarioSesion == null) {
+      return;
+    }
+
+    unawaited(_cargarMasCreditos());
+  }
+
+  void _cargarMasMovimientosCajaSiHaceFalta() {
+    if (!_hayMasMovimientosCaja ||
+        _cargandoMasMovimientosCaja ||
+        _usuarioSesion == null) {
+      return;
+    }
+
+    unawaited(_cargarMasMovimientosCaja());
+  }
+
+  Future<void> _cargarMasCreditos() async {
+    setState(() => _cargandoMasCreditos = true);
+    final String queryKey = _queryCreditos(offset: 0).toString();
+
+    try {
+      final _PaginaDatos<CreditoRegistro> pagina =
+          await _obtenerCreditosPagina(offset: _siguienteOffsetCreditos);
+      if (!mounted || _queryCreditos(offset: 0).toString() != queryKey) {
+        return;
+      }
+
+      setState(() {
+        _creditos = _fusionarPorId(_creditos, pagina.items);
+        _siguienteOffsetCreditos = pagina.nextOffset ?? _creditos.length;
+        _hayMasCreditos = pagina.hasMore;
+      });
+    } catch (error) {
+      if (mounted) {
+        _mostrarMensaje(_mensajeError(error));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _cargandoMasCreditos = false);
+      }
+    }
+  }
+
+  Future<void> _cargarMasMovimientosCaja() async {
+    setState(() => _cargandoMasMovimientosCaja = true);
+    final String queryKey = _queryMovimientosCaja(offset: 0).toString();
+
+    try {
+      final _PaginaDatos<MovimientoCaja> pagina =
+          await _obtenerMovimientosCajaPagina(
+        offset: _siguienteOffsetMovimientosCaja,
+      );
+      if (!mounted || _queryMovimientosCaja(offset: 0).toString() != queryKey) {
+        return;
+      }
+
+      setState(() {
+        _movimientosCaja = _fusionarPorId(_movimientosCaja, pagina.items);
+        _siguienteOffsetMovimientosCaja =
+            pagina.nextOffset ?? _movimientosCaja.length;
+        _hayMasMovimientosCaja = pagina.hasMore;
+      });
+    } catch (error) {
+      if (mounted) {
+        _mostrarMensaje(_mensajeError(error));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _cargandoMasMovimientosCaja = false);
+      }
+    }
+  }
+
+  List<T> _fusionarPorId<T>(
+    List<T> actuales,
+    List<T> nuevos,
+  ) {
+    final Set<String> vistos = <String>{};
+    final List<T> resultado = <T>[];
+
+    for (final T item in <T>[...actuales, ...nuevos]) {
+      final String id = switch (item) {
+        CreditoRegistro credito => credito.id,
+        MovimientoCaja movimiento => movimiento.id,
+        _ => item.hashCode.toString(),
+      };
+
+      if (vistos.add(id)) {
+        resultado.add(item);
+      }
+    }
+
+    return resultado;
   }
 
   void _refrescar() {
@@ -4857,6 +5140,29 @@ class _BotonNavegacionInferior extends StatelessWidget {
       ),
     );
   }
+}
+
+class _PaginaDatos<T> {
+  const _PaginaDatos({
+    required this.items,
+    required this.hasMore,
+    this.nextOffset,
+  });
+
+  factory _PaginaDatos.fromJson(
+    Map<String, dynamic> json,
+    T Function(Map<String, dynamic> json) itemBuilder,
+  ) {
+    return _PaginaDatos<T>(
+      items: _lista(json['items']).map(itemBuilder).toList(growable: false),
+      hasMore: json['hasMore'] as bool? ?? false,
+      nextOffset: json['nextOffset'] as int?,
+    );
+  }
+
+  final List<T> items;
+  final bool hasMore;
+  final int? nextOffset;
 }
 
 class _PaginaInicioPresupuesto extends StatelessWidget {
@@ -5500,6 +5806,7 @@ class _Pagina extends StatelessWidget {
     required this.onRefresh,
     this.error,
     this.acciones = const <Widget>[],
+    this.onNearEnd,
   });
 
   final String titulo;
@@ -5508,6 +5815,7 @@ class _Pagina extends StatelessWidget {
   final Future<void> Function() onRefresh;
   final String? error;
   final List<Widget> acciones;
+  final VoidCallback? onNearEnd;
 
   @override
   Widget build(BuildContext context) {
@@ -5516,35 +5824,45 @@ class _Pagina extends StatelessWidget {
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
           final double horizontal = constraints.maxWidth < 520 ? 16 : 28;
-          return CustomScrollView(
-            slivers: <Widget>[
-              SliverPadding(
-                padding: EdgeInsets.fromLTRB(horizontal, 22, horizontal, 32),
-                sliver: SliverToBoxAdapter(
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 960),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          _Encabezado(
-                            titulo: titulo,
-                            subtitulo: subtitulo,
-                            acciones: acciones,
-                          ),
-                          if (error != null) ...<Widget>[
-                            const SizedBox(height: 14),
-                            _ErrorBanner(message: error!),
+          return NotificationListener<ScrollNotification>(
+            onNotification: (ScrollNotification notification) {
+              final ScrollMetrics metrics = notification.metrics;
+              if (metrics.axis == Axis.vertical &&
+                  metrics.maxScrollExtent - metrics.pixels < 720) {
+                onNearEnd?.call();
+              }
+              return false;
+            },
+            child: CustomScrollView(
+              slivers: <Widget>[
+                SliverPadding(
+                  padding: EdgeInsets.fromLTRB(horizontal, 22, horizontal, 32),
+                  sliver: SliverToBoxAdapter(
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 960),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            _Encabezado(
+                              titulo: titulo,
+                              subtitulo: subtitulo,
+                              acciones: acciones,
+                            ),
+                            if (error != null) ...<Widget>[
+                              const SizedBox(height: 14),
+                              _ErrorBanner(message: error!),
+                            ],
+                            const SizedBox(height: 20),
+                            ...children,
                           ],
-                          const SizedBox(height: 20),
-                          ...children,
-                        ],
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           );
         },
       ),
@@ -6171,6 +6489,7 @@ class _TarjetaCreditoRegistro extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final CreditoRefinanciacion? refinanciacion = credito.refinanciacion;
+    final DateTime? fechaModificacion = credito.fechaModificacionVisible;
     return ClaySurface(
       radius: 14,
       padding: const EdgeInsets.all(16),
@@ -6255,6 +6574,10 @@ class _TarjetaCreditoRegistro extends StatelessWidget {
           if (refinanciacion != null) ...<Widget>[
             const SizedBox(height: 10),
             _EtiquetaRefinanciacion(refinanciacion: refinanciacion),
+          ],
+          if (fechaModificacion != null) ...<Widget>[
+            const SizedBox(height: 10),
+            _EtiquetaCreditoModificado(fecha: fechaModificacion),
           ],
           const SizedBox(height: 14),
           _BarraSaldo(
@@ -6365,6 +6688,35 @@ class _EtiquetaRefinanciacion extends StatelessWidget {
           '${_dinero(refinanciacion.valorNuevo)}',
           style: Theme.of(context).textTheme.labelSmall?.copyWith(
                 color: CobroAppTheme.warning,
+                fontWeight: FontWeight.w900,
+              ),
+        ),
+      ),
+    );
+  }
+}
+
+class _EtiquetaCreditoModificado extends StatelessWidget {
+  const _EtiquetaCreditoModificado({required this.fecha});
+
+  final DateTime fecha;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: CobroAppTheme.primary.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: CobroAppTheme.primary.withValues(alpha: 0.24),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        child: Text(
+          'Modificado ${_fechaHoraEtiqueta(fecha)}',
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: CobroAppTheme.primary,
                 fontWeight: FontWeight.w900,
               ),
         ),
@@ -8410,6 +8762,8 @@ class CreditoRegistro {
     this.cajaMenor,
     this.refinanciacion,
     this.observacion,
+    this.creadoEn,
+    this.actualizadoEn,
   });
 
   factory CreditoRegistro.fromJson(Map<String, dynamic> json) {
@@ -8448,6 +8802,8 @@ class CreditoRegistro {
           ? CreditoRefinanciacion.fromJson(refinanciacion)
           : null,
       observacion: json['observacion'] as String?,
+      creadoEn: _fechaNullable(json['creadoEn']),
+      actualizadoEn: _fechaNullable(json['actualizadoEn']),
     );
   }
 
@@ -8478,8 +8834,28 @@ class CreditoRegistro {
   final DateTime fechaMaxima;
   final CreditoRefinanciacion? refinanciacion;
   final String? observacion;
+  final DateTime? creadoEn;
+  final DateTime? actualizadoEn;
 
   bool get activo => !<String>{'PAGADO', 'ANULADO'}.contains(estado.codigo);
+
+  DateTime? get fechaModificacionVisible {
+    final DateTime? actualizado = actualizadoEn;
+    if (actualizado == null) {
+      return null;
+    }
+
+    final DateTime? creado = creadoEn;
+    if (creado == null) {
+      return actualizado;
+    }
+
+    if (actualizado.difference(creado).abs() <= const Duration(seconds: 1)) {
+      return null;
+    }
+
+    return actualizado;
+  }
 }
 
 class EstadoCreditoRegistro {

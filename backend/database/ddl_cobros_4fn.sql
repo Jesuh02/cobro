@@ -7,6 +7,12 @@
 -- - Valores monetarios, totales e intereses se modelan como NUMERIC.
 -- - Los campos de estado, tipo, frecuencia e interfaz se modelan como ENUM.
 -- - Se agregan UNIQUE en claves naturales y tablas puente para evitar duplicados.
+-- Motor objetivo: PostgreSQL 14+.
+-- Criterios aplicados:
+-- - Los identificadores numericos del diagrama se modelan como BIGINT.
+-- - Valores monetarios, totales e intereses se modelan como NUMERIC.
+-- - Los campos de estado, tipo, frecuencia e interfaz se modelan como ENUM.
+-- - Se agregan UNIQUE en claves naturales y tablas puente para evitar duplicados.
 
 BEGIN;
 
@@ -488,76 +494,10 @@ LEFT JOIN tbl_cuotas_pagos cp
   ON cp.cuo_id = cu.id_cuo
 GROUP BY cr.id_cre;
 
-<<<<<<< Updated upstream
-CREATE OR REPLACE VIEW vista_presupuesto_actual AS
-WITH caja_recaudo AS (
-  SELECT DISTINCT ON (cm.responsable_usuario_id, cm.moneda_codigo)
-    cm.caja_menor_id,
-    cm.responsable_usuario_id,
-    cm.moneda_codigo
-  FROM caja_menor cm
-  WHERE cm.activa = TRUE
-  ORDER BY
-    cm.responsable_usuario_id,
-    cm.moneda_codigo,
-    cm.creada_en ASC,
-    cm.caja_menor_id ASC
-)
-SELECT
-  cm.caja_menor_id,
-  cm.responsable_usuario_id,
-  cm.moneda_codigo,
-  vscm.saldo_caja_menor AS caja_menor,
-  CASE
-    WHEN cr.caja_menor_id = cm.caja_menor_id THEN COALESCE(pagos.total_recaudado, 0)
-    ELSE 0
-  END AS recaudado,
-  COALESCE(gastos.total_gastos, 0) AS gastos,
-  COALESCE(desembolsos.total_creditos, 0) AS creditos,
-  (
-    vscm.saldo_caja_menor
-    + CASE
-        WHEN cr.caja_menor_id = cm.caja_menor_id THEN COALESCE(pagos.total_recaudado, 0)
-        ELSE 0
-      END
-    - COALESCE(gastos.total_gastos, 0)
-  ) AS presupuesto
-FROM caja_menor cm
-JOIN vista_saldo_caja_menor vscm
-  ON vscm.caja_menor_id = cm.caja_menor_id
-LEFT JOIN caja_recaudo cr
-  ON cr.responsable_usuario_id = cm.responsable_usuario_id
- AND cr.moneda_codigo = cm.moneda_codigo
-LEFT JOIN LATERAL (
-  SELECT SUM(p.total_pagado) AS total_recaudado
-  FROM pago p
-  JOIN ruta r ON r.ruta_id = p.ruta_id
-  WHERE r.responsable_usuario_id = cm.responsable_usuario_id
-    AND p.moneda_codigo = cm.moneda_codigo
-) pagos ON TRUE
-LEFT JOIN LATERAL (
-  SELECT SUM(g.monto) AS total_gastos
-  FROM gasto g
-  WHERE g.caja_menor_id = cm.caja_menor_id
-    AND g.moneda_codigo = cm.moneda_codigo
-) gastos ON TRUE
-LEFT JOIN LATERAL (
-  SELECT SUM(cd.monto) AS total_creditos
-  FROM credito_desembolso cd
-  JOIN caja_menor_movimiento cmm
-    ON cmm.caja_menor_movimiento_id = cd.caja_menor_movimiento_id
-  JOIN credito c ON c.credito_id = cd.credito_id
-  JOIN ruta r ON r.ruta_id = c.ruta_id
-  WHERE r.responsable_usuario_id = cm.responsable_usuario_id
-    AND c.moneda_codigo = cm.moneda_codigo
-    AND cmm.caja_menor_id = cm.caja_menor_id
-) desembolsos ON TRUE;
-=======
 DROP TRIGGER IF EXISTS trg_tbl_medios_pagos_actualizacion ON tbl_medios_pagos;
 CREATE TRIGGER trg_tbl_medios_pagos_actualizacion
 BEFORE UPDATE ON tbl_medios_pagos
 FOR EACH ROW EXECUTE FUNCTION actualizar_medios_pagos_fecha();
->>>>>>> Stashed changes
 
 COMMENT ON TABLE tbl_personas IS
   'Datos base de personas reutilizados por usuarios y clientes.';
@@ -578,141 +518,11 @@ INSERT INTO tbl_roles (rol_tip, rol_nivel) VALUES
   ('AUDITOR', 3)
 ON CONFLICT (rol_tip) DO NOTHING;
 
-<<<<<<< Updated upstream
-DROP TRIGGER IF EXISTS trg_ruta_actualizada ON ruta;
-CREATE TRIGGER trg_ruta_actualizada
-BEFORE UPDATE ON ruta
-FOR EACH ROW EXECUTE FUNCTION actualizar_fecha_modificacion();
-
-DROP TRIGGER IF EXISTS trg_credito_actualizado ON credito;
-CREATE TRIGGER trg_credito_actualizado
-BEFORE UPDATE ON credito
-FOR EACH ROW EXECUTE FUNCTION actualizar_fecha_modificacion();
-
-DROP TRIGGER IF EXISTS trg_caja_menor_actualizada ON caja_menor;
-CREATE TRIGGER trg_caja_menor_actualizada
-BEFORE UPDATE ON caja_menor
-FOR EACH ROW EXECUTE FUNCTION actualizar_fecha_modificacion();
-
-DROP TRIGGER IF EXISTS trg_gasto_actualizado ON gasto;
-CREATE TRIGGER trg_gasto_actualizado
-BEFORE UPDATE ON gasto
-FOR EACH ROW EXECUTE FUNCTION actualizar_fecha_modificacion();
-
-COMMENT ON TABLE cliente IS
-  'Cliente sin contactos ni direcciones embebidas para evitar dependencias multivaluadas.';
-COMMENT ON TABLE cliente_contacto IS
-  'Contactos del cliente separados por tipo; cumple 4FN para teléfonos, correos y otros medios.';
-COMMENT ON TABLE cliente_direccion IS
-  'Direcciones del cliente separadas del dato maestro para evitar grupos repetidos.';
-COMMENT ON TABLE credito IS
-  'Crédito solicitado: valor principal, interés, plazo y frecuencia de pago.';
-COMMENT ON TABLE credito_plan_pago IS
-  'Resumen contractual del plan generado para el crédito.';
-COMMENT ON TABLE credito_cuota IS
-  'Cuotas normalizadas del plan de pago; cada cuota es un hecho independiente.';
-COMMENT ON TABLE pago_aplicacion IS
-  'Distribucion de un pago contra cuotas especificas, separada del encabezado de pago.';
-COMMENT ON VIEW vista_presupuesto_actual IS
-  'Calcula PRESUPUESTO = CAJA MENOR + RECAUDADO - GASTOS sin duplicar recaudos por caja ni volver a restar creditos ya reflejados en caja menor.';
-
-INSERT INTO moneda (codigo_moneda, nombre, simbolo, decimales) VALUES
-  ('COP', 'Peso colombiano', '$', 2),
-  ('USD', 'Dólar estadounidense', '$', 2)
-ON CONFLICT (codigo_moneda) DO NOTHING;
-
-INSERT INTO estado_usuario (codigo, nombre) VALUES
-  ('ACTIVO', 'Activo'),
-  ('INACTIVO', 'Inactivo')
-ON CONFLICT (codigo) DO NOTHING;
-
-INSERT INTO rol (codigo, nombre) VALUES
-  ('ADMINISTRADOR', 'Administrador'),
-  ('COBRADOR', 'Cobrador'),
-  ('AUDITOR', 'Auditor')
-ON CONFLICT (codigo) DO NOTHING;
-
-INSERT INTO estado_cliente (codigo, nombre) VALUES
-  ('ACTIVO', 'Activo'),
-  ('SUSPENDIDO', 'Suspendido'),
-  ('BLOQUEADO', 'Bloqueado')
-ON CONFLICT (codigo) DO NOTHING;
-
-INSERT INTO tipo_documento (codigo, nombre) VALUES
-  ('CC', 'Cédula de ciudadanía'),
-  ('CE', 'Cédula de extranjería'),
-  ('NIT', 'NIT'),
-  ('PASAPORTE', 'Pasaporte')
-ON CONFLICT (codigo) DO NOTHING;
-
-INSERT INTO tipo_contacto (codigo, nombre) VALUES
-  ('TELEFONO', 'Teléfono'),
-  ('WHATSAPP', 'WhatsApp'),
-  ('CORREO', 'Correo electronico')
-ON CONFLICT (codigo) DO NOTHING;
-
-INSERT INTO tipo_direccion (codigo, nombre) VALUES
-  ('CASA', 'Casa'),
-  ('NEGOCIO', 'Negocio'),
-  ('OTRA', 'Otra')
-ON CONFLICT (codigo) DO NOTHING;
-
-INSERT INTO estado_ruta (codigo, nombre) VALUES
-  ('ABIERTA', 'Abierta'),
-  ('CERRADA', 'Cerrada'),
-  ('PAUSADA', 'Pausada')
-ON CONFLICT (codigo) DO NOTHING;
-
-INSERT INTO frecuencia_pago (codigo, nombre, dias_intervalo) VALUES
-  ('DIARIO', 'Diario', 1),
-  ('SEMANAL', 'Semanal', 7),
-  ('QUINCENAL', 'Quincenal', 15),
-  ('MENSUAL', 'Mensual', 30)
-ON CONFLICT (codigo) DO NOTHING;
-
-INSERT INTO estado_credito (codigo, nombre) VALUES
-  ('CONFIGURADO', 'Configurado'),
-  ('ACTIVO', 'Activo'),
-  ('PAGADO', 'Pagado'),
-  ('VENCIDO', 'Vencido'),
-  ('ANULADO', 'Anulado')
-ON CONFLICT (codigo) DO NOTHING;
-
-INSERT INTO estado_cuota (codigo, nombre) VALUES
-  ('PENDIENTE', 'Pendiente'),
-  ('PAGADA', 'Pagada'),
-  ('VENCIDA', 'Vencida'),
-  ('ANULADA', 'Anulada')
-ON CONFLICT (codigo) DO NOTHING;
-
-INSERT INTO medio_pago (codigo, nombre) VALUES
-  ('EFECTIVO', 'Efectivo'),
-  ('TRANSFERENCIA', 'Transferencia'),
-  ('TARJETA', 'Tarjeta'),
-  ('OTRO', 'Otro')
-ON CONFLICT (codigo) DO NOTHING;
-
-INSERT INTO tipo_movimiento_caja (codigo, nombre, naturaleza) VALUES
-  ('AJUSTE_ENTRADA', 'Ajuste de entrada', 'E'),
-  ('RECAUDO', 'Recaudo', 'E'),
-  ('DESEMBOLSO_CREDITO', 'Desembolso de crédito', 'S'),
-  ('GASTO', 'Gasto', 'S'),
-  ('AJUSTE_SALIDA', 'Ajuste de salida', 'S')
-ON CONFLICT (codigo) DO NOTHING;
-
-INSERT INTO categoria_gasto (codigo, nombre) VALUES
-  ('TRANSPORTE', 'Transporte'),
-  ('PAPELERIA', 'Papelería'),
-  ('COMISION', 'Comisión'),
-  ('OTRO', 'Otro')
-ON CONFLICT (codigo) DO NOTHING;
-=======
 INSERT INTO tbl_categorias_gastos (cga_nombre, cga_descripcion) VALUES
   ('TRANSPORTE', 'Gastos de transporte'),
   ('PAPELERIA', 'Papeleria e insumos'),
   ('COMISION', 'Comisiones operativas'),
   ('OTRO', 'Otros gastos')
 ON CONFLICT (cga_nombre) DO NOTHING;
->>>>>>> Stashed changes
 
 COMMIT;

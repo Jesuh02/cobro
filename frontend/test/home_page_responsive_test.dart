@@ -42,6 +42,8 @@ void main() {
 
       expect(find.text('Gestión de Presupuesto'), findsOneWidget);
       expect(find.text('TOTAL PRESUPUESTO'), findsOneWidget);
+      expect(find.text(r'$100.000'), findsWidgets);
+      expect(find.text(r'-$100.000'), findsNothing);
       expect(find.text('Inicio'), findsWidgets);
       expect(find.text('Ruta'), findsOneWidget);
       expect(find.text('Credito'), findsOneWidget);
@@ -699,7 +701,7 @@ Future<http.Response> _responderApi(http.Request request) async {
           'monedaCodigo': 'COP',
           'cajaMenor': 700000,
           'recaudado': 500000,
-          'gastos': 100000,
+          'gastos': -100000,
           'creditos': 250000,
           'presupuesto': 850000,
         },
@@ -707,7 +709,7 @@ Future<http.Response> _responderApi(http.Request request) async {
       'totales': <String, dynamic>{
         'cajaMenor': 700000,
         'recaudado': 500000,
-        'gastos': 100000,
+        'gastos': -100000,
         'creditos': 250000,
         'presupuesto': 850000,
       },

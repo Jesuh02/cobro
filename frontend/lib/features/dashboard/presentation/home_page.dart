@@ -100,6 +100,8 @@ class _HomePageState extends State<HomePage> {
   String? _error;
   OverlayEntry? _mensajeOverlay;
   Timer? _mensajeTimer;
+  Timer? _refrescoTimer;
+  int _cargaSerial = 0;
   DateTime? _fechaCajaDesde;
   DateTime? _fechaCajaHasta;
 
@@ -125,6 +127,7 @@ class _HomePageState extends State<HomePage> {
   @override
   void dispose() {
     _mensajeTimer?.cancel();
+    _refrescoTimer?.cancel();
     _mensajeOverlay?.remove();
     if (_cerrarApiClientAlSalir) {
       _apiClient.close();
@@ -1368,68 +1371,172 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
+    final int cargaActual = ++_cargaSerial;
     setState(() {
       _cargando = true;
       _error = null;
     });
 
     try {
-      final Catalogos catalogos =
-          Catalogos.fromJson(await _apiClient.getObject('/catalogos'));
-      final Presupuesto presupuesto =
-          Presupuesto.fromJson(await _apiClient.getObject('/presupuesto'));
-      final List<Cliente> clientes = (await _apiClient.getList('/clientes'))
-          .map((dynamic item) => Cliente.fromJson(item as Map<String, dynamic>))
-          .toList(growable: false);
-      final List<CobroRuta> cobrosRuta =
-          (await _apiClient.getList('/cobros/ruta'))
-              .map(
-                (dynamic item) =>
-                    CobroRuta.fromJson(item as Map<String, dynamic>),
-              )
-              .toList(growable: false);
-      final List<MovimientoCaja> movimientosCaja =
-          (await _apiClient.getList('/caja-menor/movimientos'))
-              .map(
-                (dynamic item) =>
-                    MovimientoCaja.fromJson(item as Map<String, dynamic>),
-              )
-              .toList(growable: false);
+      final List<dynamic> resultados =
+          await Future.wait<dynamic>(<Future<dynamic>>[
+        _obtenerCatalogos(),
+        _obtenerPresupuesto(),
+        _obtenerClientes(),
+        _obtenerCobrosRuta(),
+        _obtenerMovimientosCaja(),
+      ]);
 
-      if (!mounted) {
+      if (!mounted || cargaActual != _cargaSerial) {
         return;
       }
 
       setState(() {
-        _catalogos = catalogos;
-        _presupuesto = presupuesto;
-        _clientes = clientes;
-        _cobrosRuta = cobrosRuta;
-        _movimientosCaja = movimientosCaja;
+        _catalogos = resultados[0] as Catalogos;
+        _presupuesto = resultados[1] as Presupuesto;
+        _clientes = resultados[2] as List<Cliente>;
+        _cobrosRuta = resultados[3] as List<CobroRuta>;
+        _movimientosCaja = resultados[4] as List<MovimientoCaja>;
         _ajustarSelecciones();
       });
     } catch (error) {
-      if (!mounted) {
+      if (!mounted || cargaActual != _cargaSerial) {
         return;
       }
+      _manejarErrorCarga(error);
+    } finally {
+      if (mounted && cargaActual == _cargaSerial) {
+        setState(() => _cargando = false);
+      }
+    }
+  }
 
-      if (error is ApiException && error.statusCode == 401) {
-        _apiClient.setAuthToken(null);
-        setState(() {
-          _usuarioSesion = null;
-          _error = 'La sesion expiro';
-        });
+  Future<Catalogos> _obtenerCatalogos() async {
+    return Catalogos.fromJson(await _apiClient.getObject('/catalogos'));
+  }
+
+  Future<Presupuesto> _obtenerPresupuesto() async {
+    return Presupuesto.fromJson(await _apiClient.getObject('/presupuesto'));
+  }
+
+  Future<List<Cliente>> _obtenerClientes() async {
+    return (await _apiClient.getList('/clientes'))
+        .map((dynamic item) => Cliente.fromJson(item as Map<String, dynamic>))
+        .toList(growable: false);
+  }
+
+  Future<List<CobroRuta>> _obtenerCobrosRuta() async {
+    return (await _apiClient.getList('/cobros/ruta'))
+        .map((dynamic item) => CobroRuta.fromJson(item as Map<String, dynamic>))
+        .toList(growable: false);
+  }
+
+  Future<List<MovimientoCaja>> _obtenerMovimientosCaja() async {
+    return (await _apiClient.getList('/caja-menor/movimientos'))
+        .map(
+          (dynamic item) =>
+              MovimientoCaja.fromJson(item as Map<String, dynamic>),
+        )
+        .toList(growable: false);
+  }
+
+  Future<void> _recargarDatos({
+    bool catalogos = false,
+    bool presupuesto = false,
+    bool clientes = false,
+    bool cobrosRuta = false,
+    bool movimientosCaja = false,
+  }) async {
+    if (_usuarioSesion == null) {
+      return;
+    }
+
+    final int cargaActual = ++_cargaSerial;
+    final List<Future<dynamic>> tareas = <Future<dynamic>>[];
+    int? catalogosIndex;
+    int? presupuestoIndex;
+    int? clientesIndex;
+    int? cobrosRutaIndex;
+    int? movimientosCajaIndex;
+
+    void agregar(Future<dynamic> tarea, void Function(int index) asignar) {
+      asignar(tareas.length);
+      tareas.add(tarea);
+    }
+
+    if (catalogos) {
+      agregar(_obtenerCatalogos(), (int index) => catalogosIndex = index);
+    }
+    if (presupuesto) {
+      agregar(_obtenerPresupuesto(), (int index) => presupuestoIndex = index);
+    }
+    if (clientes) {
+      agregar(_obtenerClientes(), (int index) => clientesIndex = index);
+    }
+    if (cobrosRuta) {
+      agregar(_obtenerCobrosRuta(), (int index) => cobrosRutaIndex = index);
+    }
+    if (movimientosCaja) {
+      agregar(
+        _obtenerMovimientosCaja(),
+        (int index) => movimientosCajaIndex = index,
+      );
+    }
+
+    if (tareas.isEmpty) {
+      return;
+    }
+
+    try {
+      final List<dynamic> resultados = await Future.wait<dynamic>(tareas);
+      if (!mounted || cargaActual != _cargaSerial) {
         return;
       }
 
       setState(() {
-        _error = _mensajeError(error);
+        if (catalogosIndex != null) {
+          _catalogos = resultados[catalogosIndex!] as Catalogos;
+        }
+        if (presupuestoIndex != null) {
+          _presupuesto = resultados[presupuestoIndex!] as Presupuesto;
+        }
+        if (clientesIndex != null) {
+          _clientes = resultados[clientesIndex!] as List<Cliente>;
+        }
+        if (cobrosRutaIndex != null) {
+          _cobrosRuta = resultados[cobrosRutaIndex!] as List<CobroRuta>;
+        }
+        if (movimientosCajaIndex != null) {
+          _movimientosCaja =
+              resultados[movimientosCajaIndex!] as List<MovimientoCaja>;
+        }
+        _ajustarSelecciones();
       });
-    } finally {
-      if (mounted) {
-        setState(() => _cargando = false);
+    } catch (error) {
+      if (!mounted || cargaActual != _cargaSerial) {
+        return;
       }
+      _manejarErrorCarga(error);
     }
+  }
+
+  void _manejarErrorCarga(Object error) {
+    if (!mounted) {
+      return;
+    }
+
+    if (error is ApiException && error.statusCode == 401) {
+      _apiClient.setAuthToken(null);
+      setState(() {
+        _usuarioSesion = null;
+        _error = 'La sesion expiro';
+      });
+      return;
+    }
+
+    setState(() {
+      _error = _mensajeError(error);
+    });
   }
 
   void _ajustarSelecciones() {
@@ -1490,6 +1597,66 @@ class _HomePageState extends State<HomePage> {
     return disponibles.isEmpty ? null : disponibles.first;
   }
 
+  void _guardarClienteLocal(Cliente cliente) {
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      final List<Cliente> actualizados = _clientes
+          .where((Cliente item) => item.id != cliente.id)
+          .toList(growable: true)
+        ..add(cliente)
+        ..sort(
+          (Cliente left, Cliente right) =>
+              left.nombreCompleto.compareTo(right.nombreCompleto),
+        );
+      _clientes = actualizados.toList(growable: false);
+      _clienteCreditoId ??= cliente.id;
+      _ajustarSelecciones();
+    });
+  }
+
+  void _guardarCajaMenorLocal(CajaMenorCatalogo caja) {
+    final Catalogos? catalogos = _catalogos;
+    if (!mounted || catalogos == null) {
+      return;
+    }
+
+    setState(() {
+      final List<CajaMenorCatalogo> cajas = catalogos.cajasMenores
+          .where((CajaMenorCatalogo item) => item.id != caja.id)
+          .toList(growable: true)
+        ..add(caja)
+        ..sort((CajaMenorCatalogo left, CajaMenorCatalogo right) {
+          if (left.activa != right.activa) {
+            return left.activa ? -1 : 1;
+          }
+          return left.nombre.compareTo(right.nombre);
+        });
+      _catalogos = catalogos.copyWith(
+        cajasMenores: cajas.toList(growable: false),
+      );
+      _cajaMenorCreditoId ??= caja.id;
+      _ajustarSelecciones();
+    });
+  }
+
+  void _guardarMovimientoCajaLocal(MovimientoCaja movimiento) {
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _movimientosCaja = <MovimientoCaja>[
+        movimiento,
+        ..._movimientosCaja.where(
+          (MovimientoCaja item) => item.id != movimiento.id,
+        ),
+      ].take(100).toList(growable: false);
+    });
+  }
+
   List<CobroRuta> _filtrarCobros() {
     final String consulta = _buscarRutaController.text.trim().toLowerCase();
     return _cobrosRuta.where((CobroRuta cobro) {
@@ -1499,6 +1666,7 @@ class _HomePageState extends State<HomePage> {
           cobro.cliente.toLowerCase().contains(consulta) ||
           (cobro.cedula ?? '').toLowerCase().contains(consulta) ||
           (cobro.negocio ?? '').toLowerCase().contains(consulta) ||
+          (cobro.direccion ?? '').toLowerCase().contains(consulta) ||
           cobro.ruta.toLowerCase().contains(consulta);
       return coincideRuta && coincideBusqueda;
     }).toList(growable: false);
@@ -1530,6 +1698,7 @@ class _HomePageState extends State<HomePage> {
           (Cliente cliente) =>
               cliente.nombreCompleto.toLowerCase().contains(consulta) ||
               (cliente.cedula ?? '').toLowerCase().contains(consulta) ||
+              (cliente.direccion ?? '').toLowerCase().contains(consulta) ||
               (cliente.nombreComercial ?? '')
                   .toLowerCase()
                   .contains(consulta) ||
@@ -1599,6 +1768,19 @@ class _HomePageState extends State<HomePage> {
     for (final PresupuestoItem item in items) {
       if (item.cajaMenorId == cajaMenorId) {
         return item;
+      }
+    }
+
+    return null;
+  }
+
+  TipoMovimientoCaja? _tipoMovimientoCajaPorCodigo(String codigo) {
+    final List<TipoMovimientoCaja> tipos =
+        _catalogos?.tiposMovimientoCaja ?? const <TipoMovimientoCaja>[];
+
+    for (final TipoMovimientoCaja tipo in tipos) {
+      if (tipo.codigo == codigo) {
+        return tipo;
       }
     }
 
@@ -1679,7 +1861,7 @@ class _HomePageState extends State<HomePage> {
       _observacionCreditoController.clear();
       _mostrarCuotasRegistradas();
       _mostrarMensaje('Crédito creado con sus cuotas');
-      _recargarEnSegundoPlano();
+      _recargarEnSegundoPlano(catalogos: rutaId == null);
     });
   }
 
@@ -1993,15 +2175,21 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  void _recargarEnSegundoPlano() {
+  void _recargarEnSegundoPlano({
+    bool catalogos = false,
+    bool presupuesto = true,
+    bool clientes = false,
+    bool cobrosRuta = true,
+    bool movimientosCaja = true,
+  }) {
     unawaited(() async {
-      try {
-        await _cargar();
-      } catch (error) {
-        if (mounted) {
-          setState(() => _error = _mensajeError(error));
-        }
-      }
+      await _recargarDatos(
+        catalogos: catalogos,
+        presupuesto: presupuesto,
+        clientes: clientes,
+        cobrosRuta: cobrosRuta,
+        movimientosCaja: movimientosCaja,
+      );
     }());
   }
 
@@ -2154,6 +2342,8 @@ class _HomePageState extends State<HomePage> {
       builder: (BuildContext dialogContext) {
         final TextEditingController nombreController = TextEditingController();
         final TextEditingController cedulaController = TextEditingController();
+        final TextEditingController direccionController =
+            TextEditingController();
         final TextEditingController correoController = TextEditingController();
         final TextEditingController telefonoController =
             TextEditingController();
@@ -2184,6 +2374,14 @@ class _HomePageState extends State<HomePage> {
                     labelText: 'Cédula',
                     hintText: 'Número de identificación',
                     prefixIcon: Icon(Icons.badge_rounded),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: direccionController,
+                  decoration: const InputDecoration(
+                    labelText: 'Direccion',
+                    prefixIcon: Icon(Icons.location_on_rounded),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -2220,16 +2418,26 @@ class _HomePageState extends State<HomePage> {
                 }
 
                 await _ejecutarAccion(() async {
-                  await _apiClient.postObject('/clientes', <String, dynamic>{
-                    'nombreCompleto': nombreController.text.trim(),
-                    if (cedulaController.text.trim().isNotEmpty)
-                      'cedula': cedulaController.text.trim(),
-                    if (correoController.text.trim().isNotEmpty)
-                      'correo': correoController.text.trim(),
-                    if (telefonoController.text.trim().isNotEmpty)
-                      'telefono': telefonoController.text.trim(),
-                  });
-                  await _cargar();
+                  final Cliente cliente = Cliente.fromJson(
+                    await _apiClient.postObject('/clientes', <String, dynamic>{
+                      'nombreCompleto': nombreController.text.trim(),
+                      if (cedulaController.text.trim().isNotEmpty)
+                        'cedula': cedulaController.text.trim(),
+                      if (direccionController.text.trim().isNotEmpty)
+                        'direccion': direccionController.text.trim(),
+                      if (correoController.text.trim().isNotEmpty)
+                        'correo': correoController.text.trim(),
+                      if (telefonoController.text.trim().isNotEmpty)
+                        'telefono': telefonoController.text.trim(),
+                    }),
+                  );
+                  _guardarClienteLocal(cliente);
+                  _recargarEnSegundoPlano(
+                    presupuesto: false,
+                    clientes: true,
+                    cobrosRuta: false,
+                    movimientosCaja: false,
+                  );
                 });
 
                 if (dialogContext.mounted) {
@@ -2264,6 +2472,8 @@ class _HomePageState extends State<HomePage> {
       builder: (BuildContext dialogContext) {
         final TextEditingController nombreController = TextEditingController();
         final TextEditingController cedulaController = TextEditingController();
+        final TextEditingController direccionController =
+            TextEditingController();
         final TextEditingController correoController = TextEditingController();
         final TextEditingController telefonoController =
             TextEditingController();
@@ -2333,6 +2543,15 @@ class _HomePageState extends State<HomePage> {
                         labelText: 'Cédula',
                         hintText: 'Número de identificación',
                         prefixIcon: Icon(Icons.badge_rounded),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: direccionController,
+                      enabled: !guardandoDialogo,
+                      decoration: const InputDecoration(
+                        labelText: 'Direccion',
+                        prefixIcon: Icon(Icons.location_on_rounded),
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -2494,28 +2713,32 @@ class _HomePageState extends State<HomePage> {
                             String clienteId = clienteCreadoId ?? '';
 
                             if (clienteCreadoId == null) {
-                              final Map<String, dynamic> cliente =
-                                  await _apiClient.postObject(
-                                '/clientes',
-                                <String, dynamic>{
-                                  'nombreCompleto':
-                                      nombreController.text.trim(),
-                                  if (cedulaController.text.trim().isNotEmpty)
-                                    'cedula': cedulaController.text.trim(),
-                                  if (correoController.text.trim().isNotEmpty)
-                                    'correo': correoController.text.trim(),
-                                  if (telefonoController.text.trim().isNotEmpty)
-                                    'telefono': telefonoController.text.trim(),
-                                },
+                              final Cliente cliente = Cliente.fromJson(
+                                await _apiClient.postObject(
+                                  '/clientes',
+                                  <String, dynamic>{
+                                    'nombreCompleto':
+                                        nombreController.text.trim(),
+                                    if (cedulaController.text.trim().isNotEmpty)
+                                      'cedula': cedulaController.text.trim(),
+                                    if (direccionController.text
+                                        .trim()
+                                        .isNotEmpty)
+                                      'direccion':
+                                          direccionController.text.trim(),
+                                    if (correoController.text.trim().isNotEmpty)
+                                      'correo': correoController.text.trim(),
+                                    if (telefonoController.text
+                                        .trim()
+                                        .isNotEmpty)
+                                      'telefono':
+                                          telefonoController.text.trim(),
+                                  },
+                                ),
                               );
-                              final Object? rawId = cliente['id'];
-                              if (rawId is! String || rawId.isEmpty) {
-                                throw const FormatException(
-                                  'No se recibio el cliente creado',
-                                );
-                              }
-                              clienteId = rawId;
+                              clienteId = cliente.id;
                               clienteCreadoId = clienteId;
+                              _guardarClienteLocal(cliente);
                             }
 
                             if (agregarCredito) {
@@ -2541,10 +2764,16 @@ class _HomePageState extends State<HomePage> {
                               );
                             }
 
-                            await _cargar();
                             if (agregarCredito) {
                               _mostrarCuotasRegistradas();
                             }
+                            _recargarEnSegundoPlano(
+                              catalogos: agregarCredito && rutaId == null,
+                              presupuesto: agregarCredito,
+                              clientes: true,
+                              cobrosRuta: agregarCredito,
+                              movimientosCaja: agregarCredito,
+                            );
                           });
 
                           if (!guardado) {
@@ -2627,13 +2856,20 @@ class _HomePageState extends State<HomePage> {
                 }
 
                 final bool guardada = await _ejecutarAccion(() async {
-                  await _apiClient.postObject(
-                    '/caja-menor',
-                    <String, dynamic>{
-                      'nombre': nombre,
-                    },
+                  final CajaMenorCatalogo caja = CajaMenorCatalogo.fromJson(
+                    await _apiClient.postObject(
+                      '/caja-menor',
+                      <String, dynamic>{
+                        'nombre': nombre,
+                      },
+                    ),
                   );
-                  await _cargar();
+                  _guardarCajaMenorLocal(caja);
+                  _recargarEnSegundoPlano(
+                    catalogos: true,
+                    cobrosRuta: false,
+                    movimientosCaja: false,
+                  );
                 });
 
                 if (guardada && dialogContext.mounted) {
@@ -2788,18 +3024,40 @@ class _HomePageState extends State<HomePage> {
                       return;
                     }
 
-                    final bool guardado = await _ejecutarAccion(() async {
-                      await _apiClient.postObject(
-                        '/caja-menor/movimientos',
-                        <String, dynamic>{
-                          'cajaMenorId': cajaMenorId,
-                          'tipoMovimientoCodigo': tipoMovimientoCodigo,
-                          'fechaMovimiento': _fechaValor(fechaMovimiento),
-                          'monto': monto,
-                          'motivo': motivoController.text.trim(),
-                        },
+                    final TipoMovimientoCaja? tipo =
+                        _tipoMovimientoCajaPorCodigo(tipoMovimientoCodigo);
+                    final PresupuestoItem? presupuesto =
+                        _presupuestoPorCaja(cajaMenorId);
+                    if (tipo?.naturaleza.toUpperCase() == 'S' &&
+                        presupuesto != null &&
+                        monto > presupuesto.presupuesto) {
+                      _mostrarMensaje(
+                        'Caja menor insuficiente. El movimiento supera el dinero disponible.',
                       );
-                      await _cargar();
+                      return;
+                    }
+
+                    final bool guardado = await _ejecutarAccion(() async {
+                      final MovimientoCaja movimiento = MovimientoCaja.fromJson(
+                        await _apiClient.postObject(
+                          '/caja-menor/movimientos',
+                          <String, dynamic>{
+                            'cajaMenorId': cajaMenorId,
+                            'tipoMovimientoCodigo': tipoMovimientoCodigo,
+                            'fechaMovimiento': _fechaValor(fechaMovimiento),
+                            'monto': monto,
+                            'motivo': motivoController.text.trim(),
+                          },
+                        ),
+                      );
+                      _guardarMovimientoCajaLocal(movimiento);
+                      _recargarEnSegundoPlano(
+                        catalogos: false,
+                        presupuesto: true,
+                        clientes: false,
+                        cobrosRuta: false,
+                        movimientosCaja: true,
+                      );
                     });
 
                     if (guardado && dialogContext.mounted) {
@@ -3724,7 +3982,7 @@ class _ComposicionPresupuesto extends StatelessWidget {
       _DatoPresupuesto(
         icono: Icons.receipt_long_rounded,
         etiqueta: 'Gastos',
-        valor: _dinero(-totales.gastos),
+        valor: _dinero(totales.gastos),
         color: CobroAppTheme.warning,
       ),
       _DatoPresupuesto(
@@ -4149,7 +4407,7 @@ class _PresupuestoItem extends StatelessWidget {
           const SizedBox(height: 12),
           _LineaMonto(label: 'Caja menor', value: item.cajaMenor),
           _LineaMonto(label: 'Recaudado', value: item.recaudado),
-          _LineaMonto(label: 'Gastos', value: -item.gastos),
+          _LineaMonto(label: 'Gastos', value: item.gastos),
           _LineaMonto(label: 'Créditos', value: item.creditos),
           const Divider(height: 20),
           _LineaMonto(
@@ -4634,6 +4892,30 @@ class _TarjetaCobroRuta extends StatelessWidget {
                             color: context.clay.subtleText,
                           ),
                     ),
+                    if ((cobro.direccion ?? '').isNotEmpty) ...<Widget>[
+                      const SizedBox(height: 4),
+                      Row(
+                        children: <Widget>[
+                          Icon(
+                            Icons.location_on_rounded,
+                            size: 15,
+                            color: context.clay.subtleText,
+                          ),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              cobro.direccion!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(color: context.clay.subtleText),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -5969,6 +6251,7 @@ class _ClienteItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final String contacto = [
       if ((cliente.cedula ?? '').isNotEmpty) 'CC ${cliente.cedula!}',
+      if ((cliente.direccion ?? '').isNotEmpty) cliente.direccion!,
       if ((cliente.telefono ?? '').isNotEmpty) cliente.telefono!,
       if ((cliente.correo ?? '').isNotEmpty) cliente.correo!,
     ].join(' · ');
@@ -6268,6 +6551,26 @@ class Catalogos {
   final List<CajaMenorCatalogo> cajasMenores;
   final List<UsuarioCatalogo> usuarios;
 
+  Catalogos copyWith({
+    List<Moneda>? monedas,
+    List<FrecuenciaPago>? frecuenciasPago,
+    List<MedioPago>? mediosPago,
+    List<TipoMovimientoCaja>? tiposMovimientoCaja,
+    List<RutaCatalogo>? rutas,
+    List<CajaMenorCatalogo>? cajasMenores,
+    List<UsuarioCatalogo>? usuarios,
+  }) {
+    return Catalogos(
+      monedas: monedas ?? this.monedas,
+      frecuenciasPago: frecuenciasPago ?? this.frecuenciasPago,
+      mediosPago: mediosPago ?? this.mediosPago,
+      tiposMovimientoCaja: tiposMovimientoCaja ?? this.tiposMovimientoCaja,
+      rutas: rutas ?? this.rutas,
+      cajasMenores: cajasMenores ?? this.cajasMenores,
+      usuarios: usuarios ?? this.usuarios,
+    );
+  }
+
   List<RutaCatalogo> get rutasAbiertas => rutas
       .where((RutaCatalogo ruta) => ruta.estadoCodigo == 'ABIERTA')
       .toList(growable: false);
@@ -6412,6 +6715,7 @@ class Cliente {
     required this.nombreCompleto,
     required this.estadoNombre,
     this.cedula,
+    this.direccion,
     this.nombreComercial,
     this.correo,
     this.telefono,
@@ -6423,6 +6727,7 @@ class Cliente {
       id: json['id'] as String,
       nombreCompleto: json['nombreCompleto'] as String,
       cedula: json['cedula'] as String?,
+      direccion: json['direccion'] as String?,
       nombreComercial: json['nombreComercial'] as String?,
       correo: json['correo'] as String?,
       telefono: json['telefono'] as String?,
@@ -6433,6 +6738,7 @@ class Cliente {
   final String id;
   final String nombreCompleto;
   final String? cedula;
+  final String? direccion;
   final String? nombreComercial;
   final String? correo;
   final String? telefono;
@@ -6455,6 +6761,7 @@ class CobroRuta {
     required this.proximoSaldoCuota,
     this.cedula,
     this.negocio,
+    this.direccion,
     this.proximaCuotaId,
     this.proximaNumeroCuota,
     this.proximaFechaPago,
@@ -6466,6 +6773,7 @@ class CobroRuta {
       cliente: json['cliente'] as String,
       cedula: json['cedula'] as String?,
       negocio: json['negocio'] as String?,
+      direccion: json['direccion'] as String?,
       rutaId: json['rutaId'] as String,
       ruta: json['ruta'] as String,
       valorTotal: _doble(json['valorTotal']),
@@ -6496,6 +6804,7 @@ class CobroRuta {
       cliente: cliente,
       cedula: cedula,
       negocio: negocio,
+      direccion: direccion,
       rutaId: rutaId,
       ruta: ruta,
       valorTotal: valorTotal,
@@ -6518,6 +6827,7 @@ class CobroRuta {
   final String cliente;
   final String? cedula;
   final String? negocio;
+  final String? direccion;
   final String rutaId;
   final String ruta;
   final double valorTotal;
@@ -6587,9 +6897,8 @@ class MovimientoCaja {
   bool get esPago => referenciaTabla == 'pago';
 
   String get motivoVisible {
-    final String? clienteNombre = cliente?.trim().isEmpty ?? true
-        ? null
-        : cliente!.trim();
+    final String? clienteNombre =
+        cliente?.trim().isEmpty ?? true ? null : cliente!.trim();
 
     if (referenciaTabla == 'credito_desembolso' && clienteNombre != null) {
       return 'Desembolso de credito para $clienteNombre';
@@ -6629,11 +6938,11 @@ class PresupuestoItem {
 
   factory PresupuestoItem.fromJson(Map<String, dynamic> json) {
     return PresupuestoItem(
-      cajaMenorId: json['cajaMenorId'] as String,
+      cajaMenorId: json['cajaMenorId'] as String? ?? '',
       monedaCodigo: json['monedaCodigo'] as String,
       cajaMenor: _doble(json['cajaMenor']),
       recaudado: _doble(json['recaudado']),
-      gastos: _doble(json['gastos']),
+      gastos: _doble(json['gastos']).abs(),
       creditos: _doble(json['creditos']),
       presupuesto: _doble(json['presupuesto']),
     );
@@ -6668,7 +6977,7 @@ class PresupuestoTotales {
     return PresupuestoTotales(
       cajaMenor: _doble(json['cajaMenor']),
       recaudado: _doble(json['recaudado']),
-      gastos: _doble(json['gastos']),
+      gastos: _doble(json['gastos']).abs(),
       creditos: _doble(json['creditos']),
       presupuesto: _doble(json['presupuesto']),
     );

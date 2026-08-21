@@ -40,6 +40,11 @@ export class CrearClienteDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(220)
+  direccion?: string;
+
+  @IsOptional()
+  @IsString()
   @MaxLength(500)
   notas?: string;
 

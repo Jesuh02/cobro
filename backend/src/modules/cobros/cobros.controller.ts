@@ -26,6 +26,7 @@ import {
   ListarCobrosRutaQueryDto,
   ListarCreditosQueryDto,
   ListarMovimientosCajaQueryDto,
+  ObtenerPresupuestoQueryDto,
   RegistrarPagoDto,
   RefinanciarCreditoDto,
 } from './dto';
@@ -201,7 +202,10 @@ export class CobrosController {
   }
 
   @Get('presupuesto')
-  obtenerPresupuesto(@CurrentUser() usuario: AuthenticatedUser) {
-    return this.cobros.obtenerPresupuesto(usuario);
+  obtenerPresupuesto(
+    @CurrentUser() usuario: AuthenticatedUser,
+    @Query() query: ObtenerPresupuestoQueryDto,
+  ) {
+    return this.cobros.obtenerPresupuesto(query, usuario);
   }
 }

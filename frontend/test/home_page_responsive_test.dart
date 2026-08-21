@@ -790,6 +790,14 @@ Future<http.Response> _responderApi(http.Request request) async {
     return _jsonResponse(<dynamic>[]);
   }
 
+  if (path.endsWith('/creditos')) {
+    return _jsonResponse(<String, dynamic>{
+      'items': <dynamic>[],
+      'nextOffset': null,
+      'hasMore': false,
+    });
+  }
+
   return _jsonResponse(
     <String, dynamic>{'message': 'Ruta no simulada: $path'},
     statusCode: 404,

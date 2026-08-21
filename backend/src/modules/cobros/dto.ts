@@ -107,6 +107,26 @@ export class ListarCreditosQueryDto extends ListarCobrosRutaQueryDto {
   offset?: number;
 }
 
+export class ObtenerPresupuestoQueryDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  cajaMenorId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  search?: string;
+
+  @IsOptional()
+  @IsDateString()
+  fechaDesde?: string;
+
+  @IsOptional()
+  @IsDateString()
+  fechaHasta?: string;
+}
+
 export class CrearCreditoDto {
   @IsString()
   @MaxLength(64)

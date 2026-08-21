@@ -1,10 +1,12 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { NotificationKind } from './notification.types';
 
 @Injectable()
 export class WhatsappNotificationService {
+  private readonly logger = new Logger(WhatsappNotificationService.name);
+
   constructor(private readonly config: ConfigService) {}
 
   async send(input: {
@@ -18,7 +20,7 @@ export class WhatsappNotificationService {
     const from = this.normalizePhone(
       this.config.getOrThrow<string>('YCLOUD_WHATSAPP_NUMBER'),
     );
-    const to = this.normalizePhone(input.to);
+    const to = this.normalizeRecipientPhone(input.to);
     const baseUrl = (
       this.config.get<string>('YCLOUD_BASE_URL') ?? 'https://api.ycloud.com/v2'
     ).replace(/\/$/, '');
@@ -30,6 +32,13 @@ export class WhatsappNotificationService {
       throw new Error(
         `Falta la plantilla de WhatsApp para ${input.kind} y YCLOUD_USE_DIRECT_SEND esta desactivado`,
       );
+    }
+
+    if (!to) {
+      this.logger.warn(
+        `No se envio ${input.kind} por WhatsApp: numero invalido (${this.maskPhone(input.to)})`,
+      );
+      return;
     }
 
     const payload = templateName
@@ -64,9 +73,16 @@ export class WhatsappNotificationService {
     });
 
     if (!response.ok) {
-      throw new Error(
-        `YCloud respondio ${response.status}: ${await this.safeResponse(response)}`,
-      );
+      const responseBody = await this.safeResponse(response);
+
+      if (this.isInvalidRecipientPhone(response.status, responseBody)) {
+        this.logger.warn(
+          `No se envio ${input.kind} por WhatsApp: YCloud rechazo el numero ${this.maskPhone(to)}`,
+        );
+        return;
+      }
+
+      throw new Error(`YCloud respondio ${response.status}: ${responseBody}`);
     }
   }
 
@@ -131,6 +147,68 @@ export class WhatsappNotificationService {
     }
 
     return `+${digits}`;
+  }
+
+  private normalizeRecipientPhone(value: string) {
+    const trimmed = value.trim();
+    const digits = trimmed.replace(/\D/g, '');
+    const defaultCountryCode =
+      this.config.get<string>('WHATSAPP_DEFAULT_COUNTRY_CODE') ?? '57';
+
+    if (!digits) {
+      return null;
+    }
+
+    if (trimmed.startsWith('+')) {
+      return this.isLikelyE164(`+${digits}`) ? `+${digits}` : null;
+    }
+
+    if (digits.length === 10) {
+      return `+${defaultCountryCode}${digits}`;
+    }
+
+    if (
+      digits.startsWith(defaultCountryCode) &&
+      digits.length === defaultCountryCode.length + 10
+    ) {
+      return `+${digits}`;
+    }
+
+    return null;
+  }
+
+  private isLikelyE164(value: string) {
+    return /^\+[1-9]\d{7,14}$/.test(value);
+  }
+
+  private isInvalidRecipientPhone(status: number, responseBody: string) {
+    if (status !== 400) {
+      return false;
+    }
+
+    try {
+      const parsed = JSON.parse(responseBody) as {
+        error?: { code?: string; target?: string; message?: string };
+      };
+
+      return (
+        parsed.error?.code === 'PARAM_INVALID' &&
+        parsed.error?.target === 'to' &&
+        (parsed.error.message ?? '').toLowerCase().includes('phone number')
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  private maskPhone(value: string) {
+    const normalized = value.trim();
+
+    if (normalized.length <= 6) {
+      return '***';
+    }
+
+    return `${normalized.slice(0, 3)}***${normalized.slice(-2)}`;
   }
 
   private async safeResponse(response: Response) {

@@ -21,6 +21,7 @@ import {
   ListarCobrosRutaQueryDto,
   ListarCreditosQueryDto,
   ListarMovimientosCajaQueryDto,
+  ObtenerPresupuestoQueryDto,
   RegistrarPagoDto,
   RefinanciarCreditoDto,
 } from './dto';
@@ -118,6 +119,7 @@ type CreditoListadoRow = {
 
 type PresupuestoRow = {
   caja_menor_id: string;
+  caja_menor_nombre: string;
   responsable_usuario_id: string;
   moneda_codigo: string;
   caja_menor: Prisma.Decimal;
@@ -129,6 +131,11 @@ type PresupuestoRow = {
 
 type PresupuestoDisponibleRow = {
   presupuesto: Prisma.Decimal;
+};
+
+type ResumenCreditoRow = {
+  total_abonado: Prisma.Decimal;
+  cuotas_restantes: number;
 };
 
 type EsquemaTblDisponibleRow = {
@@ -282,6 +289,7 @@ type AuditoriaMovimientoCajaRow = {
 
 type PresupuestoTblRow = {
   caja_menor_id: string;
+  caja_menor_nombre: string;
   responsable_usuario_id: string;
   moneda_codigo: string;
   caja_menor: Prisma.Decimal;
@@ -2408,13 +2416,24 @@ export class CobrosService {
     const credito = await this.prisma.credito.findUnique({
       where: { creditoId },
       include: {
-        cliente: true,
+        cliente: {
+          include: {
+            documentos: { include: { tipoDocumento: true } },
+            direcciones: true,
+          },
+        },
         ruta: true,
         moneda: true,
         frecuenciaPago: true,
         estadoCredito: true,
         planPago: true,
-        desembolso: true,
+        desembolso: {
+          include: {
+            cajaMenorMovimiento: {
+              include: { cajaMenor: true },
+            },
+          },
+        },
       },
     });
 
@@ -2426,13 +2445,34 @@ export class CobrosService {
     }
 
     this.asegurarAccesoCredito(credito, usuario);
+    const resumen = credito.planPago
+      ? await this.resumenCredito(credito.planPago.creditoPlanPagoId)
+      : { totalAbonado: 0, cuotasRestantes: 0 };
+    const totalAbonado = resumen.totalAbonado;
+    const valorTotal = credito.planPago
+      ? this.decimalANumero(credito.planPago.valorTotal)
+      : 0;
+    const documentoPrincipal =
+      credito.cliente.documentos.find(
+        (documento) => documento.tipoDocumento.codigo === 'CC',
+      ) ?? credito.cliente.documentos[0];
+    const direccionPrincipal =
+      credito.cliente.direcciones.find((direccion) => direccion.esPrincipal) ??
+      credito.cliente.direcciones[0];
+    const cajaMenor =
+      credito.desembolso?.cajaMenorMovimiento?.cajaMenor ?? null;
 
     return {
       id: credito.creditoId,
       clienteId: credito.clienteId,
       cliente: credito.cliente.nombreCompleto,
+      cedula: documentoPrincipal?.numeroDocumento ?? null,
+      negocio: credito.cliente.nombreComercial,
+      direccion: direccionPrincipal?.direccion ?? null,
       rutaId: credito.rutaId,
       ruta: credito.ruta.nombre,
+      cajaMenorId: cajaMenor?.cajaMenorId ?? null,
+      cajaMenor: cajaMenor?.nombre ?? null,
       monedaCodigo: credito.monedaCodigo,
       frecuenciaPago: {
         id: credito.frecuenciaPago.frecuenciaPagoId,
@@ -2449,6 +2489,17 @@ export class CobrosService {
       porcentajeInteres: this.decimalANumero(credito.porcentajeInteres),
       plazoDias: credito.plazoDias,
       omitirDomingos: credito.omitirDomingos,
+      valorTotal,
+      valorCuota: credito.planPago
+        ? this.decimalANumero(credito.planPago.valorCuota)
+        : 0,
+      totalAbonado,
+      saldo: this.redondear(Math.max(valorTotal - totalAbonado, 0)),
+      numeroCuotas: credito.planPago?.numeroCuotas ?? 0,
+      cuotasRestantes: resumen.cuotasRestantes,
+      fechaMaxima: credito.planPago
+        ? this.fechaIso(credito.planPago.fechaMaxima)
+        : this.fechaIso(credito.fechaInicio),
       observacion: credito.observacion,
       refinanciacion:
         credito.refinanciadoEn &&
@@ -2483,6 +2534,47 @@ export class CobrosService {
         : null,
       creadoEn: credito.creadoEn.toISOString(),
       actualizadoEn: credito.actualizadoEn.toISOString(),
+    };
+  }
+
+  private async resumenCredito(creditoPlanPagoId: string) {
+    const rows = await this.prisma.$queryRaw<ResumenCreditoRow[]>(Prisma.sql`
+      WITH abonos_cuota AS (
+        SELECT
+          cc.credito_cuota_id,
+          COALESCE(
+            SUM(
+              pa.monto_capital
+              + pa.monto_interes
+              + pa.monto_mora
+              - pa.monto_descuento
+            ),
+            0
+          ) AS abonado
+        FROM public.credito_cuota cc
+        LEFT JOIN public.pago_aplicacion pa
+          ON pa.credito_cuota_id = cc.credito_cuota_id
+        WHERE cc.credito_plan_pago_id = ${creditoPlanPagoId}::uuid
+        GROUP BY cc.credito_cuota_id
+      )
+      SELECT
+        COALESCE(SUM(ac.abonado), 0) AS total_abonado,
+        COUNT(*) FILTER (
+          WHERE ec.codigo NOT IN ('PAGADA', 'ANULADA')
+            AND (cc.valor_total - COALESCE(ac.abonado, 0)) > 0
+        )::int AS cuotas_restantes
+      FROM public.credito_cuota cc
+      JOIN public.estado_cuota ec
+        ON ec.estado_cuota_id = cc.estado_cuota_id
+      LEFT JOIN abonos_cuota ac
+        ON ac.credito_cuota_id = cc.credito_cuota_id
+      WHERE cc.credito_plan_pago_id = ${creditoPlanPagoId}::uuid
+    `);
+    const row = rows[0];
+
+    return {
+      totalAbonado: row ? this.decimalANumero(row.total_abonado) : 0,
+      cuotasRestantes: row?.cuotas_restantes ?? 0,
     };
   }
 
@@ -3642,31 +3734,202 @@ export class CobrosService {
     };
   }
 
-  async obtenerPresupuesto(usuario: AuthenticatedUser) {
+  async obtenerPresupuesto(
+    query: ObtenerPresupuestoQueryDto,
+    usuario: AuthenticatedUser,
+  ) {
     if (await this.usarEsquemaTbl()) {
-      return this.obtenerPresupuestoTbl(usuario);
+      return this.obtenerPresupuestoTbl(query, usuario);
     }
 
-    const where = this.esAdministrador(usuario)
-      ? Prisma.empty
-      : Prisma.sql`WHERE responsable_usuario_id = ${usuario.usuarioId}::uuid`;
+    const search = this.normalizarTextoOpcional(query.search);
+    const fechaDesde = query.fechaDesde
+      ? this.parsearFecha(query.fechaDesde, 'fechaDesde')
+      : null;
+    const fechaHasta = query.fechaHasta
+      ? this.finDia(this.parsearFecha(query.fechaHasta, 'fechaHasta'))
+      : null;
+    const condiciones: Prisma.Sql[] = [Prisma.sql`cm.activa = TRUE`];
+    const filtrosFechaMovimiento: Prisma.Sql[] = [];
+    const filtrosFechaPago: Prisma.Sql[] = [];
+    const filtrosFechaGasto: Prisma.Sql[] = [];
+    const filtrosFechaCredito: Prisma.Sql[] = [];
+
+    if (!this.esAdministrador(usuario)) {
+      condiciones.push(
+        Prisma.sql`cm.responsable_usuario_id = ${usuario.usuarioId}::uuid`,
+      );
+    }
+
+    if (query.cajaMenorId) {
+      condiciones.push(
+        Prisma.sql`cm.caja_menor_id = ${query.cajaMenorId}::uuid`,
+      );
+    }
+
+    if (search) {
+      const pattern = `%${search}%`;
+      condiciones.push(Prisma.sql`cm.nombre ILIKE ${pattern}`);
+    }
+
+    if (fechaDesde) {
+      filtrosFechaMovimiento.push(
+        Prisma.sql`cmm.fecha_movimiento >= ${fechaDesde}`,
+      );
+      filtrosFechaPago.push(Prisma.sql`p.fecha_pago >= ${fechaDesde}`);
+      filtrosFechaGasto.push(Prisma.sql`g.fecha_gasto >= ${fechaDesde}`);
+      filtrosFechaCredito.push(
+        Prisma.sql`cd.fecha_desembolso >= ${fechaDesde}`,
+      );
+    }
+
+    if (fechaHasta) {
+      filtrosFechaMovimiento.push(
+        Prisma.sql`cmm.fecha_movimiento <= ${fechaHasta}`,
+      );
+      filtrosFechaPago.push(Prisma.sql`p.fecha_pago <= ${fechaHasta}`);
+      filtrosFechaGasto.push(Prisma.sql`g.fecha_gasto <= ${fechaHasta}`);
+      filtrosFechaCredito.push(
+        Prisma.sql`cd.fecha_desembolso <= ${fechaHasta}`,
+      );
+    }
+
+    const where = Prisma.sql`WHERE ${Prisma.join(condiciones, ' AND ')}`;
+    const fechaMovimientoWhere =
+      filtrosFechaMovimiento.length > 0
+        ? Prisma.sql`AND ${Prisma.join(filtrosFechaMovimiento, ' AND ')}`
+        : Prisma.empty;
+    const fechaPagoWhere =
+      filtrosFechaPago.length > 0
+        ? Prisma.sql`AND ${Prisma.join(filtrosFechaPago, ' AND ')}`
+        : Prisma.empty;
+    const fechaGastoWhere =
+      filtrosFechaGasto.length > 0
+        ? Prisma.sql`AND ${Prisma.join(filtrosFechaGasto, ' AND ')}`
+        : Prisma.empty;
+    const fechaCreditoWhere =
+      filtrosFechaCredito.length > 0
+        ? Prisma.sql`AND ${Prisma.join(filtrosFechaCredito, ' AND ')}`
+        : Prisma.empty;
+
     const rows = await this.prisma.$queryRaw<PresupuestoRow[]>(Prisma.sql`
+      WITH caja_recaudo AS (
+        SELECT DISTINCT ON (cmr.responsable_usuario_id, cmr.moneda_codigo)
+          cmr.caja_menor_id,
+          cmr.responsable_usuario_id,
+          cmr.moneda_codigo
+        FROM public.caja_menor cmr
+        WHERE cmr.activa = TRUE
+        ORDER BY
+          cmr.responsable_usuario_id,
+          cmr.moneda_codigo,
+          cmr.creada_en ASC,
+          cmr.caja_menor_id ASC
+      )
       SELECT
-        caja_menor_id,
-        responsable_usuario_id,
-        moneda_codigo,
-        caja_menor,
-        recaudado,
-        gastos,
-        creditos,
-        presupuesto
-      FROM public.vista_presupuesto_actual
+        cm.caja_menor_id,
+        cm.nombre AS caja_menor_nombre,
+        cm.responsable_usuario_id,
+        cm.moneda_codigo,
+        COALESCE(saldo_caja.saldo_caja_menor, 0) AS caja_menor,
+        (
+          CASE
+            WHEN cr.caja_menor_id = cm.caja_menor_id THEN COALESCE(pagos.total_recaudado, 0)
+            ELSE 0
+          END
+          + COALESCE(entradas_caja.total_entradas, 0)
+        ) AS recaudado,
+        (
+          COALESCE(gastos.total_gastos, 0)
+          + COALESCE(gastos_caja.total_gastos_caja, 0)
+        ) AS gastos,
+        COALESCE(desembolsos.total_creditos, 0) AS creditos,
+        (
+          COALESCE(saldo_caja.saldo_caja_menor, 0)
+          + CASE
+              WHEN cr.caja_menor_id = cm.caja_menor_id THEN COALESCE(pagos.total_recaudado, 0)
+              ELSE 0
+            END
+          - COALESCE(gastos.total_gastos, 0)
+        ) AS presupuesto
+      FROM public.caja_menor cm
+      LEFT JOIN caja_recaudo cr
+        ON cr.responsable_usuario_id = cm.responsable_usuario_id
+       AND cr.moneda_codigo = cm.moneda_codigo
+      LEFT JOIN LATERAL (
+        SELECT SUM(
+          CASE
+            WHEN tmc.codigo IN ('GASTO', 'DESEMBOLSO_CREDITO', 'AJUSTE_SALIDA') THEN -cmm.monto
+            WHEN tmc.codigo IN ('RECAUDO', 'AJUSTE_ENTRADA') THEN cmm.monto
+            WHEN tmc.naturaleza = 'E' THEN cmm.monto
+            ELSE -cmm.monto
+          END
+        ) AS saldo_caja_menor
+        FROM public.caja_menor_movimiento cmm
+        JOIN public.tipo_movimiento_caja tmc
+          ON tmc.tipo_movimiento_caja_id = cmm.tipo_movimiento_caja_id
+        WHERE cmm.caja_menor_id = cm.caja_menor_id
+        ${fechaMovimientoWhere}
+      ) saldo_caja ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT SUM(p.total_pagado) AS total_recaudado
+        FROM public.pago p
+        JOIN public.ruta r ON r.ruta_id = p.ruta_id
+        WHERE r.responsable_usuario_id = cm.responsable_usuario_id
+          AND p.moneda_codigo = cm.moneda_codigo
+          ${fechaPagoWhere}
+      ) pagos ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT SUM(cmm.monto) AS total_entradas
+        FROM public.caja_menor_movimiento cmm
+        JOIN public.tipo_movimiento_caja tmc
+          ON tmc.tipo_movimiento_caja_id = cmm.tipo_movimiento_caja_id
+        WHERE cmm.caja_menor_id = cm.caja_menor_id
+          AND (
+            CASE
+              WHEN tmc.codigo IN ('GASTO', 'DESEMBOLSO_CREDITO', 'AJUSTE_SALIDA') THEN 'S'
+              WHEN tmc.codigo IN ('RECAUDO', 'AJUSTE_ENTRADA') THEN 'E'
+              ELSE tmc.naturaleza
+            END
+          ) = 'E'
+          AND tmc.codigo NOT IN ('GASTO', 'DESEMBOLSO_CREDITO', 'AJUSTE_SALIDA')
+          ${fechaMovimientoWhere}
+      ) entradas_caja ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT SUM(g.monto) AS total_gastos
+        FROM public.gasto g
+        WHERE g.caja_menor_id = cm.caja_menor_id
+          AND g.moneda_codigo = cm.moneda_codigo
+          ${fechaGastoWhere}
+      ) gastos ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT SUM(cmm.monto) AS total_gastos_caja
+        FROM public.caja_menor_movimiento cmm
+        JOIN public.tipo_movimiento_caja tmc
+          ON tmc.tipo_movimiento_caja_id = cmm.tipo_movimiento_caja_id
+        WHERE cmm.caja_menor_id = cm.caja_menor_id
+          AND tmc.codigo = 'GASTO'
+          ${fechaMovimientoWhere}
+      ) gastos_caja ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT SUM(cd.monto) AS total_creditos
+        FROM public.credito_desembolso cd
+        JOIN public.caja_menor_movimiento cmm
+          ON cmm.caja_menor_movimiento_id = cd.caja_menor_movimiento_id
+        JOIN public.credito c ON c.credito_id = cd.credito_id
+        JOIN public.ruta r ON r.ruta_id = c.ruta_id
+        WHERE r.responsable_usuario_id = cm.responsable_usuario_id
+          AND c.moneda_codigo = cm.moneda_codigo
+          AND cmm.caja_menor_id = cm.caja_menor_id
+          ${fechaCreditoWhere}
+      ) desembolsos ON TRUE
       ${where}
-      ORDER BY moneda_codigo ASC, caja_menor_id ASC
+      ORDER BY cm.activa DESC, cm.nombre ASC, cm.caja_menor_id ASC
     `);
 
     const items = rows.map((row) => ({
       cajaMenorId: row.caja_menor_id,
+      cajaMenorNombre: row.caja_menor_nombre,
       responsableUsuarioId: row.responsable_usuario_id,
       monedaCodigo: row.moneda_codigo,
       cajaMenor: this.decimalANumero(row.caja_menor),
@@ -4482,7 +4745,66 @@ export class CobrosService {
     });
   }
 
-  private async obtenerPresupuestoTbl(usuario: AuthenticatedUser) {
+  private async obtenerPresupuestoTbl(
+    query: ObtenerPresupuestoQueryDto,
+    usuario: AuthenticatedUser,
+  ) {
+    const search = this.normalizarTextoOpcional(query.search);
+    const fechaDesde = query.fechaDesde
+      ? this.parsearFecha(query.fechaDesde, 'fechaDesde')
+      : null;
+    const fechaHasta = query.fechaHasta
+      ? this.finDia(this.parsearFecha(query.fechaHasta, 'fechaHasta'))
+      : null;
+    const condicionesCajas: Prisma.Sql[] = [
+      Prisma.sql`c.caj_tipo::text = 'MENOR'`,
+      Prisma.sql`c.caj_activa`,
+    ];
+    const filtrosFechaMovimientos: Prisma.Sql[] = [];
+    const filtrosFechaPagos: Prisma.Sql[] = [];
+    const filtrosFechaGastos: Prisma.Sql[] = [];
+    const filtrosFechaCreditos: Prisma.Sql[] = [];
+
+    if (query.cajaMenorId) {
+      condicionesCajas.push(Prisma.sql`c.id_caj::text = ${query.cajaMenorId}`);
+    }
+
+    if (search) {
+      const pattern = `%${search}%`;
+      condicionesCajas.push(Prisma.sql`c.caj_nombre ILIKE ${pattern}`);
+    }
+
+    if (fechaDesde) {
+      filtrosFechaMovimientos.push(Prisma.sql`m.mca_creacion >= ${fechaDesde}`);
+      filtrosFechaPagos.push(Prisma.sql`pa.pag_fecha >= ${fechaDesde}`);
+      filtrosFechaGastos.push(Prisma.sql`g.gas_fecha >= ${fechaDesde}`);
+      filtrosFechaCreditos.push(Prisma.sql`cr.cre_fecha_inicio >= ${fechaDesde}`);
+    }
+
+    if (fechaHasta) {
+      filtrosFechaMovimientos.push(Prisma.sql`m.mca_creacion <= ${fechaHasta}`);
+      filtrosFechaPagos.push(Prisma.sql`pa.pag_fecha <= ${fechaHasta}`);
+      filtrosFechaGastos.push(Prisma.sql`g.gas_fecha <= ${fechaHasta}`);
+      filtrosFechaCreditos.push(Prisma.sql`cr.cre_fecha_inicio <= ${fechaHasta}`);
+    }
+
+    const fechaMovimientosWhere =
+      filtrosFechaMovimientos.length > 0
+        ? Prisma.sql`AND ${Prisma.join(filtrosFechaMovimientos, ' AND ')}`
+        : Prisma.empty;
+    const fechaPagosWhere =
+      filtrosFechaPagos.length > 0
+        ? Prisma.sql`AND ${Prisma.join(filtrosFechaPagos, ' AND ')}`
+        : Prisma.empty;
+    const fechaGastosWhere =
+      filtrosFechaGastos.length > 0
+        ? Prisma.sql`AND ${Prisma.join(filtrosFechaGastos, ' AND ')}`
+        : Prisma.empty;
+    const fechaCreditosWhere =
+      filtrosFechaCreditos.length > 0
+        ? Prisma.sql`AND ${Prisma.join(filtrosFechaCreditos, ' AND ')}`
+        : Prisma.empty;
+
     const rows = await this.prisma.$queryRaw<PresupuestoTblRow[]>(Prisma.sql`
       WITH cajas AS (
         SELECT
@@ -4508,12 +4830,12 @@ export class CobrosService {
           ORDER BY tu.id_usu ASC
           LIMIT 1
         ) responsable ON TRUE
-        WHERE c.caj_tipo::text = 'MENOR'
-          AND c.caj_activa
+        WHERE ${Prisma.join(condicionesCajas, ' AND ')}
       ),
       resumen AS (
         SELECT
           c.id_caj::text AS caja_menor_id,
+          c.caj_nombre AS caja_menor_nombre,
           c.responsable_id::text AS responsable_usuario_id,
           'COP' AS moneda_codigo,
           COALESCE(MAX(sc.sca_monto_inicial), 0)
@@ -4528,18 +4850,22 @@ export class CobrosService {
           COALESCE(creditos.creditos, 0) AS creditos
         FROM cajas c
         LEFT JOIN public.tbl_sesiones_cajas sc ON sc.caj_id = c.id_caj
-        LEFT JOIN public.tbl_movimientos_cajas m ON m.sca_id = sc.id_sca
+        LEFT JOIN public.tbl_movimientos_cajas m
+          ON m.sca_id = sc.id_sca
+          ${fechaMovimientosWhere}
         LEFT JOIN LATERAL (
           SELECT SUM(pa.pag_monto) AS recaudado
           FROM public.tbl_pagos pa
           JOIN public.tbl_creditos cr ON cr.id_cre = pa.cre_id
           JOIN public.tbl_clientes cl ON cl.id_cli = cr.cli_id
           WHERE cl.org_id = c.org_id
+            ${fechaPagosWhere}
         ) pagos ON TRUE
         LEFT JOIN LATERAL (
           SELECT SUM(g.gas_monto) AS gastos
           FROM public.tbl_gastos g
           WHERE g.caj_id = c.id_caj
+            ${fechaGastosWhere}
         ) gastos ON TRUE
         LEFT JOIN LATERAL (
           SELECT SUM(cr.cre_total) AS creditos
@@ -4547,6 +4873,7 @@ export class CobrosService {
           JOIN public.tbl_clientes cl ON cl.id_cli = cr.cli_id
           WHERE cl.org_id = c.org_id
             AND UPPER(cr.cre_estado::text) NOT IN ('ANULADO')
+            ${fechaCreditosWhere}
         ) creditos ON TRUE
         WHERE ${
           this.esAdministrador(usuario)
@@ -4558,10 +4885,11 @@ export class CobrosService {
                   AND u.usu_usuario = ${usuario.usuario}
               )`
         }
-        GROUP BY c.id_caj, c.responsable_id, pagos.recaudado, gastos.gastos, creditos.creditos
+        GROUP BY c.id_caj, c.caj_nombre, c.responsable_id, pagos.recaudado, gastos.gastos, creditos.creditos
       )
       SELECT
         caja_menor_id,
+        caja_menor_nombre,
         responsable_usuario_id,
         moneda_codigo,
         caja_menor,
@@ -4575,6 +4903,7 @@ export class CobrosService {
 
     const items = rows.map((row) => ({
       cajaMenorId: row.caja_menor_id,
+      cajaMenorNombre: row.caja_menor_nombre,
       responsableUsuarioId: row.responsable_usuario_id,
       monedaCodigo: row.moneda_codigo,
       cajaMenor: this.decimalANumero(row.caja_menor),

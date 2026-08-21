@@ -7718,6 +7718,260 @@ class _CalculoCredito {
   final int domingosOmitidos;
 }
 
+class _SelectorClienteCredito extends StatefulWidget {
+  const _SelectorClienteCredito({
+    required this.clientes,
+    required this.clienteId,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  final List<Cliente> clientes;
+  final String? clienteId;
+  final bool enabled;
+  final ValueChanged<String?> onChanged;
+
+  @override
+  State<_SelectorClienteCredito> createState() => _SelectorClienteCreditoState();
+}
+
+class _SelectorClienteCreditoState extends State<_SelectorClienteCredito> {
+  late final TextEditingController _controller;
+  late final FocusNode _focusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: _textoSeleccionado());
+    _focusNode = FocusNode();
+  }
+
+  @override
+  void didUpdateWidget(covariant _SelectorClienteCredito oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.clienteId == oldWidget.clienteId) {
+      return;
+    }
+
+    if (widget.clienteId == null && _focusNode.hasFocus) {
+      return;
+    }
+
+    _controller.text = _textoSeleccionado();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final Cliente? clienteSeleccionado = _clientePorId(widget.clienteId);
+
+    return RawAutocomplete<Cliente>(
+      textEditingController: _controller,
+      focusNode: _focusNode,
+      displayStringForOption: _etiquetaCliente,
+      optionsBuilder: (TextEditingValue value) {
+        final String texto = value.text.trim();
+        final String consulta = texto.toLowerCase();
+        if (consulta.isEmpty ||
+            (clienteSeleccionado != null &&
+                texto == _etiquetaCliente(clienteSeleccionado))) {
+          return widget.clientes;
+        }
+
+        return widget.clientes.where((Cliente cliente) {
+          final String nombre = cliente.nombreCompleto.toLowerCase();
+          final String cedula = (cliente.cedula ?? '').toLowerCase();
+          final String negocio = (cliente.nombreComercial ?? '').toLowerCase();
+          return nombre.contains(consulta) ||
+              cedula.contains(consulta) ||
+              negocio.contains(consulta);
+        });
+      },
+      onSelected: (Cliente cliente) => widget.onChanged(cliente.id),
+      fieldViewBuilder: (
+        BuildContext context,
+        TextEditingController controller,
+        FocusNode focusNode,
+        VoidCallback onFieldSubmitted,
+      ) {
+        return TextFormField(
+          controller: controller,
+          focusNode: focusNode,
+          enabled: widget.enabled,
+          decoration: InputDecoration(
+            labelText: 'Cliente',
+            hintText: 'Buscar por nombre o cedula',
+            prefixIcon: const Icon(Icons.person_search_rounded),
+            suffixIcon: widget.enabled
+                ? const Icon(Icons.arrow_drop_down_rounded)
+                : const Icon(Icons.lock_rounded),
+          ),
+          onTap: () {
+            controller.selection = TextSelection(
+              baseOffset: 0,
+              extentOffset: controller.text.length,
+            );
+          },
+          onChanged: (String value) {
+            final String texto = value.trim();
+            final bool mantieneSeleccion = clienteSeleccionado != null &&
+                texto == _etiquetaCliente(clienteSeleccionado);
+            if (widget.clienteId != null &&
+                (texto.isEmpty || !mantieneSeleccion)) {
+              widget.onChanged(null);
+            }
+          },
+        );
+      },
+      optionsViewBuilder: (
+        BuildContext context,
+        AutocompleteOnSelected<Cliente> onSelected,
+        Iterable<Cliente> options,
+      ) {
+        final List<Cliente> opciones = options.toList(growable: false);
+        final double ancho = math.min(
+          520,
+          math.max(0, MediaQuery.sizeOf(context).width - 32),
+        );
+
+        return Align(
+          alignment: Alignment.topLeft,
+          child: SizedBox(
+            width: ancho,
+            child: Material(
+              elevation: 6,
+              borderRadius: BorderRadius.circular(8),
+              clipBehavior: Clip.antiAlias,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 280),
+                child: opciones.isEmpty
+                    ? Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text(
+                          'No hay clientes con ese nombre o cedula',
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                      )
+                    : ListView.separated(
+                        padding: EdgeInsets.zero,
+                        shrinkWrap: true,
+                        itemCount: opciones.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (BuildContext context, int index) {
+                          final Cliente cliente = opciones[index];
+                          return InkWell(
+                            onTap: () => onSelected(cliente),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
+                              child: _ClienteOpcionCredito(cliente: cliente),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Cliente? _clientePorId(String? id) {
+    if (id == null) {
+      return null;
+    }
+
+    for (final Cliente cliente in widget.clientes) {
+      if (cliente.id == id) {
+        return cliente;
+      }
+    }
+
+    return null;
+  }
+
+  String _textoSeleccionado() {
+    final Cliente? cliente = _clientePorId(widget.clienteId);
+    return cliente == null ? '' : _etiquetaCliente(cliente);
+  }
+}
+
+class _ClienteOpcionCredito extends StatelessWidget {
+  const _ClienteOpcionCredito({required this.cliente});
+
+  final Cliente cliente;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<String> detalles = <String>[
+      if ((cliente.cedula ?? '').isNotEmpty) 'CC ${cliente.cedula!}',
+      if ((cliente.nombreComercial ?? '').isNotEmpty) cliente.nombreComercial!,
+      if ((cliente.telefono ?? '').isNotEmpty) cliente.telefono!,
+    ];
+
+    return Row(
+      children: <Widget>[
+        CircleAvatar(
+          radius: 18,
+          backgroundColor: CobroAppTheme.primary.withValues(alpha: 0.12),
+          foregroundColor: CobroAppTheme.primary,
+          child: Text(
+            cliente.nombreCompleto.isEmpty
+                ? '?'
+                : cliente.nombreCompleto.substring(0, 1).toUpperCase(),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text(
+                cliente.nombreCompleto,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+              ),
+              if (detalles.isNotEmpty) ...<Widget>[
+                const SizedBox(height: 2),
+                Text(
+                  detalles.join(' - '),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: context.clay.subtleText,
+                      ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+String _etiquetaCliente(Cliente cliente) {
+  final String cedula = cliente.cedula?.trim() ?? '';
+  if (cedula.isEmpty) {
+    return cliente.nombreCompleto;
+  }
+
+  return '${cliente.nombreCompleto} - CC $cedula';
+}
+
 class _FormularioCredito extends StatelessWidget {
   const _FormularioCredito({
     required this.clientes,
@@ -7786,23 +8040,11 @@ class _FormularioCredito extends StatelessWidget {
     final Widget contenido = Column(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        DropdownButtonFormField<String>(
-          key: ValueKey<String?>('cliente-$clienteId'),
-          isExpanded: true,
-          initialValue: clienteId,
-          decoration: const InputDecoration(
-            labelText: 'Cliente',
-            prefixIcon: Icon(Icons.person_rounded),
-          ),
-          items: clientes
-              .map(
-                (Cliente cliente) => DropdownMenuItem<String>(
-                  value: cliente.id,
-                  child: Text(cliente.nombreCompleto),
-                ),
-              )
-              .toList(growable: false),
-          onChanged: guardando || clienteBloqueado ? null : onClienteChanged,
+        _SelectorClienteCredito(
+          clientes: clientes,
+          clienteId: clienteId,
+          enabled: !guardando && !clienteBloqueado,
+          onChanged: onClienteChanged,
         ),
         const SizedBox(height: 12),
         DropdownButtonFormField<String?>(

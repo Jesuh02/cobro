@@ -156,6 +156,65 @@ void main() {
   );
 
   testWidgets(
+    'permite buscar cliente por nombre o cedula al crear credito',
+    (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(390, 844);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+
+      final ApiClient apiClient = ApiClient(
+        baseUrl: 'https://cobro.test/api/v1',
+        client: MockClient(_responderApiCredito),
+      );
+      addTearDown(apiClient.close);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: CobroAppTheme.light(),
+          home: HomePage(
+            apiBaseUrl: 'https://cobro.test/api/v1',
+            apiClient: apiClient,
+            themeMode: ThemeMode.light,
+            onThemeModeChanged: (_) {},
+          ),
+        ),
+      );
+
+      await tester.enterText(find.byType(TextField).at(0), 'admin');
+      await tester.enterText(find.byType(TextField).at(1), 'Admin12345!');
+      await tester.tap(find.text('Entrar'));
+      await tester.pumpAndSettle(const Duration(seconds: 2));
+      tester.takeException();
+
+      await tester.tap(find.text('Credito'));
+      await tester.pump(const Duration(milliseconds: 500));
+      tester.takeException();
+
+      final Finder dialogo = find.byType(AlertDialog);
+      final Finder selectorCliente = find.descendant(
+        of: dialogo,
+        matching: find.byWidgetPredicate(
+          (Widget widget) =>
+              widget is TextField && widget.decoration?.labelText == 'Cliente',
+        ),
+      );
+      expect(selectorCliente, findsOneWidget);
+
+      await tester.tap(selectorCliente);
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('Cliente de prueba'), findsOneWidget);
+      expect(find.text('Cliente filtrado'), findsOneWidget);
+
+      await tester.enterText(selectorCliente, '987654');
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('Cliente filtrado'), findsOneWidget);
+      expect(find.text('Cliente de prueba'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
     'muestra pagos decimales sin redondear',
     (WidgetTester tester) async {
       tester.view.devicePixelRatio = 1;
@@ -606,6 +665,15 @@ Future<http.Response> _responderApiCredito(http.Request request) async {
         'nombreComercial': null,
         'correo': null,
         'telefono': null,
+        'estado': <String, dynamic>{'nombre': 'Activo'},
+      },
+      <String, dynamic>{
+        'id': 'cliente-2',
+        'nombreCompleto': 'Cliente filtrado',
+        'cedula': '987654',
+        'nombreComercial': 'Tienda filtro',
+        'correo': null,
+        'telefono': '3001234567',
         'estado': <String, dynamic>{'nombre': 'Activo'},
       },
     ]);

@@ -1679,12 +1679,24 @@ export class CobrosService {
         }
 
         const omitirDomingos = dto.omitirDomingos ?? credito.omitirDomingos;
+        const valorPrincipalActual = this.redondear(
+          this.decimalANumero(credito.valorPrincipal),
+        );
+        const valorPrincipalRefinanciado = credito.valorPrincipalRefinanciado
+          ? this.redondear(
+              this.decimalANumero(credito.valorPrincipalRefinanciado),
+            )
+          : null;
+        const cambiaValorPrincipal = valorPrincipalActual !== valorPrincipal;
+        const limpiarRefinanciacion =
+          cambiaValorPrincipal ||
+          (valorPrincipalRefinanciado !== null &&
+            valorPrincipalRefinanciado !== valorPrincipal);
         const cambiaCondicionesFinancieras =
           moneda.codigoMoneda !== credito.monedaCodigo ||
           frecuenciaPago.frecuenciaPagoId !== credito.frecuenciaPagoId ||
           this.fechaIso(fechaInicio) !== this.fechaIso(credito.fechaInicio) ||
-          this.redondear(this.decimalANumero(credito.valorPrincipal)) !==
-            valorPrincipal ||
+          cambiaValorPrincipal ||
           this.redondear(
             this.decimalANumero(credito.porcentajeInteres),
             4,
@@ -1899,6 +1911,13 @@ export class CobrosService {
             plazoDias: dto.plazoDias,
             omitirDomingos,
             observacion: this.normalizarTextoOpcional(dto.observacion),
+            ...(limpiarRefinanciacion
+              ? {
+                  refinanciadoEn: null,
+                  valorPrincipalAnterior: null,
+                  valorPrincipalRefinanciado: null,
+                }
+              : {}),
           },
         });
         await this.asegurarClienteEnRuta(tx, ruta.rutaId, cliente.clienteId);

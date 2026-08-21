@@ -1,0 +1,242 @@
+erDiagram
+  TBL_PERSONAS {
+    BIGINT id_per PK
+    VARCHAR per_primer_nombre
+    VARCHAR per_apellido
+    VARCHAR per_documento UK
+    VARCHAR per_direccion
+    VARCHAR per_num_celular
+    TIMESTAMPTZ per_creacion
+  }
+
+  TBL_USUARIOS {
+    BIGINT id_usu PK
+    VARCHAR usu_usuario UK
+    VARCHAR usu_password
+    TIMESTAMPTZ usu_creacion
+    VARCHAR usu_email UK
+    BOOLEAN usu_activo
+    BIGINT persona_id FK_UK
+  }
+
+  TBL_ROLES {
+    BIGINT id_rol PK
+    ENUM rol_tip UK
+    BIGINT rol_nivel
+    TIMESTAMPTZ rol_creacion
+  }
+
+  TBL_RECURSOS {
+    BIGINT id_rec PK
+    VARCHAR nom
+    VARCHAR rec_icono
+    BIGINT rec_orden
+    ENUM rec_interface
+  }
+
+  TBL_ROLES_RECURSOS {
+    BIGINT id_ror PK
+    BIGINT rec_id FK
+    BIGINT rol_id FK
+  }
+
+  TBL_ORGANIZACIONES {
+    BIGINT id_org PK
+    VARCHAR org_nombre UK
+    VARCHAR org_telefono
+    VARCHAR org_email UK
+    BOOLEAN org_activo
+    TIMESTAMPTZ org_creacion
+  }
+
+  TBL_USUARIOS_ORGANIZACIONES {
+    BIGINT id_urg PK
+    BOOLEAN urg_activo
+    BIGINT rol_id FK
+    BIGINT usu_id FK
+    BIGINT org_id FK
+  }
+
+  TBL_CLIENTES {
+    BIGINT id_cli PK
+    VARCHAR cli_referencia UK
+    BOOLEAN cli_activo
+    TIMESTAMPTZ cli_creacion
+    BIGINT org_id FK
+    BIGINT cli_persona FK
+  }
+
+  TBL_RUTAS {
+    BIGINT id_rut PK
+    VARCHAR rut_nombre UK
+    VARCHAR rut_descripcion
+    BOOLEAN rut_activa
+    TIMESTAMPTZ rut_creacion
+    BIGINT usu_id FK
+    BIGINT org_id FK
+  }
+
+  TBL_RUTAS_CLIENTES {
+    BIGINT id_rcl PK
+    BOOLEAN rcl_activo
+    TIMESTAMPTZ rcl_creacion
+    BIGINT rut_id FK
+    BIGINT cli_id FK
+  }
+
+  TBL_PRODUCTOS_CREDITOS {
+    BIGINT id_pcr PK
+    VARCHAR pcr_nombre UK
+    ENUM pcr_frecuencia
+    NUMERIC pcr_tasa_interes
+    BIGINT org_id FK
+  }
+
+  TBL_CREDITOS {
+    BIGINT id_cre PK
+    NUMERIC cre_total
+    ENUM cre_estado
+    NUMERIC cre_tasa_interes
+    NUMERIC cre_interes_total
+    NUMERIC cre_total_pagar
+    DATE cre_fecha_inicio
+    DATE cre_fecha_fin
+    BIGINT usu_id FK
+    BIGINT pcr_id FK
+    BIGINT cli_id FK
+  }
+
+  TBL_CUOTAS {
+    BIGINT id_cuo PK
+    BIGINT cuo_numero UK
+    NUMERIC cuo_valor
+    NUMERIC cuo_total_pagado
+    ENUM cuo_estado
+    DATE cuo_fecha_vencimiento
+    BIGINT cre_id FK
+  }
+
+  TBL_MEDIOS_PAGOS {
+    BIGINT id_med PK
+    VARCHAR med_nombre UK
+    ENUM med_tipo
+    VARCHAR med_proveedor
+    VARCHAR med_referencia_cuenta UK
+    VARCHAR med_titular
+    BOOLEAN med_activo
+    TIMESTAMPTZ med_creacion
+    TIMESTAMPTZ med_actualizacion
+    BIGINT org_id FK
+  }
+
+  TBL_PAGOS {
+    BIGINT id_pag PK
+    NUMERIC pag_monto
+    TIMESTAMPTZ pag_fecha
+    VARCHAR pag_referencia
+    UUID pag_idempotency_llave UK
+    ENUM pag_estado
+    BIGINT med_id FK
+    BIGINT cre_id FK
+  }
+
+  TBL_CUOTAS_PAGOS {
+    BIGINT id_cpa PK
+    BIGINT cpa_numero
+    NUMERIC cpa_capital
+    NUMERIC cpa_interes
+    NUMERIC cpa_total
+    BIGINT cuo_id FK
+    BIGINT pagos_id FK
+  }
+
+  TBL_CATEGORIAS_GASTOS {
+    BIGINT id_cga PK
+    VARCHAR cga_nombre UK
+    VARCHAR cga_descripcion
+  }
+
+  TBL_CAJAS {
+    BIGINT id_caj PK
+    VARCHAR caj_nombre UK
+    ENUM caj_tipo
+    BOOLEAN caj_activa
+    TIMESTAMPTZ caj_creacion
+    BIGINT org_id FK
+    BIGINT gas_id FK
+  }
+
+  TBL_GASTOS {
+    BIGINT id_gas PK
+    TIMESTAMPTZ gas_fecha
+    NUMERIC gas_monto
+    BIGINT caj_id FK
+    BIGINT usu_id FK
+    BIGINT cga_id FK
+  }
+
+  TBL_SESIONES_CAJAS {
+    BIGINT id_sca PK
+    TIMESTAMPTZ sca_fecha_apertura
+    TIMESTAMPTZ sca_fecha_cierre
+    NUMERIC sca_monto_inicial
+    NUMERIC sca_total_cobrado
+    NUMERIC sca_total_gasto
+    ENUM sca_estado UK
+    BIGINT caj_id FK
+    BIGINT usu_id FK
+  }
+
+  TBL_MOVIMIENTOS_CAJAS {
+    BIGINT id_mca PK
+    ENUM mca_tipo
+    NUMERIC mca_monto
+    BIGINT mca_referencia_id
+    ENUM mca_referencia_tipo
+    TIMESTAMPTZ mca_creacion
+    BIGINT org_id FK
+    BIGINT usu_id FK
+    BIGINT sca_id FK
+  }
+
+  TBL_PERSONAS ||--o| TBL_USUARIOS : persona_id
+  TBL_PERSONAS ||--o{ TBL_CLIENTES : cli_persona
+
+  TBL_ROLES ||--o{ TBL_ROLES_RECURSOS : rol_id
+  TBL_RECURSOS ||--o{ TBL_ROLES_RECURSOS : rec_id
+
+  TBL_ROLES ||--o{ TBL_USUARIOS_ORGANIZACIONES : rol_id
+  TBL_USUARIOS ||--o{ TBL_USUARIOS_ORGANIZACIONES : usu_id
+  TBL_ORGANIZACIONES ||--o{ TBL_USUARIOS_ORGANIZACIONES : org_id
+
+  TBL_ORGANIZACIONES ||--o{ TBL_CLIENTES : org_id
+  TBL_ORGANIZACIONES ||--o{ TBL_RUTAS : org_id
+  TBL_ORGANIZACIONES ||--o{ TBL_PRODUCTOS_CREDITOS : org_id
+  TBL_ORGANIZACIONES ||--o{ TBL_CAJAS : org_id
+  TBL_ORGANIZACIONES ||--o{ TBL_MEDIOS_PAGOS : org_id
+  TBL_ORGANIZACIONES ||--o{ TBL_MOVIMIENTOS_CAJAS : org_id
+
+  TBL_USUARIOS ||--o{ TBL_RUTAS : usu_id
+  TBL_USUARIOS ||--o{ TBL_CREDITOS : usu_id
+  TBL_USUARIOS ||--o{ TBL_GASTOS : usu_id
+  TBL_USUARIOS ||--o{ TBL_SESIONES_CAJAS : usu_id
+  TBL_USUARIOS ||--o{ TBL_MOVIMIENTOS_CAJAS : usu_id
+
+  TBL_RUTAS ||--o{ TBL_RUTAS_CLIENTES : rut_id
+  TBL_CLIENTES ||--o{ TBL_RUTAS_CLIENTES : cli_id
+
+  TBL_CLIENTES ||--o{ TBL_CREDITOS : cli_id
+  TBL_PRODUCTOS_CREDITOS ||--o{ TBL_CREDITOS : pcr_id
+  TBL_CREDITOS ||--o{ TBL_CUOTAS : cre_id
+  TBL_CREDITOS ||--o{ TBL_PAGOS : cre_id
+
+  TBL_CUOTAS ||--o{ TBL_CUOTAS_PAGOS : cuo_id
+  TBL_PAGOS ||--o{ TBL_CUOTAS_PAGOS : pagos_id
+  TBL_MEDIOS_PAGOS ||--o{ TBL_PAGOS : med_id
+
+  TBL_CAJAS ||--o{ TBL_GASTOS : caj_id
+  TBL_CATEGORIAS_GASTOS ||--o{ TBL_GASTOS : cga_id
+  TBL_GASTOS ||--o{ TBL_CAJAS : gas_id
+
+  TBL_CAJAS ||--o{ TBL_SESIONES_CAJAS : caj_id
+  TBL_SESIONES_CAJAS ||--o{ TBL_MOVIMIENTOS_CAJAS : sca_id

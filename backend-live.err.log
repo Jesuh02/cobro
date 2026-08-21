@@ -1,60 +1,81 @@
-C:\Users\yasuy\Documents\githup\cobro\backend\node_modules\@prisma\client\src\runtime\core\engines\library\LibraryEngine.ts:440
+C:\Users\yasuy\Documents\githup\cobro\cobro\backend\node_modules\@prisma\client\src\runtime\core\engines\library\LibraryEngine.ts:440
           throw new PrismaClientInitializationError(error.message, this.config.clientVersion!, error.error_code)
                 ^
 
 PrismaClientInitializationError: Can't reach database server at `db.cdhmxjlvbhdjnucvwtkh.supabase.co:5432`
 
 Please make sure your database server is running at `db.cdhmxjlvbhdjnucvwtkh.supabase.co:5432`.
-    at r (C:\Users\yasuy\Documents\githup\cobro\backend\node_modules\@prisma\client\src\runtime\core\engines\library\LibraryEngine.ts:440:17)
-    at async Proxy.onModuleInit (C:\Users\yasuy\Documents\githup\cobro\backend\src\common\prisma\prisma.service.ts:10:5)
+    at r (C:\Users\yasuy\Documents\githup\cobro\cobro\backend\node_modules\@prisma\client\src\runtime\core\engines\library\LibraryEngine.ts:440:17)
+    at async Proxy.onModuleInit (C:\Users\yasuy\Documents\githup\cobro\cobro\backend\src\common\prisma\prisma.service.ts:10:5)
     at async Promise.all (index 0)
-    at async callModuleInitHook (C:\Users\yasuy\Documents\githup\cobro\backend\node_modules\@nestjs\core\hooks\on-module-init.hook.js:43:5)
-    at async NestApplication.callInitHook (C:\Users\yasuy\Documents\githup\cobro\backend\node_modules\@nestjs\core\nest-application-context.js:245:13)
-    at async NestApplication.init (C:\Users\yasuy\Documents\githup\cobro\backend\node_modules\@nestjs\core\nest-application.js:105:9)
-    at async NestApplication.listen (C:\Users\yasuy\Documents\githup\cobro\backend\node_modules\@nestjs\core\nest-application.js:177:13)
-    at async bootstrap (C:\Users\yasuy\Documents\githup\cobro\backend\src\main.ts:29:3) {
+    at async callModuleInitHook (C:\Users\yasuy\Documents\githup\cobro\cobro\backend\node_modules\@nestjs\core\hooks\on-module-init.hook.js:43:5)
+    at async NestApplication.callInitHook (C:\Users\yasuy\Documents\githup\cobro\cobro\backend\node_modules\@nestjs\core\nest-application-context.js:245:13)
+    at async NestApplication.init (C:\Users\yasuy\Documents\githup\cobro\cobro\backend\node_modules\@nestjs\core\nest-application.js:105:9)
+    at async NestApplication.listen (C:\Users\yasuy\Documents\githup\cobro\cobro\backend\node_modules\@nestjs\core\nest-application.js:177:13)
+    at async bootstrap (C:\Users\yasuy\Documents\githup\cobro\cobro\backend\src\main.ts:29:3) {
   clientVersion: '6.19.3',
   errorCode: 'P1001',
   retryable: undefined
 }
 
 Node.js v24.12.0
-C:\Users\yasuy\Documents\githup\cobro\backend\node_modules\@prisma\client\src\runtime\core\engines\library\LibraryEngine.ts:440
+C:\Users\yasuy\Documents\githup\cobro\cobro\backend\node_modules\@prisma\client\src\runtime\core\engines\library\LibraryEngine.ts:440
           throw new PrismaClientInitializationError(error.message, this.config.clientVersion!, error.error_code)
                 ^
 
 PrismaClientInitializationError: Can't reach database server at `db.cdhmxjlvbhdjnucvwtkh.supabase.co:5432`
 
 Please make sure your database server is running at `db.cdhmxjlvbhdjnucvwtkh.supabase.co:5432`.
-    at r (C:\Users\yasuy\Documents\githup\cobro\backend\node_modules\@prisma\client\src\runtime\core\engines\library\LibraryEngine.ts:440:17)
-    at async Proxy.onModuleInit (C:\Users\yasuy\Documents\githup\cobro\backend\src\common\prisma\prisma.service.ts:10:5)
+    at r (C:\Users\yasuy\Documents\githup\cobro\cobro\backend\node_modules\@prisma\client\src\runtime\core\engines\library\LibraryEngine.ts:440:17)
+    at async Proxy.onModuleInit (C:\Users\yasuy\Documents\githup\cobro\cobro\backend\src\common\prisma\prisma.service.ts:10:5)
     at async Promise.all (index 0)
-    at async callModuleInitHook (C:\Users\yasuy\Documents\githup\cobro\backend\node_modules\@nestjs\core\hooks\on-module-init.hook.js:43:5)
-    at async NestApplication.callInitHook (C:\Users\yasuy\Documents\githup\cobro\backend\node_modules\@nestjs\core\nest-application-context.js:245:13)
-    at async NestApplication.init (C:\Users\yasuy\Documents\githup\cobro\backend\node_modules\@nestjs\core\nest-application.js:105:9)
-    at async NestApplication.listen (C:\Users\yasuy\Documents\githup\cobro\backend\node_modules\@nestjs\core\nest-application.js:177:13)
-    at async bootstrap (C:\Users\yasuy\Documents\githup\cobro\backend\src\main.ts:29:3) {
+    at async callModuleInitHook (C:\Users\yasuy\Documents\githup\cobro\cobro\backend\node_modules\@nestjs\core\hooks\on-module-init.hook.js:43:5)
+    at async NestApplication.callInitHook (C:\Users\yasuy\Documents\githup\cobro\cobro\backend\node_modules\@nestjs\core\nest-application-context.js:245:13)
+    at async NestApplication.init (C:\Users\yasuy\Documents\githup\cobro\cobro\backend\node_modules\@nestjs\core\nest-application.js:105:9)
+    at async NestApplication.listen (C:\Users\yasuy\Documents\githup\cobro\cobro\backend\node_modules\@nestjs\core\nest-application.js:177:13)
+    at async bootstrap (C:\Users\yasuy\Documents\githup\cobro\cobro\backend\src\main.ts:29:3) {
   clientVersion: '6.19.3',
   errorCode: 'P1001',
   retryable: undefined
 }
 
 Node.js v24.12.0
-C:\Users\yasuy\Documents\githup\cobro\backend\node_modules\@prisma\client\src\runtime\core\engines\library\LibraryEngine.ts:440
+C:\Users\yasuy\Documents\githup\cobro\cobro\backend\node_modules\@prisma\client\src\runtime\core\engines\library\LibraryEngine.ts:440
           throw new PrismaClientInitializationError(error.message, this.config.clientVersion!, error.error_code)
                 ^
 
 PrismaClientInitializationError: Can't reach database server at `db.cdhmxjlvbhdjnucvwtkh.supabase.co:5432`
 
 Please make sure your database server is running at `db.cdhmxjlvbhdjnucvwtkh.supabase.co:5432`.
-    at r (C:\Users\yasuy\Documents\githup\cobro\backend\node_modules\@prisma\client\src\runtime\core\engines\library\LibraryEngine.ts:440:17)
-    at async Proxy.onModuleInit (C:\Users\yasuy\Documents\githup\cobro\backend\src\common\prisma\prisma.service.ts:10:5)
+    at r (C:\Users\yasuy\Documents\githup\cobro\cobro\backend\node_modules\@prisma\client\src\runtime\core\engines\library\LibraryEngine.ts:440:17)
+    at async Proxy.onModuleInit (C:\Users\yasuy\Documents\githup\cobro\cobro\backend\src\common\prisma\prisma.service.ts:10:5)
     at async Promise.all (index 0)
-    at async callModuleInitHook (C:\Users\yasuy\Documents\githup\cobro\backend\node_modules\@nestjs\core\hooks\on-module-init.hook.js:43:5)
-    at async NestApplication.callInitHook (C:\Users\yasuy\Documents\githup\cobro\backend\node_modules\@nestjs\core\nest-application-context.js:245:13)
-    at async NestApplication.init (C:\Users\yasuy\Documents\githup\cobro\backend\node_modules\@nestjs\core\nest-application.js:105:9)
-    at async NestApplication.listen (C:\Users\yasuy\Documents\githup\cobro\backend\node_modules\@nestjs\core\nest-application.js:177:13)
-    at async bootstrap (C:\Users\yasuy\Documents\githup\cobro\backend\src\main.ts:29:3) {
+    at async callModuleInitHook (C:\Users\yasuy\Documents\githup\cobro\cobro\backend\node_modules\@nestjs\core\hooks\on-module-init.hook.js:43:5)
+    at async NestApplication.callInitHook (C:\Users\yasuy\Documents\githup\cobro\cobro\backend\node_modules\@nestjs\core\nest-application-context.js:245:13)
+    at async NestApplication.init (C:\Users\yasuy\Documents\githup\cobro\cobro\backend\node_modules\@nestjs\core\nest-application.js:105:9)
+    at async NestApplication.listen (C:\Users\yasuy\Documents\githup\cobro\cobro\backend\node_modules\@nestjs\core\nest-application.js:177:13)
+    at async bootstrap (C:\Users\yasuy\Documents\githup\cobro\cobro\backend\src\main.ts:29:3) {
+  clientVersion: '6.19.3',
+  errorCode: 'P1001',
+  retryable: undefined
+}
+
+Node.js v24.12.0
+C:\Users\yasuy\Documents\githup\cobro\cobro\backend\node_modules\@prisma\client\src\runtime\core\engines\library\LibraryEngine.ts:440
+          throw new PrismaClientInitializationError(error.message, this.config.clientVersion!, error.error_code)
+                ^
+
+PrismaClientInitializationError: Can't reach database server at `db.cdhmxjlvbhdjnucvwtkh.supabase.co:5432`
+
+Please make sure your database server is running at `db.cdhmxjlvbhdjnucvwtkh.supabase.co:5432`.
+    at r (C:\Users\yasuy\Documents\githup\cobro\cobro\backend\node_modules\@prisma\client\src\runtime\core\engines\library\LibraryEngine.ts:440:17)
+    at async Proxy.onModuleInit (C:\Users\yasuy\Documents\githup\cobro\cobro\backend\src\common\prisma\prisma.service.ts:10:5)
+    at async Promise.all (index 0)
+    at async callModuleInitHook (C:\Users\yasuy\Documents\githup\cobro\cobro\backend\node_modules\@nestjs\core\hooks\on-module-init.hook.js:43:5)
+    at async NestApplication.callInitHook (C:\Users\yasuy\Documents\githup\cobro\cobro\backend\node_modules\@nestjs\core\nest-application-context.js:245:13)
+    at async NestApplication.init (C:\Users\yasuy\Documents\githup\cobro\cobro\backend\node_modules\@nestjs\core\nest-application.js:105:9)
+    at async NestApplication.listen (C:\Users\yasuy\Documents\githup\cobro\cobro\backend\node_modules\@nestjs\core\nest-application.js:177:13)
+    at async bootstrap (C:\Users\yasuy\Documents\githup\cobro\cobro\backend\src\main.ts:29:3) {
   clientVersion: '6.19.3',
   errorCode: 'P1001',
   retryable: undefined
@@ -67,19 +88,19 @@ node:child_process:1000
     throw err;
     ^
 
-Error: Command failed: taskkill /pid 14236 /T /F
+Error: Command failed: taskkill /pid 23764 /T /F
 Error: Acceso denegado
 
     at genericNodeError (node:internal/errors:985:15)
     at wrappedFn (node:internal/errors:539:14)
     at checkExecSyncError (node:child_process:925:11)
     at execSync (node:child_process:997:15)
-    at treeKillSync (C:\Users\yasuy\Documents\githup\cobro\backend\node_modules\@nestjs\cli\lib\utils\tree-kill.js:7:38)
-    at C:\Users\yasuy\Documents\githup\cobro\backend\node_modules\@nestjs\cli\actions\start.action.js:92:46
-    at Object.onWatchStatusChange (C:\Users\yasuy\Documents\githup\cobro\backend\node_modules\@nestjs\cli\lib\compiler\watch-compiler.js:82:17)
-    at C:\Users\yasuy\Documents\githup\cobro\backend\node_modules\typescript\lib\typescript.js:133916:30
-    at emitFilesAndReportErrors (C:\Users\yasuy\Documents\githup\cobro\backend\node_modules\typescript\lib\typescript.js:133737:5)
-    at result.afterProgramCreate (C:\Users\yasuy\Documents\githup\cobro\backend\node_modules\typescript\lib\typescript.js:133912:5) {
+    at treeKillSync (C:\Users\yasuy\Documents\githup\cobro\cobro\backend\node_modules\@nestjs\cli\lib\utils\tree-kill.js:7:38)
+    at C:\Users\yasuy\Documents\githup\cobro\cobro\backend\node_modules\@nestjs\cli\actions\start.action.js:92:46
+    at Object.onWatchStatusChange (C:\Users\yasuy\Documents\githup\cobro\cobro\backend\node_modules\@nestjs\cli\lib\compiler\watch-compiler.js:82:17)
+    at C:\Users\yasuy\Documents\githup\cobro\cobro\backend\node_modules\typescript\lib\typescript.js:133916:30
+    at emitFilesAndReportErrors (C:\Users\yasuy\Documents\githup\cobro\cobro\backend\node_modules\typescript\lib\typescript.js:133737:5)
+    at result.afterProgramCreate (C:\Users\yasuy\Documents\githup\cobro\cobro\backend\node_modules\typescript\lib\typescript.js:133912:5) {
   status: 1,
   signal: null,
   output: [
@@ -92,7 +113,7 @@ Error: Acceso denegado
       111,  13,  13,  10
     ]
   ],
-  pid: 28092,
+  pid: 34612,
   stdout: Buffer(0) [Uint8Array] [],
   stderr: Buffer(25) [Uint8Array] [
      69, 114, 114, 111, 114,  58,  32,
@@ -103,21 +124,21 @@ Error: Acceso denegado
 }
 
 Node.js v24.12.0
-C:\Users\yasuy\Documents\githup\cobro\backend\node_modules\@prisma\client\src\runtime\core\engines\library\LibraryEngine.ts:440
+C:\Users\yasuy\Documents\githup\cobro\cobro\backend\node_modules\@prisma\client\src\runtime\core\engines\library\LibraryEngine.ts:440
           throw new PrismaClientInitializationError(error.message, this.config.clientVersion!, error.error_code)
                 ^
 
 PrismaClientInitializationError: Can't reach database server at `db.cdhmxjlvbhdjnucvwtkh.supabase.co:5432`
 
 Please make sure your database server is running at `db.cdhmxjlvbhdjnucvwtkh.supabase.co:5432`.
-    at r (C:\Users\yasuy\Documents\githup\cobro\backend\node_modules\@prisma\client\src\runtime\core\engines\library\LibraryEngine.ts:440:17)
-    at async Proxy.onModuleInit (C:\Users\yasuy\Documents\githup\cobro\backend\src\common\prisma\prisma.service.ts:10:5)
+    at r (C:\Users\yasuy\Documents\githup\cobro\cobro\backend\node_modules\@prisma\client\src\runtime\core\engines\library\LibraryEngine.ts:440:17)
+    at async Proxy.onModuleInit (C:\Users\yasuy\Documents\githup\cobro\cobro\backend\src\common\prisma\prisma.service.ts:10:5)
     at async Promise.all (index 0)
-    at async callModuleInitHook (C:\Users\yasuy\Documents\githup\cobro\backend\node_modules\@nestjs\core\hooks\on-module-init.hook.js:43:5)
-    at async NestApplication.callInitHook (C:\Users\yasuy\Documents\githup\cobro\backend\node_modules\@nestjs\core\nest-application-context.js:245:13)
-    at async NestApplication.init (C:\Users\yasuy\Documents\githup\cobro\backend\node_modules\@nestjs\core\nest-application.js:105:9)
-    at async NestApplication.listen (C:\Users\yasuy\Documents\githup\cobro\backend\node_modules\@nestjs\core\nest-application.js:177:13)
-    at async bootstrap (C:\Users\yasuy\Documents\githup\cobro\backend\src\main.ts:29:3) {
+    at async callModuleInitHook (C:\Users\yasuy\Documents\githup\cobro\cobro\backend\node_modules\@nestjs\core\hooks\on-module-init.hook.js:43:5)
+    at async NestApplication.callInitHook (C:\Users\yasuy\Documents\githup\cobro\cobro\backend\node_modules\@nestjs\core\nest-application-context.js:245:13)
+    at async NestApplication.init (C:\Users\yasuy\Documents\githup\cobro\cobro\backend\node_modules\@nestjs\core\nest-application.js:105:9)
+    at async NestApplication.listen (C:\Users\yasuy\Documents\githup\cobro\cobro\backend\node_modules\@nestjs\core\nest-application.js:177:13)
+    at async bootstrap (C:\Users\yasuy\Documents\githup\cobro\cobro\backend\src\main.ts:29:3) {
   clientVersion: '6.19.3',
   errorCode: 'P1001',
   retryable: undefined

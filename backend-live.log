@@ -2,139 +2,204 @@
 > cobro-backend@0.1.0 start:dev
 > nest start --watch
 
-[2J[3J[H[[90m2:45:44 p. m.[0m] Starting compilation in watch mode...
+[2J[3J[H[[90m5:50:31 p. m.[0m] Starting compilation in watch mode...
 
-[[90m2:45:48 p. m.[0m] Found 0 errors. Watching for file changes.
+[[90m5:50:38 p. m.[0m] Found 0 errors. Watching for file changes.
 
-[32m[Nest] 28008  - [39m18/08/2026, 2:45:50 p. m. [32m    LOG[39m [38;5;3m[NestFactory] [39m[32mStarting Nest application...[39m
-[32m[Nest] 28008  - [39m18/08/2026, 2:45:50 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAppModule dependencies initialized[39m[38;5;3m +26ms[39m
-[32m[Nest] 28008  - [39m18/08/2026, 2:45:51 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mPrismaModule dependencies initialized[39m[38;5;3m +1ms[39m
-[32m[Nest] 28008  - [39m18/08/2026, 2:45:51 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigHostModule dependencies initialized[39m[38;5;3m +14ms[39m
-[32m[Nest] 28008  - [39m18/08/2026, 2:45:51 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mHealthModule dependencies initialized[39m[38;5;3m +1ms[39m
-[32m[Nest] 28008  - [39m18/08/2026, 2:45:51 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigModule dependencies initialized[39m[38;5;3m +0ms[39m
-[32m[Nest] 28008  - [39m18/08/2026, 2:45:51 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mCobrosModule dependencies initialized[39m[38;5;3m +1ms[39m
-[32m[Nest] 28008  - [39m18/08/2026, 2:45:51 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAuthModule dependencies initialized[39m[38;5;3m +1ms[39m
-[32m[Nest] 28008  - [39m18/08/2026, 2:45:51 p. m. [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mHealthController {/api/v1/health}:[39m[38;5;3m +7ms[39m
-[32m[Nest] 28008  - [39m18/08/2026, 2:45:51 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/health, GET} route[39m[38;5;3m +5ms[39m
-[32m[Nest] 28008  - [39m18/08/2026, 2:45:51 p. m. [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAuthController {/api/v1}:[39m[38;5;3m +0ms[39m
-[32m[Nest] 28008  - [39m18/08/2026, 2:45:51 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/auth/login, POST} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 28008  - [39m18/08/2026, 2:45:51 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/auth/bootstrap-admin, POST} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 28008  - [39m18/08/2026, 2:45:51 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/auth/me, GET} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 28008  - [39m18/08/2026, 2:45:51 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/usuarios, POST} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 28008  - [39m18/08/2026, 2:45:51 p. m. [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mCobrosController {/api/v1}:[39m[38;5;3m +0ms[39m
-[32m[Nest] 28008  - [39m18/08/2026, 2:45:51 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/catalogos, GET} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 28008  - [39m18/08/2026, 2:45:51 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/clientes, GET} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 28008  - [39m18/08/2026, 2:45:51 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/clientes, POST} route[39m[38;5;3m +0ms[39m
-[32m[Nest] 28008  - [39m18/08/2026, 2:45:51 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/rutas, GET} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 28008  - [39m18/08/2026, 2:45:51 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/cobros/ruta, GET} route[39m[38;5;3m +0ms[39m
-[32m[Nest] 28008  - [39m18/08/2026, 2:45:51 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/creditos, POST} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 28008  - [39m18/08/2026, 2:45:51 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/creditos/:id, GET} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 28008  - [39m18/08/2026, 2:45:51 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/creditos/:id/cuotas, GET} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 28008  - [39m18/08/2026, 2:45:51 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/pagos, POST} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 28008  - [39m18/08/2026, 2:45:51 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/caja-menor/movimientos, GET} route[39m[38;5;3m +0ms[39m
-[32m[Nest] 28008  - [39m18/08/2026, 2:45:51 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/caja-menor/movimientos, POST} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 28008  - [39m18/08/2026, 2:45:51 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/caja-menor, POST} route[39m[38;5;3m +0ms[39m
-[32m[Nest] 28008  - [39m18/08/2026, 2:45:51 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/presupuesto, GET} route[39m[38;5;3m +1ms[39m
-[2J[3J[H[[90m3:35:16 p. m.[0m] File change detected. Starting incremental compilation...
+[32m[Nest] 27500  - [39m19/08/2026, 5:50:42 p. m. [32m    LOG[39m [38;5;3m[NestFactory] [39m[32mStarting Nest application...[39m
+[32m[Nest] 27500  - [39m19/08/2026, 5:50:42 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAppModule dependencies initialized[39m[38;5;3m +25ms[39m
+[32m[Nest] 27500  - [39m19/08/2026, 5:50:42 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mPrismaModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 27500  - [39m19/08/2026, 5:50:42 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigHostModule dependencies initialized[39m[38;5;3m +47ms[39m
+[32m[Nest] 27500  - [39m19/08/2026, 5:50:42 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mHealthModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 27500  - [39m19/08/2026, 5:50:42 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 27500  - [39m19/08/2026, 5:50:42 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mNotificationsModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 27500  - [39m19/08/2026, 5:50:42 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAuthModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 27500  - [39m19/08/2026, 5:50:42 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mCobrosModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 27500  - [39m19/08/2026, 5:50:42 p. m. [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mHealthController {/api/v1/health}:[39m[38;5;3m +8ms[39m
+[32m[Nest] 27500  - [39m19/08/2026, 5:50:42 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/health, GET} route[39m[38;5;3m +4ms[39m
+[32m[Nest] 27500  - [39m19/08/2026, 5:50:42 p. m. [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAuthController {/api/v1}:[39m[38;5;3m +1ms[39m
+[32m[Nest] 27500  - [39m19/08/2026, 5:50:42 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/auth/login, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 27500  - [39m19/08/2026, 5:50:42 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/auth/bootstrap-admin, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 27500  - [39m19/08/2026, 5:50:42 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/auth/me, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 27500  - [39m19/08/2026, 5:50:42 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/usuarios, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 27500  - [39m19/08/2026, 5:50:42 p. m. [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mCobrosController {/api/v1}:[39m[38;5;3m +1ms[39m
+[32m[Nest] 27500  - [39m19/08/2026, 5:50:42 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/catalogos, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 27500  - [39m19/08/2026, 5:50:42 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/clientes, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 27500  - [39m19/08/2026, 5:50:42 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/clientes, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 27500  - [39m19/08/2026, 5:50:42 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/rutas, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 27500  - [39m19/08/2026, 5:50:42 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/cobros/ruta, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 27500  - [39m19/08/2026, 5:50:42 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/exportaciones/cobros-ruta, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 27500  - [39m19/08/2026, 5:50:42 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/creditos, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 27500  - [39m19/08/2026, 5:50:42 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/creditos/:id, GET} route[39m[38;5;3m +2ms[39m
+[32m[Nest] 27500  - [39m19/08/2026, 5:50:42 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/creditos/:id/cuotas, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 27500  - [39m19/08/2026, 5:50:42 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/pagos, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 27500  - [39m19/08/2026, 5:50:42 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/caja-menor/movimientos, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 27500  - [39m19/08/2026, 5:50:42 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/exportaciones/caja-menor, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 27500  - [39m19/08/2026, 5:50:42 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/caja-menor/movimientos, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 27500  - [39m19/08/2026, 5:50:42 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/caja-menor, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 27500  - [39m19/08/2026, 5:50:42 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/presupuesto, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 27500  - [39m19/08/2026, 5:50:42 p. m. [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mYcloudWebhookController {/api/v1/webhooks/ycloud}:[39m[38;5;3m +1ms[39m
+[32m[Nest] 27500  - [39m19/08/2026, 5:50:42 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/webhooks/ycloud, POST} route[39m[38;5;3m +0ms[39m
+[2J[3J[H[[90m5:58:29 p. m.[0m] File change detected. Starting incremental compilation...
 
-[[90m3:35:18 p. m.[0m] Found 0 errors. Watching for file changes.
+[[90m5:58:32 p. m.[0m] Found 0 errors. Watching for file changes.
 
-[32m[Nest] 25976  - [39m18/08/2026, 3:35:21 p. m. [32m    LOG[39m [38;5;3m[NestFactory] [39m[32mStarting Nest application...[39m
-[32m[Nest] 25976  - [39m18/08/2026, 3:35:21 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAppModule dependencies initialized[39m[38;5;3m +27ms[39m
-[32m[Nest] 25976  - [39m18/08/2026, 3:35:21 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mPrismaModule dependencies initialized[39m[38;5;3m +1ms[39m
-[32m[Nest] 25976  - [39m18/08/2026, 3:35:21 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigHostModule dependencies initialized[39m[38;5;3m +18ms[39m
-[32m[Nest] 25976  - [39m18/08/2026, 3:35:21 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mHealthModule dependencies initialized[39m[38;5;3m +0ms[39m
-[32m[Nest] 25976  - [39m18/08/2026, 3:35:21 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigModule dependencies initialized[39m[38;5;3m +1ms[39m
-[32m[Nest] 25976  - [39m18/08/2026, 3:35:21 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mCobrosModule dependencies initialized[39m[38;5;3m +1ms[39m
-[32m[Nest] 25976  - [39m18/08/2026, 3:35:21 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAuthModule dependencies initialized[39m[38;5;3m +0ms[39m
-[32m[Nest] 25976  - [39m18/08/2026, 3:35:21 p. m. [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mHealthController {/api/v1/health}:[39m[38;5;3m +7ms[39m
-[32m[Nest] 25976  - [39m18/08/2026, 3:35:21 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/health, GET} route[39m[38;5;3m +4ms[39m
-[32m[Nest] 25976  - [39m18/08/2026, 3:35:21 p. m. [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAuthController {/api/v1}:[39m[38;5;3m +0ms[39m
-[32m[Nest] 25976  - [39m18/08/2026, 3:35:21 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/auth/login, POST} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 25976  - [39m18/08/2026, 3:35:21 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/auth/bootstrap-admin, POST} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 25976  - [39m18/08/2026, 3:35:21 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/auth/me, GET} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 25976  - [39m18/08/2026, 3:35:21 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/usuarios, POST} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 25976  - [39m18/08/2026, 3:35:21 p. m. [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mCobrosController {/api/v1}:[39m[38;5;3m +0ms[39m
-[32m[Nest] 25976  - [39m18/08/2026, 3:35:21 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/catalogos, GET} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 25976  - [39m18/08/2026, 3:35:21 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/clientes, GET} route[39m[38;5;3m +0ms[39m
-[32m[Nest] 25976  - [39m18/08/2026, 3:35:21 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/clientes, POST} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 25976  - [39m18/08/2026, 3:35:21 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/rutas, GET} route[39m[38;5;3m +0ms[39m
-[32m[Nest] 25976  - [39m18/08/2026, 3:35:21 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/cobros/ruta, GET} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 25976  - [39m18/08/2026, 3:35:21 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/creditos, POST} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 25976  - [39m18/08/2026, 3:35:21 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/creditos/:id, GET} route[39m[38;5;3m +0ms[39m
-[32m[Nest] 25976  - [39m18/08/2026, 3:35:21 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/creditos/:id/cuotas, GET} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 25976  - [39m18/08/2026, 3:35:21 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/pagos, POST} route[39m[38;5;3m +0ms[39m
-[32m[Nest] 25976  - [39m18/08/2026, 3:35:21 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/caja-menor/movimientos, GET} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 25976  - [39m18/08/2026, 3:35:21 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/caja-menor/movimientos, POST} route[39m[38;5;3m +0ms[39m
-[32m[Nest] 25976  - [39m18/08/2026, 3:35:21 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/caja-menor, POST} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 25976  - [39m18/08/2026, 3:35:21 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/presupuesto, GET} route[39m[38;5;3m +0ms[39m
-[2J[3J[H[[90m3:40:01 p. m.[0m] File change detected. Starting incremental compilation...
+[32m[Nest] 12496  - [39m19/08/2026, 5:58:37 p. m. [32m    LOG[39m [38;5;3m[NestFactory] [39m[32mStarting Nest application...[39m
+[32m[Nest] 12496  - [39m19/08/2026, 5:58:37 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAppModule dependencies initialized[39m[38;5;3m +44ms[39m
+[32m[Nest] 12496  - [39m19/08/2026, 5:58:37 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mPrismaModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 12496  - [39m19/08/2026, 5:58:37 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigHostModule dependencies initialized[39m[38;5;3m +21ms[39m
+[32m[Nest] 12496  - [39m19/08/2026, 5:58:37 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mHealthModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 12496  - [39m19/08/2026, 5:58:37 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigModule dependencies initialized[39m[38;5;3m +2ms[39m
+[32m[Nest] 12496  - [39m19/08/2026, 5:58:37 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mNotificationsModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 12496  - [39m19/08/2026, 5:58:37 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAuthModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 12496  - [39m19/08/2026, 5:58:37 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mCobrosModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 12496  - [39m19/08/2026, 5:58:37 p. m. [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mHealthController {/api/v1/health}:[39m[38;5;3m +12ms[39m
+[32m[Nest] 12496  - [39m19/08/2026, 5:58:37 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/health, GET} route[39m[38;5;3m +8ms[39m
+[32m[Nest] 12496  - [39m19/08/2026, 5:58:37 p. m. [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAuthController {/api/v1}:[39m[38;5;3m +1ms[39m
+[32m[Nest] 12496  - [39m19/08/2026, 5:58:37 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/auth/login, POST} route[39m[38;5;3m +2ms[39m
+[32m[Nest] 12496  - [39m19/08/2026, 5:58:37 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/auth/bootstrap-admin, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 12496  - [39m19/08/2026, 5:58:37 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/auth/me, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 12496  - [39m19/08/2026, 5:58:37 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/usuarios, POST} route[39m[38;5;3m +2ms[39m
+[32m[Nest] 12496  - [39m19/08/2026, 5:58:37 p. m. [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mCobrosController {/api/v1}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 12496  - [39m19/08/2026, 5:58:37 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/catalogos, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 12496  - [39m19/08/2026, 5:58:37 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/clientes, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 12496  - [39m19/08/2026, 5:58:37 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/clientes, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 12496  - [39m19/08/2026, 5:58:37 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/rutas, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 12496  - [39m19/08/2026, 5:58:37 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/cobros/ruta, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 12496  - [39m19/08/2026, 5:58:37 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/exportaciones/cobros-ruta, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 12496  - [39m19/08/2026, 5:58:37 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/creditos, POST} route[39m[38;5;3m +2ms[39m
+[32m[Nest] 12496  - [39m19/08/2026, 5:58:37 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/creditos/:id, GET} route[39m[38;5;3m +2ms[39m
+[32m[Nest] 12496  - [39m19/08/2026, 5:58:37 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/creditos/:id/cuotas, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 12496  - [39m19/08/2026, 5:58:37 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/pagos, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 12496  - [39m19/08/2026, 5:58:37 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/caja-menor/movimientos, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 12496  - [39m19/08/2026, 5:58:37 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/exportaciones/caja-menor, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 12496  - [39m19/08/2026, 5:58:37 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/caja-menor/movimientos, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 12496  - [39m19/08/2026, 5:58:37 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/caja-menor, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 12496  - [39m19/08/2026, 5:58:37 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/presupuesto, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 12496  - [39m19/08/2026, 5:58:37 p. m. [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mYcloudWebhookController {/api/v1/webhooks/ycloud}:[39m[38;5;3m +1ms[39m
+[32m[Nest] 12496  - [39m19/08/2026, 5:58:37 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/webhooks/ycloud, POST} route[39m[38;5;3m +1ms[39m
+[2J[3J[H[[90m5:59:01 p. m.[0m] File change detected. Starting incremental compilation...
 
-[2J[3J[H[[90m3:46:01 p. m.[0m] File change detected. Starting incremental compilation...
+[[90m5:59:02 p. m.[0m] Found 0 errors. Watching for file changes.
 
-[[90m3:46:05 p. m.[0m] Found 0 errors. Watching for file changes.
+[32m[Nest] 4244  - [39m19/08/2026, 5:59:05 p. m. [32m    LOG[39m [38;5;3m[NestFactory] [39m[32mStarting Nest application...[39m
+[32m[Nest] 4244  - [39m19/08/2026, 5:59:05 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAppModule dependencies initialized[39m[38;5;3m +32ms[39m
+[32m[Nest] 4244  - [39m19/08/2026, 5:59:05 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mPrismaModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 4244  - [39m19/08/2026, 5:59:05 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigHostModule dependencies initialized[39m[38;5;3m +11ms[39m
+[32m[Nest] 4244  - [39m19/08/2026, 5:59:05 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mHealthModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 4244  - [39m19/08/2026, 5:59:05 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 4244  - [39m19/08/2026, 5:59:05 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mNotificationsModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 4244  - [39m19/08/2026, 5:59:05 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAuthModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 4244  - [39m19/08/2026, 5:59:05 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mCobrosModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 4244  - [39m19/08/2026, 5:59:05 p. m. [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mHealthController {/api/v1/health}:[39m[38;5;3m +7ms[39m
+[32m[Nest] 4244  - [39m19/08/2026, 5:59:05 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/health, GET} route[39m[38;5;3m +4ms[39m
+[32m[Nest] 4244  - [39m19/08/2026, 5:59:05 p. m. [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAuthController {/api/v1}:[39m[38;5;3m +1ms[39m
+[32m[Nest] 4244  - [39m19/08/2026, 5:59:05 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/auth/login, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 4244  - [39m19/08/2026, 5:59:05 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/auth/bootstrap-admin, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 4244  - [39m19/08/2026, 5:59:05 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/auth/me, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 4244  - [39m19/08/2026, 5:59:05 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/usuarios, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 4244  - [39m19/08/2026, 5:59:05 p. m. [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mCobrosController {/api/v1}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 4244  - [39m19/08/2026, 5:59:05 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/catalogos, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 4244  - [39m19/08/2026, 5:59:05 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/clientes, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 4244  - [39m19/08/2026, 5:59:05 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/clientes, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 4244  - [39m19/08/2026, 5:59:05 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/rutas, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 4244  - [39m19/08/2026, 5:59:05 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/cobros/ruta, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 4244  - [39m19/08/2026, 5:59:05 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/exportaciones/cobros-ruta, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 4244  - [39m19/08/2026, 5:59:05 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/creditos, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 4244  - [39m19/08/2026, 5:59:05 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/creditos/:id, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 4244  - [39m19/08/2026, 5:59:05 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/creditos/:id/cuotas, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 4244  - [39m19/08/2026, 5:59:05 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/pagos, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 4244  - [39m19/08/2026, 5:59:05 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/caja-menor/movimientos, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 4244  - [39m19/08/2026, 5:59:05 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/exportaciones/caja-menor, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 4244  - [39m19/08/2026, 5:59:05 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/caja-menor/movimientos, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 4244  - [39m19/08/2026, 5:59:05 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/caja-menor, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 4244  - [39m19/08/2026, 5:59:05 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/presupuesto, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 4244  - [39m19/08/2026, 5:59:05 p. m. [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mYcloudWebhookController {/api/v1/webhooks/ycloud}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 4244  - [39m19/08/2026, 5:59:05 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/webhooks/ycloud, POST} route[39m[38;5;3m +3ms[39m
+[2J[3J[H[[90m5:59:19 p. m.[0m] File change detected. Starting incremental compilation...
 
-[32m[Nest] 7364  - [39m18/08/2026, 3:46:21 p. m. [32m    LOG[39m [38;5;3m[NestFactory] [39m[32mStarting Nest application...[39m
-[32m[Nest] 7364  - [39m18/08/2026, 3:46:21 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAppModule dependencies initialized[39m[38;5;3m +41ms[39m
-[32m[Nest] 7364  - [39m18/08/2026, 3:46:21 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mPrismaModule dependencies initialized[39m[38;5;3m +0ms[39m
-[32m[Nest] 7364  - [39m18/08/2026, 3:46:21 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigHostModule dependencies initialized[39m[38;5;3m +23ms[39m
-[32m[Nest] 7364  - [39m18/08/2026, 3:46:21 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mHealthModule dependencies initialized[39m[38;5;3m +1ms[39m
-[32m[Nest] 7364  - [39m18/08/2026, 3:46:21 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigModule dependencies initialized[39m[38;5;3m +1ms[39m
-[32m[Nest] 7364  - [39m18/08/2026, 3:46:21 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mCobrosModule dependencies initialized[39m[38;5;3m +1ms[39m
-[32m[Nest] 7364  - [39m18/08/2026, 3:46:21 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAuthModule dependencies initialized[39m[38;5;3m +1ms[39m
-[32m[Nest] 7364  - [39m18/08/2026, 3:46:21 p. m. [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mHealthController {/api/v1/health}:[39m[38;5;3m +12ms[39m
-[32m[Nest] 7364  - [39m18/08/2026, 3:46:21 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/health, GET} route[39m[38;5;3m +7ms[39m
-[32m[Nest] 7364  - [39m18/08/2026, 3:46:21 p. m. [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAuthController {/api/v1}:[39m[38;5;3m +0ms[39m
-[32m[Nest] 7364  - [39m18/08/2026, 3:46:21 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/auth/login, POST} route[39m[38;5;3m +2ms[39m
-[32m[Nest] 7364  - [39m18/08/2026, 3:46:21 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/auth/bootstrap-admin, POST} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 7364  - [39m18/08/2026, 3:46:21 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/auth/me, GET} route[39m[38;5;3m +2ms[39m
-[32m[Nest] 7364  - [39m18/08/2026, 3:46:21 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/usuarios, POST} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 7364  - [39m18/08/2026, 3:46:21 p. m. [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mCobrosController {/api/v1}:[39m[38;5;3m +0ms[39m
-[32m[Nest] 7364  - [39m18/08/2026, 3:46:21 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/catalogos, GET} route[39m[38;5;3m +2ms[39m
-[32m[Nest] 7364  - [39m18/08/2026, 3:46:21 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/clientes, GET} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 7364  - [39m18/08/2026, 3:46:21 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/clientes, POST} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 7364  - [39m18/08/2026, 3:46:21 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/rutas, GET} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 7364  - [39m18/08/2026, 3:46:21 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/cobros/ruta, GET} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 7364  - [39m18/08/2026, 3:46:21 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/creditos, POST} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 7364  - [39m18/08/2026, 3:46:21 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/creditos/:id, GET} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 7364  - [39m18/08/2026, 3:46:21 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/creditos/:id/cuotas, GET} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 7364  - [39m18/08/2026, 3:46:21 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/pagos, POST} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 7364  - [39m18/08/2026, 3:46:21 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/caja-menor/movimientos, GET} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 7364  - [39m18/08/2026, 3:46:21 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/caja-menor/movimientos, POST} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 7364  - [39m18/08/2026, 3:46:21 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/caja-menor, POST} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 7364  - [39m18/08/2026, 3:46:21 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/presupuesto, GET} route[39m[38;5;3m +1ms[39m
-[2J[3J[H[[90m4:21:42 p. m.[0m] File change detected. Starting incremental compilation...
+[96msrc/modules/cobros/cobros.service.ts[0m:[93m389[0m:[93m18[0m - [91merror[0m[90m TS2339: [0mProperty 'crearDireccionCliente' does not exist on type 'CobrosService'.
 
-[[90m4:21:43 p. m.[0m] Found 0 errors. Watching for file changes.
+[7m389[0m       await this.crearDireccionCliente(tx, created.clienteId, direccion);
+[7m   [0m [91m                 ~~~~~~~~~~~~~~~~~~~~~[0m
 
-[2J[3J[H[[90m4:22:03 p. m.[0m] File change detected. Starting incremental compilation...
+[[90m5:59:21 p. m.[0m] Found 1 error. Watching for file changes.
 
-[32m[Nest] 19968  - [39m18/08/2026, 4:22:30 p. m. [32m    LOG[39m [38;5;3m[NestFactory] [39m[32mStarting Nest application...[39m
-[32m[Nest] 19968  - [39m18/08/2026, 4:22:30 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAppModule dependencies initialized[39m[38;5;3m +45ms[39m
-[32m[Nest] 19968  - [39m18/08/2026, 4:22:30 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mPrismaModule dependencies initialized[39m[38;5;3m +1ms[39m
-[32m[Nest] 19968  - [39m18/08/2026, 4:22:30 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigHostModule dependencies initialized[39m[38;5;3m +22ms[39m
-[32m[Nest] 19968  - [39m18/08/2026, 4:22:30 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mHealthModule dependencies initialized[39m[38;5;3m +0ms[39m
-[32m[Nest] 19968  - [39m18/08/2026, 4:22:30 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigModule dependencies initialized[39m[38;5;3m +1ms[39m
-[32m[Nest] 19968  - [39m18/08/2026, 4:22:30 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mCobrosModule dependencies initialized[39m[38;5;3m +2ms[39m
-[32m[Nest] 19968  - [39m18/08/2026, 4:22:30 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAuthModule dependencies initialized[39m[38;5;3m +1ms[39m
-[32m[Nest] 19968  - [39m18/08/2026, 4:22:31 p. m. [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mHealthController {/api/v1/health}:[39m[38;5;3m +13ms[39m
-[32m[Nest] 19968  - [39m18/08/2026, 4:22:31 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/health, GET} route[39m[38;5;3m +6ms[39m
-[32m[Nest] 19968  - [39m18/08/2026, 4:22:31 p. m. [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAuthController {/api/v1}:[39m[38;5;3m +1ms[39m
-[32m[Nest] 19968  - [39m18/08/2026, 4:22:31 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/auth/login, POST} route[39m[38;5;3m +3ms[39m
-[32m[Nest] 19968  - [39m18/08/2026, 4:22:31 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/auth/bootstrap-admin, POST} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 19968  - [39m18/08/2026, 4:22:31 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/auth/me, GET} route[39m[38;5;3m +2ms[39m
-[32m[Nest] 19968  - [39m18/08/2026, 4:22:31 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/usuarios, POST} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 19968  - [39m18/08/2026, 4:22:31 p. m. [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mCobrosController {/api/v1}:[39m[38;5;3m +1ms[39m
-[32m[Nest] 19968  - [39m18/08/2026, 4:22:31 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/catalogos, GET} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 19968  - [39m18/08/2026, 4:22:31 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/clientes, GET} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 19968  - [39m18/08/2026, 4:22:31 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/clientes, POST} route[39m[38;5;3m +2ms[39m
-[32m[Nest] 19968  - [39m18/08/2026, 4:22:31 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/rutas, GET} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 19968  - [39m18/08/2026, 4:22:31 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/cobros/ruta, GET} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 19968  - [39m18/08/2026, 4:22:31 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/creditos, POST} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 19968  - [39m18/08/2026, 4:22:31 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/creditos/:id, GET} route[39m[38;5;3m +2ms[39m
-[32m[Nest] 19968  - [39m18/08/2026, 4:22:31 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/creditos/:id/cuotas, GET} route[39m[38;5;3m +2ms[39m
-[32m[Nest] 19968  - [39m18/08/2026, 4:22:31 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/pagos, POST} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 19968  - [39m18/08/2026, 4:22:31 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/caja-menor/movimientos, GET} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 19968  - [39m18/08/2026, 4:22:31 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/caja-menor/movimientos, POST} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 19968  - [39m18/08/2026, 4:22:31 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/caja-menor, POST} route[39m[38;5;3m +1ms[39m
-[32m[Nest] 19968  - [39m18/08/2026, 4:22:31 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/presupuesto, GET} route[39m[38;5;3m +1ms[39m
+[2J[3J[H[[90m5:59:33 p. m.[0m] File change detected. Starting incremental compilation...
+
+[[90m5:59:35 p. m.[0m] Found 0 errors. Watching for file changes.
+
+[32m[Nest] 9184  - [39m19/08/2026, 5:59:38 p. m. [32m    LOG[39m [38;5;3m[NestFactory] [39m[32mStarting Nest application...[39m
+[32m[Nest] 9184  - [39m19/08/2026, 5:59:38 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAppModule dependencies initialized[39m[38;5;3m +26ms[39m
+[32m[Nest] 9184  - [39m19/08/2026, 5:59:38 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mPrismaModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 9184  - [39m19/08/2026, 5:59:38 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigHostModule dependencies initialized[39m[38;5;3m +12ms[39m
+[32m[Nest] 9184  - [39m19/08/2026, 5:59:38 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mHealthModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 9184  - [39m19/08/2026, 5:59:38 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 9184  - [39m19/08/2026, 5:59:38 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mNotificationsModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 9184  - [39m19/08/2026, 5:59:38 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAuthModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 9184  - [39m19/08/2026, 5:59:38 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mCobrosModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 9184  - [39m19/08/2026, 5:59:38 p. m. [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mHealthController {/api/v1/health}:[39m[38;5;3m +7ms[39m
+[32m[Nest] 9184  - [39m19/08/2026, 5:59:38 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/health, GET} route[39m[38;5;3m +4ms[39m
+[32m[Nest] 9184  - [39m19/08/2026, 5:59:38 p. m. [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAuthController {/api/v1}:[39m[38;5;3m +1ms[39m
+[32m[Nest] 9184  - [39m19/08/2026, 5:59:38 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/auth/login, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 9184  - [39m19/08/2026, 5:59:38 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/auth/bootstrap-admin, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 9184  - [39m19/08/2026, 5:59:38 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/auth/me, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 9184  - [39m19/08/2026, 5:59:38 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/usuarios, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 9184  - [39m19/08/2026, 5:59:38 p. m. [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mCobrosController {/api/v1}:[39m[38;5;3m +1ms[39m
+[32m[Nest] 9184  - [39m19/08/2026, 5:59:38 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/catalogos, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 9184  - [39m19/08/2026, 5:59:38 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/clientes, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 9184  - [39m19/08/2026, 5:59:38 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/clientes, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 9184  - [39m19/08/2026, 5:59:38 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/rutas, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 9184  - [39m19/08/2026, 5:59:38 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/cobros/ruta, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 9184  - [39m19/08/2026, 5:59:38 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/exportaciones/cobros-ruta, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 9184  - [39m19/08/2026, 5:59:38 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/creditos, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 9184  - [39m19/08/2026, 5:59:38 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/creditos/:id, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 9184  - [39m19/08/2026, 5:59:38 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/creditos/:id/cuotas, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 9184  - [39m19/08/2026, 5:59:38 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/pagos, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 9184  - [39m19/08/2026, 5:59:38 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/caja-menor/movimientos, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 9184  - [39m19/08/2026, 5:59:38 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/exportaciones/caja-menor, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 9184  - [39m19/08/2026, 5:59:38 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/caja-menor/movimientos, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 9184  - [39m19/08/2026, 5:59:38 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/caja-menor, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 9184  - [39m19/08/2026, 5:59:38 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/presupuesto, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 9184  - [39m19/08/2026, 5:59:38 p. m. [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mYcloudWebhookController {/api/v1/webhooks/ycloud}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 9184  - [39m19/08/2026, 5:59:38 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/webhooks/ycloud, POST} route[39m[38;5;3m +0ms[39m
+[2J[3J[H[[90m6:06:10 p. m.[0m] File change detected. Starting incremental compilation...
+
+[[90m6:06:11 p. m.[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m6:06:11 p. m.[0m] File change detected. Starting incremental compilation...
+
+[32m[Nest] 14940  - [39m19/08/2026, 6:06:14 p. m. [32m    LOG[39m [38;5;3m[NestFactory] [39m[32mStarting Nest application...[39m
+[32m[Nest] 14940  - [39m19/08/2026, 6:06:14 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAppModule dependencies initialized[39m[38;5;3m +46ms[39m
+[32m[Nest] 14940  - [39m19/08/2026, 6:06:14 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mPrismaModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 14940  - [39m19/08/2026, 6:06:14 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigHostModule dependencies initialized[39m[38;5;3m +21ms[39m
+[32m[Nest] 14940  - [39m19/08/2026, 6:06:14 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mHealthModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 14940  - [39m19/08/2026, 6:06:14 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 14940  - [39m19/08/2026, 6:06:14 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mNotificationsModule dependencies initialized[39m[38;5;3m +2ms[39m
+[32m[Nest] 14940  - [39m19/08/2026, 6:06:14 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAuthModule dependencies initialized[39m[38;5;3m +2ms[39m
+[32m[Nest] 14940  - [39m19/08/2026, 6:06:14 p. m. [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mCobrosModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 14940  - [39m19/08/2026, 6:06:14 p. m. [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mHealthController {/api/v1/health}:[39m[38;5;3m +13ms[39m
+[32m[Nest] 14940  - [39m19/08/2026, 6:06:14 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/health, GET} route[39m[38;5;3m +8ms[39m
+[32m[Nest] 14940  - [39m19/08/2026, 6:06:14 p. m. [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAuthController {/api/v1}:[39m[38;5;3m +1ms[39m
+[32m[Nest] 14940  - [39m19/08/2026, 6:06:14 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/auth/login, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 14940  - [39m19/08/2026, 6:06:14 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/auth/bootstrap-admin, POST} route[39m[38;5;3m +2ms[39m
+[32m[Nest] 14940  - [39m19/08/2026, 6:06:14 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/auth/me, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 14940  - [39m19/08/2026, 6:06:14 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/usuarios, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 14940  - [39m19/08/2026, 6:06:14 p. m. [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mCobrosController {/api/v1}:[39m[38;5;3m +1ms[39m
+[32m[Nest] 14940  - [39m19/08/2026, 6:06:14 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/catalogos, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 14940  - [39m19/08/2026, 6:06:14 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/clientes, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 14940  - [39m19/08/2026, 6:06:14 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/clientes, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 14940  - [39m19/08/2026, 6:06:14 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/rutas, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 14940  - [39m19/08/2026, 6:06:14 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/cobros/ruta, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 14940  - [39m19/08/2026, 6:06:14 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/exportaciones/cobros-ruta, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 14940  - [39m19/08/2026, 6:06:14 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/creditos, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 14940  - [39m19/08/2026, 6:06:14 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/creditos/:id, GET} route[39m[38;5;3m +2ms[39m
+[32m[Nest] 14940  - [39m19/08/2026, 6:06:14 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/creditos/:id/cuotas, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 14940  - [39m19/08/2026, 6:06:14 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/pagos, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 14940  - [39m19/08/2026, 6:06:14 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/caja-menor/movimientos, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 14940  - [39m19/08/2026, 6:06:14 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/exportaciones/caja-menor, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 14940  - [39m19/08/2026, 6:06:14 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/caja-menor/movimientos, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 14940  - [39m19/08/2026, 6:06:14 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/caja-menor, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 14940  - [39m19/08/2026, 6:06:14 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/presupuesto, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 14940  - [39m19/08/2026, 6:06:14 p. m. [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mYcloudWebhookController {/api/v1/webhooks/ycloud}:[39m[38;5;3m +1ms[39m
+[32m[Nest] 14940  - [39m19/08/2026, 6:06:14 p. m. [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/v1/webhooks/ycloud, POST} route[39m[38;5;3m +1ms[39m

@@ -51,6 +51,7 @@ type CobroRutaRow = {
   cliente: string;
   cedula: string | null;
   negocio: string | null;
+  direccion: string | null;
   ruta_id: string;
   ruta: string;
   moneda_codigo: string;
@@ -133,6 +134,7 @@ type CobroRutaExportado = {
   cliente: string;
   cedula: string | null;
   negocio: string | null;
+  direccion: string | null;
   ruta: string;
   monedaCodigo: string;
   valorPrincipal: number;
@@ -318,6 +320,11 @@ export class CobrosService {
         {
           documentos: { some: { numeroDocumento: { contains: search } } },
         },
+        {
+          direcciones: {
+            some: { direccion: { contains: search, mode: 'insensitive' } },
+          },
+        },
       ];
     }
 
@@ -342,6 +349,7 @@ export class CobrosService {
     );
     const cedula = this.normalizarTextoOpcional(dto.cedula);
     const nombreComercial = this.normalizarTextoOpcional(dto.nombreComercial);
+    const direccion = this.normalizarTextoOpcional(dto.direccion);
     const notas = this.normalizarTextoOpcional(dto.notas);
     const correo = this.normalizarCorreo(dto.correo);
     const telefono = this.normalizarTextoOpcional(dto.telefono);
@@ -383,6 +391,7 @@ export class CobrosService {
         'WHATSAPP',
         whatsapp,
       );
+      await this.crearDireccionCliente(tx, created.clienteId, direccion);
 
       const completo = await tx.cliente.findUnique({
         where: { clienteId: created.clienteId },
@@ -463,6 +472,12 @@ export class CobrosService {
           OR r.nombre ILIKE ${pattern}
           OR EXISTS (
             SELECT 1
+            FROM public.cliente_direccion cd_busqueda
+            WHERE cd_busqueda.cliente_id = cl.cliente_id
+              AND cd_busqueda.direccion ILIKE ${pattern}
+          )
+          OR EXISTS (
+            SELECT 1
             FROM public.cliente_documento cd_busqueda
             WHERE cd_busqueda.cliente_id = cl.cliente_id
               AND cd_busqueda.numero_documento ILIKE ${pattern}
@@ -510,6 +525,7 @@ export class CobrosService {
         cl.nombre_completo AS cliente,
         doc_cc.numero_documento AS cedula,
         cl.nombre_comercial AS negocio,
+        dir_principal.direccion,
         r.ruta_id,
         r.nombre AS ruta,
         c.moneda_codigo,
@@ -551,6 +567,13 @@ export class CobrosService {
         ORDER BY cd.numero_documento ASC
         LIMIT 1
       ) doc_cc ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT cd.direccion
+        FROM public.cliente_direccion cd
+        WHERE cd.cliente_id = cl.cliente_id
+        ORDER BY cd.es_principal DESC, cd.direccion ASC
+        LIMIT 1
+      ) dir_principal ON TRUE
       LEFT JOIN resumen_plan rp
         ON rp.credito_plan_pago_id = cpp.credito_plan_pago_id
       LEFT JOIN LATERAL (
@@ -583,6 +606,7 @@ export class CobrosService {
       cliente: row.cliente,
       cedula: row.cedula,
       negocio: row.negocio,
+      direccion: row.direccion,
       rutaId: row.ruta_id,
       ruta: row.ruta,
       monedaCodigo: row.moneda_codigo,
@@ -623,6 +647,7 @@ export class CobrosService {
       { header: 'Cliente', key: 'cliente', width: 30 },
       { header: 'Cedula', key: 'cedula', width: 18 },
       { header: 'Negocio', key: 'negocio', width: 24 },
+      { header: 'Direccion', key: 'direccion', width: 32 },
       { header: 'Ruta', key: 'ruta', width: 22 },
       { header: 'Moneda', key: 'monedaCodigo', width: 10 },
       { header: 'Valor principal', key: 'valorPrincipal', width: 16 },
@@ -644,6 +669,7 @@ export class CobrosService {
       cliente: cobro.cliente,
       cedula: cobro.cedula ?? '',
       negocio: cobro.negocio ?? '',
+      direccion: cobro.direccion ?? '',
       ruta: cobro.ruta,
       monedaCodigo: cobro.monedaCodigo,
       valorPrincipal: cobro.valorPrincipal,
@@ -1589,6 +1615,16 @@ export class CobrosService {
         );
       }
 
+      if (tipo.naturaleza === 'S') {
+        await this.asegurarSalidaCajaConPresupuesto(
+          tx,
+          caja.cajaMenorId,
+          monto,
+          'El movimiento supera el dinero disponible en caja menor',
+          'CAJA_MENOR_SALDO_INSUFICIENTE',
+        );
+      }
+
       return tx.cajaMenorMovimiento.create({
         data: {
           cajaMenorId: caja.cajaMenorId,
@@ -1903,6 +1939,38 @@ export class CobrosService {
     });
   }
 
+  private async crearDireccionCliente(
+    tx: Prisma.TransactionClient,
+    clienteId: string,
+    direccion: string | null,
+  ) {
+    if (!direccion) {
+      return;
+    }
+
+    const tipo = await tx.tipoDireccion.findUnique({
+      where: { codigo: 'CASA' },
+    });
+
+    if (!tipo) {
+      throw DomainError.notFound(
+        'No existe el tipo de direccion CASA',
+        'TIPO_DIRECCION_NO_EXISTE',
+      );
+    }
+
+    await tx.clienteDireccion.create({
+      data: {
+        clienteId,
+        tipoDireccionId: tipo.tipoDireccionId,
+        direccion,
+        municipio: 'No especificado',
+        departamento: 'No especificado',
+        esPrincipal: true,
+      },
+    });
+  }
+
   private async obtenerOCrearRutaCredito(
     tx: Prisma.TransactionClient,
     dto: CrearCreditoDto,
@@ -2067,30 +2135,13 @@ export class CobrosService {
       );
     }
 
-    await tx.$queryRaw(Prisma.sql`
-      SELECT caja_menor_id
-      FROM public.caja_menor
-      WHERE caja_menor_id = ${caja.cajaMenorId}::uuid
-      FOR UPDATE
-    `);
-
-    const presupuestoRows = await tx.$queryRaw<PresupuestoDisponibleRow[]>(
-      Prisma.sql`
-        SELECT presupuesto
-        FROM public.vista_presupuesto_actual
-        WHERE caja_menor_id = ${caja.cajaMenorId}::uuid
-      `,
+    await this.asegurarSalidaCajaConPresupuesto(
+      tx,
+      caja.cajaMenorId,
+      valorPrincipal,
+      'No se puede hacer credito sin caja suficiente',
+      'CAJA_MENOR_SALDO_INSUFICIENTE',
     );
-    const presupuestoDisponible = this.decimalANumero(
-      presupuestoRows[0]?.presupuesto,
-    );
-
-    if (valorPrincipal > presupuestoDisponible) {
-      throw DomainError.conflict(
-        'No se puede hacer credito sin caja suficiente',
-        'CAJA_MENOR_SALDO_INSUFICIENTE',
-      );
-    }
 
     const movimiento = await tx.cajaMenorMovimiento.create({
       data: {
@@ -2104,6 +2155,36 @@ export class CobrosService {
     });
 
     return movimiento.cajaMenorMovimientoId;
+  }
+
+  private async asegurarSalidaCajaConPresupuesto(
+    tx: Prisma.TransactionClient,
+    cajaMenorId: string,
+    montoSalida: number,
+    mensaje: string,
+    codigo: string,
+  ) {
+    await tx.$queryRaw(Prisma.sql`
+      SELECT caja_menor_id
+      FROM public.caja_menor
+      WHERE caja_menor_id = ${cajaMenorId}::uuid
+      FOR UPDATE
+    `);
+
+    const presupuestoRows = await tx.$queryRaw<PresupuestoDisponibleRow[]>(
+      Prisma.sql`
+        SELECT presupuesto
+        FROM public.vista_presupuesto_actual
+        WHERE caja_menor_id = ${cajaMenorId}::uuid
+      `,
+    );
+    const presupuestoDisponible = this.decimalANumero(
+      presupuestoRows[0]?.presupuesto,
+    );
+
+    if (montoSalida > presupuestoDisponible) {
+      throw DomainError.conflict(mensaje, codigo);
+    }
   }
 
   private async marcarCreditoPagadoSiCorresponde(
@@ -2478,6 +2559,9 @@ export class CobrosService {
       cliente.documentos.find(
         (documento) => documento.tipoDocumento.codigo === codigo,
       );
+    const direccionPrincipal =
+      cliente.direcciones.find((direccion) => direccion.esPrincipal) ??
+      cliente.direcciones[0];
 
     return {
       id: cliente.clienteId,
@@ -2485,6 +2569,7 @@ export class CobrosService {
       nombreComercial: cliente.nombreComercial,
       notas: cliente.notas,
       cedula: documentoPrincipal('CC')?.numeroDocumento ?? null,
+      direccion: direccionPrincipal?.direccion ?? null,
       correo: contactoPrincipal('CORREO')?.valor ?? null,
       telefono: contactoPrincipal('TELEFONO')?.valor ?? null,
       whatsapp: contactoPrincipal('WHATSAPP')?.valor ?? null,

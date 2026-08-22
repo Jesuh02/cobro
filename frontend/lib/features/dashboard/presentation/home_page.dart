@@ -91,6 +91,7 @@ class _HomePageState extends State<HomePage> {
   SesionUsuario? _usuarioSesion;
   Catalogos? _catalogos;
   Presupuesto? _presupuesto;
+  Presupuesto? _presupuestoTodosLosDias;
   List<Cliente> _clientes = const <Cliente>[];
   List<CobroRuta> _cobrosRuta = const <CobroRuta>[];
   List<CreditoRegistro> _creditos = const <CreditoRegistro>[];
@@ -145,6 +146,7 @@ class _HomePageState extends State<HomePage> {
     super.initState();
     _apiClient = widget.apiClient ?? ApiClient(baseUrl: widget.apiBaseUrl);
     _cerrarApiClientAlSalir = widget.apiClient == null;
+    _aplicarFechaInicioHoy();
     _buscarRutaController.addListener(_refrescar);
     _buscarCajaInicioController.addListener(_programarRecargaPresupuesto);
     _buscarCreditoController.addListener(_programarRecargaListasPesadas);
@@ -728,7 +730,15 @@ class _HomePageState extends State<HomePage> {
     final List<PresupuestoItem> itemsInicio = cajasInicio.isEmpty
         ? const <PresupuestoItem>[]
         : _filtrarItemsPresupuestoInicio(cajaInicioSeleccionada);
+    final List<PresupuestoItem> itemsCreditosTodosLosDias = cajasInicio.isEmpty
+        ? const <PresupuestoItem>[]
+        : _filtrarItemsPresupuestoInicio(
+            cajaInicioSeleccionada,
+            presupuesto: _presupuestoTodosLosDias,
+          );
     final PresupuestoTotales totales = _totalesPresupuesto(itemsInicio);
+    final PresupuestoTotales totalesTodosLosDias =
+        _totalesPresupuesto(itemsCreditosTodosLosDias);
     final int clientesActivos = _clientes.length;
     final double cartera = _cobrosRuta.fold<double>(
       0,
@@ -749,6 +759,7 @@ class _HomePageState extends State<HomePage> {
 
     return _PaginaInicioPresupuesto(
       totales: totales,
+      creditosTodosLosDias: totalesTodosLosDias.creditos,
       clientesActivos: clientesActivos,
       cartera: cartera,
       conteoCreditos: _conteoCreditosInicio,
@@ -763,6 +774,10 @@ class _HomePageState extends State<HomePage> {
       fechaHasta: _fechaInicioHasta,
       hayFiltros: _hayFiltrosInicio,
       onCajaChanged: _cambiarCajaInicio,
+      fechaHoyActiva: _inicioMostrandoHoy,
+      todosLosDiasActivo: _inicioMostrandoTodosLosDias,
+      onFechaHoy: _mostrarInicioHoy,
+      onTodosLosDias: _mostrarInicioTodosLosDias,
       onFechaDesde: () => _seleccionarFechaInicio(esDesde: true),
       onFechaHasta: () => _seleccionarFechaInicio(esDesde: false),
       onLimpiarFiltros: _limpiarFiltrosInicio,
@@ -781,10 +796,6 @@ class _HomePageState extends State<HomePage> {
         _catalogos?.cajasMenores ?? const <CajaMenorCatalogo>[];
     final String consulta =
         _buscarCajaInicioController.text.trim().toLowerCase();
-    final DateTime? desde =
-        _fechaInicioDesde == null ? null : _soloFecha(_fechaInicioDesde!);
-    final DateTime? hasta =
-        _fechaInicioHasta == null ? null : _soloFecha(_fechaInicioHasta!);
 
     return cajas.where((CajaMenorCatalogo caja) {
       if (consulta.isNotEmpty &&
@@ -792,48 +803,43 @@ class _HomePageState extends State<HomePage> {
         return false;
       }
 
-      final DateTime? apertura = caja.fechaApertura;
-      if (apertura != null) {
-        final DateTime fechaApertura = _soloFecha(apertura);
-        if (desde != null && fechaApertura.isBefore(desde)) {
-          return false;
-        }
-        if (hasta != null && fechaApertura.isAfter(hasta)) {
-          return false;
-        }
-      }
-
       return true;
     }).toList(growable: false);
   }
 
   String? _cajaInicioFiltroIdValida(List<CajaMenorCatalogo> cajas) {
+    if (_cajaInicioFiltroId == _todasLasCajasFiltro) {
+      return _todasLasCajasFiltro;
+    }
+
     final Set<String> ids =
         cajas.map((CajaMenorCatalogo caja) => caja.id).toSet();
     if (_cajaInicioFiltroId != null && ids.contains(_cajaInicioFiltroId)) {
       return _cajaInicioFiltroId;
     }
 
-    final List<CajaMenorCatalogo> activas = cajas
-        .where((CajaMenorCatalogo caja) => caja.activa)
-        .toList(growable: false);
-    if (activas.isNotEmpty) {
-      return activas.first.id;
-    }
-
-    return cajas.isEmpty ? null : cajas.first.id;
+    return _cajaActivaMasRecienteId(cajas) ??
+        (cajas.isEmpty ? null : cajas.first.id);
   }
 
-  List<PresupuestoItem> _filtrarItemsPresupuestoInicio(String? cajaMenorId) {
+  List<PresupuestoItem> _filtrarItemsPresupuestoInicio(
+    String? cajaMenorId, {
+    Presupuesto? presupuesto,
+  }) {
     final List<PresupuestoItem> items =
-        _presupuesto?.items ?? const <PresupuestoItem>[];
-    if (cajaMenorId == null) {
+        (presupuesto ?? _presupuesto)?.items ?? const <PresupuestoItem>[];
+    if (cajaMenorId == null || cajaMenorId == _todasLasCajasFiltro) {
       return items;
     }
 
-    return items
+    final List<PresupuestoItem> filtrados = items
         .where((PresupuestoItem item) => item.cajaMenorId == cajaMenorId)
         .toList(growable: false);
+    if (filtrados.isNotEmpty || items.isEmpty) {
+      return filtrados;
+    }
+
+    return items;
   }
 
   PresupuestoTotales _totalesPresupuesto(List<PresupuestoItem> items) {
@@ -1214,9 +1220,8 @@ class _HomePageState extends State<HomePage> {
               key: ValueKey<String>(
                 'filtro-caja-${_cajaMenorFiltroId ?? _todasLasCajasFiltro}',
               ),
-              initialValue: filtroCajaValido
-                  ? _cajaMenorFiltroId
-                  : _todasLasCajasFiltro,
+              initialValue:
+                  filtroCajaValido ? _cajaMenorFiltroId : _todasLasCajasFiltro,
               isExpanded: true,
               decoration: const InputDecoration(
                 labelText: 'Caja',
@@ -1352,6 +1357,40 @@ class _HomePageState extends State<HomePage> {
     _recargarDatos(presupuesto: true);
   }
 
+  void _aplicarFechaInicioHoy() {
+    final DateTime hoy = _soloFecha(_fechaHoraColombia());
+    _fechaInicioDesde = hoy;
+    _fechaInicioHasta = hoy;
+  }
+
+  void _mostrarInicioHoy() {
+    setState(() {
+      _aplicarFechaInicioHoy();
+      _cajaInicioFiltroId = _cajaInicioFiltroIdValida(_filtrarCajasInicio());
+    });
+    _recargarDatos(presupuesto: true);
+  }
+
+  void _mostrarInicioTodosLosDias() {
+    setState(() {
+      _fechaInicioDesde = null;
+      _fechaInicioHasta = null;
+      _cajaInicioFiltroId = _cajaInicioFiltroIdValida(_filtrarCajasInicio());
+    });
+    _recargarDatos(presupuesto: true);
+  }
+
+  bool get _inicioMostrandoHoy {
+    final DateTime hoy = _soloFecha(_fechaHoraColombia());
+    return _fechaInicioDesde != null &&
+        _fechaInicioHasta != null &&
+        _soloFecha(_fechaInicioDesde!) == hoy &&
+        _soloFecha(_fechaInicioHasta!) == hoy;
+  }
+
+  bool get _inicioMostrandoTodosLosDias =>
+      _fechaInicioDesde == null && _fechaInicioHasta == null;
+
   Future<void> _seleccionarFechaInicio({required bool esDesde}) async {
     final DateTime ahora = DateTime.now();
     final DateTime? actual = esDesde ? _fechaInicioDesde : _fechaInicioHasta;
@@ -1387,8 +1426,7 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _seleccionarFechaCredito({required bool esDesde}) async {
     final DateTime ahora = DateTime.now();
-    final DateTime? actual =
-        esDesde ? _fechaCreditoDesde : _fechaCreditoHasta;
+    final DateTime? actual = esDesde ? _fechaCreditoDesde : _fechaCreditoHasta;
     final DateTime? selected = await showDatePicker(
       context: context,
       initialDate: actual ?? ahora,
@@ -1474,8 +1512,7 @@ class _HomePageState extends State<HomePage> {
   void _limpiarFiltrosInicio() {
     setState(() {
       _buscarCajaInicioController.clear();
-      _fechaInicioDesde = null;
-      _fechaInicioHasta = null;
+      _aplicarFechaInicioHoy();
       _cajaInicioFiltroId = _cajaActivaPredeterminadaId(_catalogos);
     });
     _recargarDatos(presupuesto: true);
@@ -1483,8 +1520,7 @@ class _HomePageState extends State<HomePage> {
 
   bool get _hayFiltrosInicio =>
       _buscarCajaInicioController.text.trim().isNotEmpty ||
-      _fechaInicioDesde != null ||
-      _fechaInicioHasta != null ||
+      !_inicioMostrandoHoy ||
       _cajaInicioFiltroId != _cajaActivaPredeterminadaId(_catalogos);
 
   void _limpiarFiltrosCredito() {
@@ -1627,10 +1663,12 @@ class _HomePageState extends State<HomePage> {
         _seccionActual = 0;
         _catalogos = null;
         _presupuesto = null;
+        _presupuestoTodosLosDias = null;
         _clientes = const <Cliente>[];
         _cobrosRuta = const <CobroRuta>[];
         _movimientosCaja = const <MovimientoCaja>[];
         _cajaMenorFiltroId = null;
+        _aplicarFechaInicioHoy();
       });
 
       await _cargar();
@@ -1677,6 +1715,7 @@ class _HomePageState extends State<HomePage> {
       setState(() {
         _usuarioSesion = sesion.usuario;
         _seccionActual = 0;
+        _aplicarFechaInicioHoy();
       });
 
       await _cargar();
@@ -1852,6 +1891,7 @@ class _HomePageState extends State<HomePage> {
       _usuarioSesion = null;
       _catalogos = null;
       _presupuesto = null;
+      _presupuestoTodosLosDias = null;
       _clientes = const <Cliente>[];
       _cobrosRuta = const <CobroRuta>[];
       _creditos = const <CreditoRegistro>[];
@@ -1892,6 +1932,7 @@ class _HomePageState extends State<HomePage> {
           await Future.wait<dynamic>(<Future<dynamic>>[
         _obtenerCatalogos(),
         _obtenerPresupuesto(),
+        _obtenerPresupuesto(todosLosDias: true),
         _obtenerClientes(),
         _obtenerCobrosRuta(),
         _obtenerCreditosPagina(),
@@ -1906,12 +1947,13 @@ class _HomePageState extends State<HomePage> {
       setState(() {
         _catalogos = resultados[0] as Catalogos;
         _presupuesto = resultados[1] as Presupuesto;
-        _clientes = resultados[2] as List<Cliente>;
-        _cobrosRuta = resultados[3] as List<CobroRuta>;
+        _presupuestoTodosLosDias = resultados[2] as Presupuesto;
+        _clientes = resultados[3] as List<Cliente>;
+        _cobrosRuta = resultados[4] as List<CobroRuta>;
         final _PaginaDatos<CreditoRegistro> creditos =
-            resultados[4] as _PaginaDatos<CreditoRegistro>;
+            resultados[5] as _PaginaDatos<CreditoRegistro>;
         final _PaginaDatos<MovimientoCaja> movimientosCaja =
-            resultados[5] as _PaginaDatos<MovimientoCaja>;
+            resultados[6] as _PaginaDatos<MovimientoCaja>;
         _creditos = creditos.items;
         _siguienteOffsetCreditos = creditos.nextOffset ?? _creditos.length;
         _hayMasCreditos = creditos.hasMore;
@@ -1919,7 +1961,7 @@ class _HomePageState extends State<HomePage> {
         _siguienteOffsetMovimientosCaja =
             movimientosCaja.nextOffset ?? _movimientosCaja.length;
         _hayMasMovimientosCaja = movimientosCaja.hasMore;
-        _conteoCreditosInicio = resultados[6] as _ConteoCreditosInicio;
+        _conteoCreditosInicio = resultados[7] as _ConteoCreditosInicio;
         _ajustarSelecciones();
       });
     } catch (error) {
@@ -1942,11 +1984,11 @@ class _HomePageState extends State<HomePage> {
     return Catalogos.fromJson(await _apiClient.getObject('/catalogos'));
   }
 
-  Future<Presupuesto> _obtenerPresupuesto() async {
+  Future<Presupuesto> _obtenerPresupuesto({bool todosLosDias = false}) async {
     return Presupuesto.fromJson(
       await _apiClient.getObject(
         '/presupuesto',
-        query: _queryPresupuesto(),
+        query: _queryPresupuesto(todosLosDias: todosLosDias),
       ),
     );
   }
@@ -2043,24 +2085,26 @@ class _HomePageState extends State<HomePage> {
         _FiltroEstadoCredito.activos => 'activos',
         _FiltroEstadoCredito.inactivos => 'inactivos',
       },
-      'fechaDesde': _fechaCreditoDesde == null
-          ? null
-          : _fechaValor(_fechaCreditoDesde!),
-      'fechaHasta': _fechaCreditoHasta == null
-          ? null
-          : _fechaValor(_fechaCreditoHasta!),
+      'fechaDesde':
+          _fechaCreditoDesde == null ? null : _fechaValor(_fechaCreditoDesde!),
+      'fechaHasta':
+          _fechaCreditoHasta == null ? null : _fechaValor(_fechaCreditoHasta!),
     };
   }
 
-  Map<String, String?> _queryPresupuesto() {
+  Map<String, String?> _queryPresupuesto({bool todosLosDias = false}) {
     final String search = _buscarCajaInicioController.text.trim();
     return <String, String?>{
-      'cajaMenorId': _cajaInicioFiltroId,
+      'cajaMenorId': _cajaInicioFiltroId == _todasLasCajasFiltro
+          ? null
+          : _cajaInicioFiltroId,
       'search': search.isEmpty ? null : search,
-      'fechaDesde':
-          _fechaInicioDesde == null ? null : _fechaValor(_fechaInicioDesde!),
-      'fechaHasta':
-          _fechaInicioHasta == null ? null : _fechaValor(_fechaInicioHasta!),
+      'fechaDesde': todosLosDias || _fechaInicioDesde == null
+          ? null
+          : _fechaValor(_fechaInicioDesde!),
+      'fechaHasta': todosLosDias || _fechaInicioHasta == null
+          ? null
+          : _fechaValor(_fechaInicioHasta!),
     };
   }
 
@@ -2111,6 +2155,7 @@ class _HomePageState extends State<HomePage> {
     final List<Future<dynamic>> tareas = <Future<dynamic>>[];
     int? catalogosIndex;
     int? presupuestoIndex;
+    int? presupuestoTodosLosDiasIndex;
     int? clientesIndex;
     int? cobrosRutaIndex;
     int? creditosIndex;
@@ -2127,6 +2172,10 @@ class _HomePageState extends State<HomePage> {
     }
     if (presupuesto) {
       agregar(_obtenerPresupuesto(), (int index) => presupuestoIndex = index);
+      agregar(
+        _obtenerPresupuesto(todosLosDias: true),
+        (int index) => presupuestoTodosLosDiasIndex = index,
+      );
     }
     if (clientes) {
       agregar(_obtenerClientes(), (int index) => clientesIndex = index);
@@ -2168,6 +2217,10 @@ class _HomePageState extends State<HomePage> {
         if (presupuestoIndex != null) {
           _presupuesto = resultados[presupuestoIndex!] as Presupuesto;
         }
+        if (presupuestoTodosLosDiasIndex != null) {
+          _presupuestoTodosLosDias =
+              resultados[presupuestoTodosLosDiasIndex!] as Presupuesto;
+        }
         if (clientesIndex != null) {
           _clientes = resultados[clientesIndex!] as List<Cliente>;
         }
@@ -2187,8 +2240,7 @@ class _HomePageState extends State<HomePage> {
         }
         if (movimientosCajaIndex != null) {
           final _PaginaDatos<MovimientoCaja> pagina =
-              resultados[movimientosCajaIndex!]
-                  as _PaginaDatos<MovimientoCaja>;
+              resultados[movimientosCajaIndex!] as _PaginaDatos<MovimientoCaja>;
           _movimientosCaja = pagina.items;
           _siguienteOffsetMovimientosCaja =
               pagina.nextOffset ?? _movimientosCaja.length;
@@ -2269,7 +2321,9 @@ class _HomePageState extends State<HomePage> {
     );
     _cajaInicioFiltroId = _mantenerSeleccion(
       _cajaInicioFiltroId,
-      catalogos.cajasMenoresActivas.map((CajaMenorCatalogo caja) => caja.id),
+      catalogos.cajasMenores.map((CajaMenorCatalogo caja) => caja.id),
+      valorTodos: _todasLasCajasFiltro,
+      valorPredeterminado: _cajaActivaPredeterminadaId(catalogos),
     );
     _cajaMenorFiltroId = _mantenerSeleccion(
       _cajaMenorFiltroId,
@@ -2282,21 +2336,51 @@ class _HomePageState extends State<HomePage> {
     String? actual,
     Iterable<String> valores, {
     bool permitirNulo = false,
+    String? valorTodos,
+    String? valorPredeterminado,
   }) {
     final List<String> disponibles = valores.toList(growable: false);
+    if (valorTodos != null && actual == valorTodos) {
+      return valorTodos;
+    }
     if (actual != null && disponibles.contains(actual)) {
       return actual;
     }
     if (permitirNulo) {
       return null;
     }
+    if (valorPredeterminado != null &&
+        disponibles.contains(valorPredeterminado)) {
+      return valorPredeterminado;
+    }
     return disponibles.isEmpty ? null : disponibles.first;
   }
 
   String? _cajaActivaPredeterminadaId(Catalogos? catalogos) {
-    final List<CajaMenorCatalogo> activas =
-        catalogos?.cajasMenoresActivas ?? const <CajaMenorCatalogo>[];
-    return activas.isEmpty ? null : activas.first.id;
+    return _cajaActivaMasRecienteId(
+      catalogos?.cajasMenores ?? const <CajaMenorCatalogo>[],
+    );
+  }
+
+  String? _cajaActivaMasRecienteId(List<CajaMenorCatalogo> cajas) {
+    final List<CajaMenorCatalogo> activas = cajas
+        .where((CajaMenorCatalogo caja) => caja.activa)
+        .toList(growable: false);
+    if (activas.isEmpty) {
+      return null;
+    }
+
+    CajaMenorCatalogo masReciente = activas.first;
+    for (final CajaMenorCatalogo caja in activas.skip(1)) {
+      final DateTime? fechaCaja = caja.fechaApertura;
+      final DateTime? fechaActual = masReciente.fechaApertura;
+      if (fechaActual == null ||
+          (fechaCaja != null && fechaCaja.isAfter(fechaActual))) {
+        masReciente = caja;
+      }
+    }
+
+    return masReciente.id;
   }
 
   int? _mantenerSeleccionInt(int? actual, Iterable<int> valores) {
@@ -2433,13 +2517,12 @@ class _HomePageState extends State<HomePage> {
       (FrecuenciaPago item) => item.id == frecuenciaPagoId,
       orElse: () => credito.frecuenciaPago,
     );
-    final bool cambiaPlan =
-        frecuencia.id != credito.frecuenciaPago.id ||
-            _fechaValor(fechaInicio) != _fechaValor(credito.fechaInicio) ||
-            valorPrincipal != credito.valorPrincipal ||
-            porcentajeInteres != credito.porcentajeInteres ||
-            plazoDias != credito.plazoDias ||
-            omitirDomingos != credito.omitirDomingos;
+    final bool cambiaPlan = frecuencia.id != credito.frecuenciaPago.id ||
+        _fechaValor(fechaInicio) != _fechaValor(credito.fechaInicio) ||
+        valorPrincipal != credito.valorPrincipal ||
+        porcentajeInteres != credito.porcentajeInteres ||
+        plazoDias != credito.plazoDias ||
+        omitirDomingos != credito.omitirDomingos;
     final _CalculoCredito calculo = _CalculoCredito.desdeFormulario(
       valor: valorPrincipal.toString(),
       interes: porcentajeInteres.toString(),
@@ -2510,13 +2593,11 @@ class _HomePageState extends State<HomePage> {
     return _creditos.where((CreditoRegistro credito) {
       final DateTime fechaInicio = _soloFecha(credito.fechaInicio);
 
-      if (_filtroCredito == _FiltroEstadoCredito.activos &&
-          !credito.activo) {
+      if (_filtroCredito == _FiltroEstadoCredito.activos && !credito.activo) {
         return false;
       }
 
-      if (_filtroCredito == _FiltroEstadoCredito.inactivos &&
-          credito.activo) {
+      if (_filtroCredito == _FiltroEstadoCredito.inactivos && credito.activo) {
         return false;
       }
 
@@ -2982,27 +3063,27 @@ class _HomePageState extends State<HomePage> {
             .any((CajaMenorCatalogo caja) => caja.id == credito.cajaMenorId)
         ? credito.cajaMenorId
         : cajasCompatibles.first.id;
-    int? frecuenciaPagoId = catalogos.frecuenciasPago
-            .any((FrecuenciaPago frecuencia) =>
+    int? frecuenciaPagoId = catalogos.frecuenciasPago.any(
+            (FrecuenciaPago frecuencia) =>
                 frecuencia.id == credito.frecuenciaPago.id)
         ? credito.frecuenciaPago.id
         : catalogos.frecuenciasPago.first.id;
     DateTime fechaInicio = DateTime.now();
     bool omitirDomingos = credito.omitirDomingos;
-    final List<Cliente> clientesFormulario = _clientes
-            .any((Cliente cliente) => cliente.id == credito.clienteId)
-        ? _clientes
-        : <Cliente>[
-            Cliente(
-              id: credito.clienteId,
-              nombreCompleto: credito.cliente,
-              cedula: credito.cedula,
-              direccion: credito.direccion,
-              nombreComercial: credito.negocio,
-              estadoNombre: 'Activo',
-            ),
-            ..._clientes,
-          ];
+    final List<Cliente> clientesFormulario =
+        _clientes.any((Cliente cliente) => cliente.id == credito.clienteId)
+            ? _clientes
+            : <Cliente>[
+                Cliente(
+                  id: credito.clienteId,
+                  nombreCompleto: credito.cliente,
+                  cedula: credito.cedula,
+                  direccion: credito.direccion,
+                  nombreComercial: credito.negocio,
+                  estadoNombre: 'Activo',
+                ),
+                ..._clientes,
+              ];
     final List<Moneda> monedasFormulario = catalogos.monedas
             .any((Moneda moneda) => moneda.codigo == credito.monedaCodigo)
         ? catalogos.monedas
@@ -3188,13 +3269,13 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
-    final List<CajaMenorCatalogo> cajasCompatibles = catalogos
-        .cajasMenoresActivas
-        .where(
-          (CajaMenorCatalogo caja) =>
-              caja.monedaCodigo == credito.monedaCodigo,
-        )
-        .toList(growable: false);
+    final List<CajaMenorCatalogo> cajasCompatibles =
+        catalogos.cajasMenoresActivas
+            .where(
+              (CajaMenorCatalogo caja) =>
+                  caja.monedaCodigo == credito.monedaCodigo,
+            )
+            .toList(growable: false);
     if (cajasCompatibles.isEmpty) {
       _mostrarMensaje('No hay caja menor activa para esa moneda');
       return;
@@ -3222,27 +3303,27 @@ class _HomePageState extends State<HomePage> {
             .any((CajaMenorCatalogo caja) => caja.id == credito.cajaMenorId)
         ? credito.cajaMenorId
         : cajasCompatibles.first.id;
-    int? frecuenciaPagoId = catalogos.frecuenciasPago
-            .any((FrecuenciaPago frecuencia) =>
+    int? frecuenciaPagoId = catalogos.frecuenciasPago.any(
+            (FrecuenciaPago frecuencia) =>
                 frecuencia.id == credito.frecuenciaPago.id)
         ? credito.frecuenciaPago.id
         : catalogos.frecuenciasPago.first.id;
     DateTime fechaInicio = credito.fechaInicio;
     bool omitirDomingos = credito.omitirDomingos;
-    final List<Cliente> clientesFormulario = _clientes
-            .any((Cliente cliente) => cliente.id == credito.clienteId)
-        ? _clientes
-        : <Cliente>[
-            Cliente(
-              id: credito.clienteId,
-              nombreCompleto: credito.cliente,
-              cedula: credito.cedula,
-              direccion: credito.direccion,
-              nombreComercial: credito.negocio,
-              estadoNombre: 'Activo',
-            ),
-            ..._clientes,
-          ];
+    final List<Cliente> clientesFormulario =
+        _clientes.any((Cliente cliente) => cliente.id == credito.clienteId)
+            ? _clientes
+            : <Cliente>[
+                Cliente(
+                  id: credito.clienteId,
+                  nombreCompleto: credito.cliente,
+                  cedula: credito.cedula,
+                  direccion: credito.direccion,
+                  nombreComercial: credito.negocio,
+                  estadoNombre: 'Activo',
+                ),
+                ..._clientes,
+              ];
     final List<Moneda> monedasFormulario = catalogos.monedas
             .any((Moneda moneda) => moneda.codigo == credito.monedaCodigo)
         ? catalogos.monedas
@@ -3340,8 +3421,7 @@ class _HomePageState extends State<HomePage> {
                               _fechaValor(fechaInicio) !=
                                   _fechaValor(credito.fechaInicio) ||
                               valorPrincipal != credito.valorPrincipal ||
-                              porcentajeInteres !=
-                                  credito.porcentajeInteres ||
+                              porcentajeInteres != credito.porcentajeInteres ||
                               plazoDias != credito.plazoDias ||
                               omitirDomingos != credito.omitirDomingos;
                       if (credito.totalAbonado > 0.009 &&
@@ -3380,8 +3460,7 @@ class _HomePageState extends State<HomePage> {
                         porcentajeInteres: porcentajeInteres,
                         plazoDias: plazoDias,
                         omitirDomingos: omitirDomingos,
-                        observacion:
-                            observacion.isEmpty ? null : observacion,
+                        observacion: observacion.isEmpty ? null : observacion,
                       );
                       setDialogState(() => guardandoDialogo = true);
                       _guardarCreditoLocal(optimista);
@@ -4433,7 +4512,8 @@ class _HomePageState extends State<HomePage> {
                       width: double.infinity,
                       child: OutlinedButton.icon(
                         onPressed: () async {
-                          final DateTime? selected = await _seleccionarFechaHora(
+                          final DateTime? selected =
+                              await _seleccionarFechaHora(
                             context: context,
                             initialDateTime: fechaCierre,
                           );
@@ -4888,9 +4968,7 @@ class _HomePageState extends State<HomePage> {
                       fechaMovimiento: fechaMovimiento,
                       monto: monto,
                       montoConNaturaleza:
-                          tipo.naturaleza.toUpperCase() == 'S'
-                              ? -monto
-                              : monto,
+                          tipo.naturaleza.toUpperCase() == 'S' ? -monto : monto,
                       motivo: motivo,
                     );
 
@@ -5709,6 +5787,7 @@ class _ConteoCreditosInicio {
 class _PaginaInicioPresupuesto extends StatelessWidget {
   const _PaginaInicioPresupuesto({
     required this.totales,
+    required this.creditosTodosLosDias,
     required this.clientesActivos,
     required this.cartera,
     required this.conteoCreditos,
@@ -5719,6 +5798,10 @@ class _PaginaInicioPresupuesto extends StatelessWidget {
     required this.cajasMenores,
     required this.buscarCajaController,
     required this.onCajaChanged,
+    required this.fechaHoyActiva,
+    required this.todosLosDiasActivo,
+    required this.onFechaHoy,
+    required this.onTodosLosDias,
     required this.onFechaDesde,
     required this.onFechaHasta,
     required this.onLimpiarFiltros,
@@ -5735,6 +5818,7 @@ class _PaginaInicioPresupuesto extends StatelessWidget {
   });
 
   final PresupuestoTotales totales;
+  final double creditosTodosLosDias;
   final int clientesActivos;
   final double cartera;
   final _ConteoCreditosInicio conteoCreditos;
@@ -5749,6 +5833,10 @@ class _PaginaInicioPresupuesto extends StatelessWidget {
   final DateTime? fechaHasta;
   final bool hayFiltros;
   final ValueChanged<String?> onCajaChanged;
+  final bool fechaHoyActiva;
+  final bool todosLosDiasActivo;
+  final VoidCallback onFechaHoy;
+  final VoidCallback onTodosLosDias;
   final VoidCallback onFechaDesde;
   final VoidCallback onFechaHasta;
   final VoidCallback onLimpiarFiltros;
@@ -5788,30 +5876,6 @@ class _PaginaInicioPresupuesto extends StatelessWidget {
                               _ErrorBanner(message: error!),
                             ],
                             const SizedBox(height: 22),
-                            _FiltrosInicioPresupuesto(
-                              cajasMenores: cajasMenores,
-                              cajaMenorId: cajaMenorId,
-                              buscarCajaController: buscarCajaController,
-                              fechaDesde: fechaDesde,
-                              fechaHasta: fechaHasta,
-                              hayFiltros: hayFiltros,
-                              onCajaChanged: onCajaChanged,
-                              onFechaDesde: onFechaDesde,
-                              onFechaHasta: onFechaHasta,
-                              onLimpiarFiltros: onLimpiarFiltros,
-                            ),
-                            const SizedBox(height: 22),
-                            _ResumenCreditosInicio(
-                              totalCreditos: conteoCreditos.total,
-                              activos: conteoCreditos.activos,
-                              inactivos: conteoCreditos.inactivos,
-                              atrasados: creditosAtrasados,
-                              onVerCreditos: onVerCreditos,
-                              onVerActivos: onVerActivos,
-                              onVerInactivos: onVerInactivos,
-                              onVerAtrasados: onVerAtrasados,
-                            ),
-                            const SizedBox(height: 28),
                             const _TituloSeccionPresupuesto(
                               icono: Icons.query_stats_rounded,
                               titulo: 'Panorama financiero',
@@ -5820,6 +5884,34 @@ class _PaginaInicioPresupuesto extends StatelessWidget {
                             ),
                             const SizedBox(height: 12),
                             _GraficasInicio(totales: totales),
+                            const SizedBox(height: 28),
+                            _FiltrosInicioPresupuesto(
+                              cajasMenores: cajasMenores,
+                              cajaMenorId: cajaMenorId,
+                              buscarCajaController: buscarCajaController,
+                              fechaDesde: fechaDesde,
+                              fechaHasta: fechaHasta,
+                              hayFiltros: hayFiltros,
+                              onCajaChanged: onCajaChanged,
+                              fechaHoyActiva: fechaHoyActiva,
+                              todosLosDiasActivo: todosLosDiasActivo,
+                              onFechaHoy: onFechaHoy,
+                              onTodosLosDias: onTodosLosDias,
+                              onFechaDesde: onFechaDesde,
+                              onFechaHasta: onFechaHasta,
+                              onLimpiarFiltros: onLimpiarFiltros,
+                            ),
+                            const SizedBox(height: 22),
+                            _ResumenCreditosInicio(
+                              montoCreditos: creditosTodosLosDias,
+                              activos: conteoCreditos.activos,
+                              inactivos: conteoCreditos.inactivos,
+                              atrasados: creditosAtrasados,
+                              onVerCreditos: onVerCreditos,
+                              onVerActivos: onVerActivos,
+                              onVerInactivos: onVerInactivos,
+                              onVerAtrasados: onVerAtrasados,
+                            ),
                             const SizedBox(height: 28),
                             _TarjetaTotalPresupuesto(
                               total: totales.presupuesto,
@@ -5831,7 +5923,10 @@ class _PaginaInicioPresupuesto extends StatelessWidget {
                               subtitulo: 'Balance actual de ingresos y salidas',
                             ),
                             const SizedBox(height: 12),
-                            _ComposicionPresupuesto(totales: totales),
+                            _ComposicionPresupuesto(
+                              totales: totales,
+                              creditosTodosLosDias: creditosTodosLosDias,
+                            ),
                             const SizedBox(height: 28),
                             const _TituloSeccionPresupuesto(
                               icono: Icons.insights_rounded,
@@ -5885,6 +5980,10 @@ class _FiltrosInicioPresupuesto extends StatelessWidget {
     required this.buscarCajaController,
     required this.hayFiltros,
     required this.onCajaChanged,
+    required this.fechaHoyActiva,
+    required this.todosLosDiasActivo,
+    required this.onFechaHoy,
+    required this.onTodosLosDias,
     required this.onFechaDesde,
     required this.onFechaHasta,
     required this.onLimpiarFiltros,
@@ -5900,6 +5999,10 @@ class _FiltrosInicioPresupuesto extends StatelessWidget {
   final DateTime? fechaHasta;
   final bool hayFiltros;
   final ValueChanged<String?> onCajaChanged;
+  final bool fechaHoyActiva;
+  final bool todosLosDiasActivo;
+  final VoidCallback onFechaHoy;
+  final VoidCallback onTodosLosDias;
   final VoidCallback onFechaDesde;
   final VoidCallback onFechaHasta;
   final VoidCallback onLimpiarFiltros;
@@ -5909,7 +6012,11 @@ class _FiltrosInicioPresupuesto extends StatelessWidget {
     final bool cajaSeleccionadaVisible = cajasMenores.any(
       (CajaMenorCatalogo caja) => caja.id == cajaMenorId,
     );
-    final String? value = cajaSeleccionadaVisible ? cajaMenorId : null;
+    final String? value = cajaMenorId == _HomePageState._todasLasCajasFiltro
+        ? _HomePageState._todasLasCajasFiltro
+        : cajaSeleccionadaVisible
+            ? cajaMenorId
+            : null;
 
     return ClaySurface(
       radius: 14,
@@ -5931,7 +6038,7 @@ class _FiltrosInicioPresupuesto extends StatelessWidget {
           ),
           SizedBox(
             width: 270,
-            child: DropdownButtonFormField<String>(
+            child: DropdownButtonFormField<String?>(
               key: ValueKey<String?>('inicio-caja-$value'),
               initialValue: value,
               isExpanded: true,
@@ -5940,19 +6047,47 @@ class _FiltrosInicioPresupuesto extends StatelessWidget {
                 prefixIcon: Icon(Icons.account_balance_wallet_outlined),
               ),
               hint: const Text('Selecciona una caja'),
-              items: cajasMenores
-                  .map(
-                    (CajaMenorCatalogo caja) => DropdownMenuItem<String>(
-                      value: caja.id,
-                      child: Text(
-                        caja.nombre,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+              items: <DropdownMenuItem<String?>>[
+                const DropdownMenuItem<String?>(
+                  value: _HomePageState._todasLasCajasFiltro,
+                  child: Text('Todas las cajas'),
+                ),
+                ...cajasMenores.map(
+                  (CajaMenorCatalogo caja) => DropdownMenuItem<String?>(
+                    value: caja.id,
+                    child: Text(
+                      caja.nombre,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                  )
-                  .toList(growable: false),
-              onChanged: cajasMenores.isEmpty ? null : onCajaChanged,
+                  ),
+                ),
+              ],
+              selectedItemBuilder: (BuildContext context) {
+                return <Widget>[
+                  const Text(
+                    'Todas las cajas',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  ...cajasMenores.map(
+                    (CajaMenorCatalogo caja) => Text(
+                      caja.nombre,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ];
+              },
+              onChanged: onCajaChanged,
             ),
+          ),
+          OutlinedButton.icon(
+            onPressed: fechaHoyActiva ? null : onFechaHoy,
+            icon: const Icon(Icons.today_rounded),
+            label: const Text('Hoy'),
+          ),
+          OutlinedButton.icon(
+            onPressed: todosLosDiasActivo ? null : onTodosLosDias,
+            icon: const Icon(Icons.all_inclusive_rounded),
+            label: const Text('Todos los dias'),
           ),
           OutlinedButton.icon(
             onPressed: onFechaDesde,
@@ -5988,7 +6123,7 @@ class _FiltrosInicioPresupuesto extends StatelessWidget {
 
 class _ResumenCreditosInicio extends StatelessWidget {
   const _ResumenCreditosInicio({
-    required this.totalCreditos,
+    required this.montoCreditos,
     required this.activos,
     required this.inactivos,
     required this.atrasados,
@@ -5998,7 +6133,7 @@ class _ResumenCreditosInicio extends StatelessWidget {
     required this.onVerAtrasados,
   });
 
-  final int totalCreditos;
+  final double montoCreditos;
   final int activos;
   final int inactivos;
   final int atrasados;
@@ -6012,29 +6147,29 @@ class _ResumenCreditosInicio extends StatelessWidget {
     final List<_AccesoCreditoInicio> accesos = <_AccesoCreditoInicio>[
       _AccesoCreditoInicio(
         icono: Icons.receipt_long_rounded,
-        etiqueta: 'Creditos',
-        valor: totalCreditos,
+        etiqueta: 'Dinero en creditos',
+        valor: _dinero(montoCreditos),
         color: CobroAppTheme.primary,
         onTap: onVerCreditos,
       ),
       _AccesoCreditoInicio(
         icono: Icons.check_circle_rounded,
         etiqueta: 'Activos',
-        valor: activos,
+        valor: activos.toString(),
         color: CobroAppTheme.success,
         onTap: onVerActivos,
       ),
       _AccesoCreditoInicio(
         icono: Icons.pause_circle_filled_rounded,
         etiqueta: 'Inactivos',
-        valor: inactivos,
+        valor: inactivos.toString(),
         color: const Color(0xFF64748B),
         onTap: onVerInactivos,
       ),
       _AccesoCreditoInicio(
         icono: Icons.warning_amber_rounded,
         etiqueta: 'Atrasados',
-        valor: atrasados,
+        valor: atrasados.toString(),
         color: CobroAppTheme.danger,
         onTap: onVerAtrasados,
       ),
@@ -6087,7 +6222,7 @@ class _AccesoCreditoInicio {
 
   final IconData icono;
   final String etiqueta;
-  final int valor;
+  final String valor;
   final Color color;
   final VoidCallback onTap;
 }
@@ -6142,12 +6277,12 @@ class _TarjetaAccesoCreditoInicio extends StatelessWidget {
                     alignment: Alignment.centerLeft,
                     fit: BoxFit.scaleDown,
                     child: Text(
-                      acceso.valor.toString(),
-                      style: Theme.of(context).textTheme.headlineMedium
-                          ?.copyWith(
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 0,
-                          ),
+                      acceso.valor,
+                      style:
+                          Theme.of(context).textTheme.headlineMedium?.copyWith(
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 0,
+                              ),
                     ),
                   ),
                   const SizedBox(height: 2),
@@ -6364,7 +6499,7 @@ class _TarjetaTotalPresupuesto extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               Text(
-                'Caja menor + Recaudado - Gastos',
+                'Caja menor + Recaudado - Créditos - Gastos',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: Colors.white.withValues(alpha: 0.88),
                       fontWeight: FontWeight.w700,
@@ -6426,9 +6561,13 @@ class _TituloSeccionPresupuesto extends StatelessWidget {
 }
 
 class _ComposicionPresupuesto extends StatelessWidget {
-  const _ComposicionPresupuesto({required this.totales});
+  const _ComposicionPresupuesto({
+    required this.totales,
+    required this.creditosTodosLosDias,
+  });
 
   final PresupuestoTotales totales;
+  final double creditosTodosLosDias;
 
   @override
   Widget build(BuildContext context) {
@@ -6453,8 +6592,8 @@ class _ComposicionPresupuesto extends StatelessWidget {
       ),
       _DatoPresupuesto(
         icono: Icons.trending_down_rounded,
-        etiqueta: 'Créditos',
-        valor: _dinero(totales.creditos),
+        etiqueta: 'Dinero en creditos',
+        valor: _dinero(creditosTodosLosDias),
         color: CobroAppTheme.danger,
       ),
     ];
@@ -6962,74 +7101,96 @@ class _FiltrosRuta extends StatelessWidget {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final bool compact = constraints.maxWidth < 620;
-        final List<Widget> children = <Widget>[
-          Expanded(
-            flex: compact ? 0 : 2,
-            child: TextField(
-              controller: buscarController,
-              decoration: const InputDecoration(
-                prefixIcon: Icon(Icons.search_rounded),
-                labelText: 'Buscar cliente, cedula o negocio',
-              ),
-            ),
+        final Widget buscar = TextField(
+          controller: buscarController,
+          decoration: const InputDecoration(
+            prefixIcon: Icon(Icons.search_rounded),
+            labelText: 'Buscar cliente, cedula o negocio',
           ),
-          SizedBox(width: compact ? 0 : 12, height: compact ? 12 : 0),
-          Expanded(
-            flex: compact ? 0 : 1,
-            child: DropdownButtonFormField<String?>(
-              key: ValueKey<String?>(rutaSeleccionadaId),
-              initialValue: rutaSeleccionadaId,
-              decoration: const InputDecoration(
-                prefixIcon: Icon(Icons.route_rounded),
-                labelText: 'Ruta',
-              ),
-              items: <DropdownMenuItem<String?>>[
-                const DropdownMenuItem<String?>(
-                  value: null,
-                  child: Text('Todas'),
-                ),
-                ...rutas.map(
-                  (RutaCatalogo ruta) => DropdownMenuItem<String?>(
-                    value: ruta.id,
-                    child: Text(ruta.nombre),
-                  ),
-                ),
-              ],
-              onChanged: onRutaChanged,
-            ),
+        );
+        final Widget selectorRuta = DropdownButtonFormField<String?>(
+          key: ValueKey<String?>(rutaSeleccionadaId),
+          initialValue: rutaSeleccionadaId,
+          isExpanded: true,
+          decoration: const InputDecoration(
+            prefixIcon: Icon(Icons.route_rounded),
+            labelText: 'Ruta',
           ),
-          SizedBox(width: compact ? 0 : 12, height: compact ? 12 : 0),
-          SizedBox(
-            width: compact ? double.infinity : null,
-            child: OutlinedButton.icon(
-              onPressed: exportando ? null : onExportar,
-              icon: exportando
-                  ? const SizedBox.square(
-                      dimension: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.file_download_outlined),
-              label: Text(exportando ? 'Exportando' : 'Exportar'),
+          items: <DropdownMenuItem<String?>>[
+            const DropdownMenuItem<String?>(
+              value: null,
+              child: Text('Todas'),
             ),
-          ),
-          if (mostrarLimpiarFiltros) ...<Widget>[
-            SizedBox(width: compact ? 0 : 8, height: compact ? 8 : 0),
-            Tooltip(
-              message: 'Limpiar filtros',
-              child: IconButton.outlined(
-                onPressed: onLimpiarFiltros,
-                icon: const Icon(Icons.filter_alt_off_rounded),
+            ...rutas.map(
+              (RutaCatalogo ruta) => DropdownMenuItem<String?>(
+                value: ruta.id,
+                child: Text(ruta.nombre),
               ),
             ),
           ],
-        ];
+          onChanged: onRutaChanged,
+        );
+        final Widget exportar = SizedBox(
+          width: compact ? double.infinity : null,
+          height: compact ? 56 : null,
+          child: OutlinedButton.icon(
+            onPressed: exportando ? null : onExportar,
+            icon: exportando
+                ? const SizedBox.square(
+                    dimension: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.file_download_outlined),
+            label: Text(exportando ? 'Exportando' : 'Exportar'),
+          ),
+        );
+        final Widget limpiar = Tooltip(
+          message: 'Limpiar filtros',
+          child: IconButton.outlined(
+            onPressed: onLimpiarFiltros,
+            icon: const Icon(Icons.filter_alt_off_rounded),
+          ),
+        );
 
-        return compact
-            ? Column(children: children)
-            : Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: children,
-              );
+        if (compact) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              buscar,
+              const SizedBox(height: 10),
+              selectorRuta,
+              const SizedBox(height: 10),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: <Widget>[
+                  Expanded(child: exportar),
+                  if (mostrarLimpiarFiltros) ...<Widget>[
+                    const SizedBox(width: 10),
+                    SizedBox.square(
+                      dimension: 56,
+                      child: limpiar,
+                    ),
+                  ],
+                ],
+              ),
+            ],
+          );
+        }
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Expanded(flex: 2, child: buscar),
+            const SizedBox(width: 12),
+            Expanded(child: selectorRuta),
+            const SizedBox(width: 12),
+            exportar,
+            if (mostrarLimpiarFiltros) ...<Widget>[
+              const SizedBox(width: 8),
+              limpiar,
+            ],
+          ],
+        );
       },
     );
   }
@@ -7341,37 +7502,44 @@ class _EstadoContador extends StatelessWidget {
       button: true,
       selected: selected,
       label: 'Filtrar $label',
-      child: ClaySurface(
-        radius: 14,
-        padding: EdgeInsets.zero,
-        color: color.withValues(alpha: selected ? 0.18 : 0.08),
-        borderColor: color.withValues(alpha: selected ? 0.48 : 0.22),
-        child: Material(
-          type: MaterialType.transparency,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(14),
-            onTap: onTap,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Icon(
-                    selected
-                        ? Icons.radio_button_checked_rounded
-                        : Icons.circle,
-                    size: selected ? 16 : 10,
-                    color: color,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    '$label: $value',
-                    style: TextStyle(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          minWidth: MediaQuery.sizeOf(context).width < 560 ? 132 : 0,
+        ),
+        child: ClaySurface(
+          radius: 14,
+          padding: EdgeInsets.zero,
+          color: color.withValues(alpha: selected ? 0.18 : 0.08),
+          borderColor: color.withValues(alpha: selected ? 0.48 : 0.22),
+          child: Material(
+            type: MaterialType.transparency,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(14),
+              onTap: onTap,
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Icon(
+                      selected
+                          ? Icons.radio_button_checked_rounded
+                          : Icons.circle,
+                      size: selected ? 16 : 10,
                       color: color,
-                      fontWeight: selected ? FontWeight.w900 : FontWeight.w800,
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 8),
+                    Text(
+                      '$label: $value',
+                      style: TextStyle(
+                        color: color,
+                        fontWeight:
+                            selected ? FontWeight.w900 : FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -7817,8 +7985,7 @@ class _TarjetaCreditoRegistro extends StatelessWidget {
               _DatoResumen(label: 'Cuota', value: _dinero(credito.valorCuota)),
               _DatoResumen(
                 label: 'Cuotas',
-                value:
-                    '${credito.cuotasRestantes} / ${credito.numeroCuotas}',
+                value: '${credito.cuotasRestantes} / ${credito.numeroCuotas}',
               ),
               _DatoResumen(
                 label: 'Inicio',
@@ -8730,7 +8897,8 @@ class _SelectorClienteCredito extends StatefulWidget {
   final ValueChanged<String?> onChanged;
 
   @override
-  State<_SelectorClienteCredito> createState() => _SelectorClienteCreditoState();
+  State<_SelectorClienteCredito> createState() =>
+      _SelectorClienteCreditoState();
 }
 
 class _SelectorClienteCreditoState extends State<_SelectorClienteCredito> {

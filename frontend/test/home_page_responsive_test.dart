@@ -257,6 +257,62 @@ void main() {
   );
 
   testWidgets(
+    'acomoda filtros de ruta en una fila compacta en movil',
+    (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(500, 844);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+
+      final ApiClient apiClient = ApiClient(
+        baseUrl: 'https://cobro.test/api/v1',
+        client: MockClient(_responderApiPagosPrecisos),
+      );
+      addTearDown(apiClient.close);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: CobroAppTheme.light(),
+          home: HomePage(
+            apiBaseUrl: 'https://cobro.test/api/v1',
+            apiClient: apiClient,
+            themeMode: ThemeMode.light,
+            onThemeModeChanged: (_) {},
+          ),
+        ),
+      );
+
+      await tester.enterText(find.byType(TextField).at(0), 'admin');
+      await tester.enterText(find.byType(TextField).at(1), 'Admin12345!');
+      await tester.tap(find.text('Entrar'));
+      await tester.pumpAndSettle(const Duration(seconds: 2));
+      tester.takeException();
+
+      await tester.tap(find.text('Ruta'));
+      await tester.pumpAndSettle(const Duration(milliseconds: 500));
+
+      final Finder busquedaRuta = find.byWidgetPredicate(
+        (Widget widget) =>
+            widget is TextField &&
+            widget.decoration?.labelText == 'Buscar cliente, cedula o negocio',
+      );
+      await tester.enterText(busquedaRuta, 'Cliente');
+      await tester.pumpAndSettle(const Duration(milliseconds: 300));
+
+      final Finder exportar = find.widgetWithText(OutlinedButton, 'Exportar');
+      final Finder limpiar = find.byTooltip('Limpiar filtros');
+
+      expect(exportar, findsOneWidget);
+      expect(limpiar, findsOneWidget);
+      expect(
+        (tester.getTopLeft(exportar).dy - tester.getTopLeft(limpiar).dy).abs(),
+        lessThan(1),
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
     'muestra visor interno al exportar Excel de ruta',
     (WidgetTester tester) async {
       tester.view.devicePixelRatio = 1;

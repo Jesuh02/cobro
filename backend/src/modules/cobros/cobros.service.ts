@@ -2919,6 +2919,14 @@ export class CobrosService {
     const fechaHasta = query.fechaHasta
       ? this.finDia(this.parsearFecha(query.fechaHasta, 'fechaHasta'))
       : null;
+    const fechaDesdeColombia = query.fechaDesde
+      ? this.inicioDiaColombia(
+          this.parsearFecha(query.fechaDesde, 'fechaDesde'),
+        )
+      : null;
+    const fechaHastaColombia = query.fechaHasta
+      ? this.finDiaColombia(this.parsearFecha(query.fechaHasta, 'fechaHasta'))
+      : null;
     const tipo = query.tipo ?? 'todos';
     const where: Prisma.CajaMenorMovimientoWhereInput = {
       cajaMenorId: query.cajaMenorId,
@@ -3013,8 +3021,8 @@ export class CobrosService {
 
     if (fechaDesde || fechaHasta) {
       pagoWhere.fechaPago = {
-        ...(fechaDesde ? { gte: fechaDesde } : {}),
-        ...(fechaHasta ? { lte: fechaHasta } : {}),
+        ...(fechaDesdeColombia ? { gte: fechaDesdeColombia } : {}),
+        ...(fechaHastaColombia ? { lte: fechaHastaColombia } : {}),
       };
     }
 
@@ -3169,7 +3177,7 @@ export class CobrosService {
             telefono: auditoria.telefono,
           })
         : null,
-      fechaMovimiento: this.fechaIso(auditoria.creado_en),
+      fechaMovimiento: this.fechaIsoColombia(auditoria.creado_en),
       monto: 0,
       montoConNaturaleza: 0,
       motivo: auditoria.descripcion,
@@ -3197,7 +3205,7 @@ export class CobrosService {
           naturaleza: tipoRecaudo?.naturaleza ?? 'E',
         },
         usuario: pago.cobrador ? this.formatearUsuario(pago.cobrador) : null,
-        fechaMovimiento: this.fechaIso(pago.fechaPago),
+        fechaMovimiento: this.fechaIsoColombia(pago.fechaPago),
         monto,
         montoConNaturaleza: monto,
         motivo: `Pago del usuario ${pago.cliente.nombreCompleto}`,
@@ -3207,7 +3215,11 @@ export class CobrosService {
       };
     });
 
-    const rows = [...movimientosCaja, ...movimientosPago, ...movimientosAuditoria]
+    const rows = [
+      ...movimientosCaja,
+      ...movimientosPago,
+      ...movimientosAuditoria,
+    ]
       .filter((movimiento) => {
         const naturaleza = movimiento.tipoMovimiento.naturaleza.toUpperCase();
         const fechaMovimiento = new Date(movimiento.fechaMovimiento);
@@ -3749,6 +3761,14 @@ export class CobrosService {
     const fechaHasta = query.fechaHasta
       ? this.finDia(this.parsearFecha(query.fechaHasta, 'fechaHasta'))
       : null;
+    const fechaDesdePago = query.fechaDesde
+      ? this.inicioDiaColombia(
+          this.parsearFecha(query.fechaDesde, 'fechaDesde'),
+        )
+      : null;
+    const fechaHastaPago = query.fechaHasta
+      ? this.finDiaColombia(this.parsearFecha(query.fechaHasta, 'fechaHasta'))
+      : null;
     const condiciones: Prisma.Sql[] = [Prisma.sql`cm.activa = TRUE`];
     const filtrosFechaMovimiento: Prisma.Sql[] = [];
     const filtrosFechaPago: Prisma.Sql[] = [];
@@ -3776,22 +3796,28 @@ export class CobrosService {
       filtrosFechaMovimiento.push(
         Prisma.sql`cmm.fecha_movimiento >= ${fechaDesde}`,
       );
-      filtrosFechaPago.push(Prisma.sql`p.fecha_pago >= ${fechaDesde}`);
       filtrosFechaGasto.push(Prisma.sql`g.fecha_gasto >= ${fechaDesde}`);
       filtrosFechaCredito.push(
-        Prisma.sql`cd.fecha_desembolso >= ${fechaDesde}`,
+        Prisma.sql`c.fecha_inicio >= ${fechaDesde}`,
       );
+    }
+
+    if (fechaDesdePago) {
+      filtrosFechaPago.push(Prisma.sql`p.fecha_pago >= ${fechaDesdePago}`);
     }
 
     if (fechaHasta) {
       filtrosFechaMovimiento.push(
         Prisma.sql`cmm.fecha_movimiento <= ${fechaHasta}`,
       );
-      filtrosFechaPago.push(Prisma.sql`p.fecha_pago <= ${fechaHasta}`);
       filtrosFechaGasto.push(Prisma.sql`g.fecha_gasto <= ${fechaHasta}`);
       filtrosFechaCredito.push(
-        Prisma.sql`cd.fecha_desembolso <= ${fechaHasta}`,
+        Prisma.sql`c.fecha_inicio <= ${fechaHasta}`,
       );
+    }
+
+    if (fechaHastaPago) {
+      filtrosFechaPago.push(Prisma.sql`p.fecha_pago <= ${fechaHastaPago}`);
     }
 
     const where = Prisma.sql`WHERE ${Prisma.join(condiciones, ' AND ')}`;
@@ -3799,6 +3825,9 @@ export class CobrosService {
       filtrosFechaMovimiento.length > 0
         ? Prisma.sql`AND ${Prisma.join(filtrosFechaMovimiento, ' AND ')}`
         : Prisma.empty;
+    const fechaSaldoCajaWhere = fechaDesde
+      ? Prisma.sql`AND cmm.fecha_movimiento < ${fechaDesde}`
+      : Prisma.empty;
     const fechaPagoWhere =
       filtrosFechaPago.length > 0
         ? Prisma.sql`AND ${Prisma.join(filtrosFechaPago, ' AND ')}`
@@ -3811,6 +3840,9 @@ export class CobrosService {
       filtrosFechaCredito.length > 0
         ? Prisma.sql`AND ${Prisma.join(filtrosFechaCredito, ' AND ')}`
         : Prisma.empty;
+    const condicionMostrarCreditos = query.cajaMenorId
+      ? Prisma.sql`TRUE`
+      : Prisma.sql`cr.caja_menor_id = cm.caja_menor_id`;
 
     const rows = await this.prisma.$queryRaw<PresupuestoRow[]>(Prisma.sql`
       WITH caja_recaudo AS (
@@ -3843,14 +3875,27 @@ export class CobrosService {
           COALESCE(gastos.total_gastos, 0)
           + COALESCE(gastos_caja.total_gastos_caja, 0)
         ) AS gastos,
-        COALESCE(desembolsos.total_creditos, 0) AS creditos,
+        CASE
+          WHEN ${condicionMostrarCreditos} THEN COALESCE(creditos.total_creditos, 0)
+          ELSE 0
+        END AS creditos,
         (
           COALESCE(saldo_caja.saldo_caja_menor, 0)
-          + CASE
+          + (
+            CASE
               WHEN cr.caja_menor_id = cm.caja_menor_id THEN COALESCE(pagos.total_recaudado, 0)
               ELSE 0
             END
-          - COALESCE(gastos.total_gastos, 0)
+            + COALESCE(entradas_caja.total_entradas, 0)
+          )
+          - CASE
+              WHEN ${condicionMostrarCreditos} THEN COALESCE(creditos.total_creditos, 0)
+              ELSE 0
+            END
+          - (
+            COALESCE(gastos.total_gastos, 0)
+            + COALESCE(gastos_caja.total_gastos_caja, 0)
+          )
         ) AS presupuesto
       FROM public.caja_menor cm
       LEFT JOIN caja_recaudo cr
@@ -3869,7 +3914,7 @@ export class CobrosService {
         JOIN public.tipo_movimiento_caja tmc
           ON tmc.tipo_movimiento_caja_id = cmm.tipo_movimiento_caja_id
         WHERE cmm.caja_menor_id = cm.caja_menor_id
-        ${fechaMovimientoWhere}
+          ${fechaSaldoCajaWhere}
       ) saldo_caja ON TRUE
       LEFT JOIN LATERAL (
         SELECT SUM(p.total_pagado) AS total_recaudado
@@ -3912,17 +3957,16 @@ export class CobrosService {
           ${fechaMovimientoWhere}
       ) gastos_caja ON TRUE
       LEFT JOIN LATERAL (
-        SELECT SUM(cd.monto) AS total_creditos
-        FROM public.credito_desembolso cd
-        JOIN public.caja_menor_movimiento cmm
-          ON cmm.caja_menor_movimiento_id = cd.caja_menor_movimiento_id
-        JOIN public.credito c ON c.credito_id = cd.credito_id
+        SELECT SUM(c.valor_principal) AS total_creditos
+        FROM public.credito c
         JOIN public.ruta r ON r.ruta_id = c.ruta_id
+        JOIN public.estado_credito ec
+          ON ec.estado_credito_id = c.estado_credito_id
         WHERE r.responsable_usuario_id = cm.responsable_usuario_id
           AND c.moneda_codigo = cm.moneda_codigo
-          AND cmm.caja_menor_id = cm.caja_menor_id
+          AND ec.codigo <> 'ANULADO'
           ${fechaCreditoWhere}
-      ) desembolsos ON TRUE
+      ) creditos ON TRUE
       ${where}
       ORDER BY cm.activa DESC, cm.nombre ASC, cm.caja_menor_id ASC
     `);
@@ -4582,12 +4626,14 @@ export class CobrosService {
     }
 
     if (query.fechaDesde) {
-      const fechaDesde = this.parsearFecha(query.fechaDesde, 'fechaDesde');
+      const fechaDesde = this.inicioDiaColombia(
+        this.parsearFecha(query.fechaDesde, 'fechaDesde'),
+      );
       conditions.push(Prisma.sql`fecha_movimiento >= ${fechaDesde}`);
     }
 
     if (query.fechaHasta) {
-      const fechaHasta = this.finDia(
+      const fechaHasta = this.finDiaColombia(
         this.parsearFecha(query.fechaHasta, 'fechaHasta'),
       );
       conditions.push(Prisma.sql`fecha_movimiento <= ${fechaHasta}`);
@@ -4734,7 +4780,7 @@ export class CobrosService {
           correo: movimiento.correo,
           telefono: movimiento.telefono,
         }),
-        fechaMovimiento: this.fechaIso(movimiento.fecha_movimiento),
+        fechaMovimiento: this.fechaIsoColombia(movimiento.fecha_movimiento),
         monto,
         montoConNaturaleza: movimiento.naturaleza === 'S' ? -monto : monto,
         motivo: movimiento.motivo,
@@ -4756,11 +4802,18 @@ export class CobrosService {
     const fechaHasta = query.fechaHasta
       ? this.finDia(this.parsearFecha(query.fechaHasta, 'fechaHasta'))
       : null;
+    const fechaDesdeColombia = query.fechaDesde
+      ? this.inicioDiaColombia(
+          this.parsearFecha(query.fechaDesde, 'fechaDesde'),
+        )
+      : null;
+    const fechaHastaColombia = query.fechaHasta
+      ? this.finDiaColombia(this.parsearFecha(query.fechaHasta, 'fechaHasta'))
+      : null;
     const condicionesCajas: Prisma.Sql[] = [
       Prisma.sql`c.caj_tipo::text = 'MENOR'`,
       Prisma.sql`c.caj_activa`,
     ];
-    const filtrosFechaMovimientos: Prisma.Sql[] = [];
     const filtrosFechaPagos: Prisma.Sql[] = [];
     const filtrosFechaGastos: Prisma.Sql[] = [];
     const filtrosFechaCreditos: Prisma.Sql[] = [];
@@ -4774,24 +4827,31 @@ export class CobrosService {
       condicionesCajas.push(Prisma.sql`c.caj_nombre ILIKE ${pattern}`);
     }
 
+    if (fechaDesdeColombia) {
+      filtrosFechaPagos.push(Prisma.sql`pa.pag_fecha >= ${fechaDesdeColombia}`);
+      filtrosFechaGastos.push(Prisma.sql`g.gas_fecha >= ${fechaDesdeColombia}`);
+    }
+
     if (fechaDesde) {
-      filtrosFechaMovimientos.push(Prisma.sql`m.mca_creacion >= ${fechaDesde}`);
-      filtrosFechaPagos.push(Prisma.sql`pa.pag_fecha >= ${fechaDesde}`);
-      filtrosFechaGastos.push(Prisma.sql`g.gas_fecha >= ${fechaDesde}`);
-      filtrosFechaCreditos.push(Prisma.sql`cr.cre_fecha_inicio >= ${fechaDesde}`);
+      filtrosFechaCreditos.push(
+        Prisma.sql`cr.cre_fecha_inicio >= ${fechaDesde}`,
+      );
+    }
+
+    if (fechaHastaColombia) {
+      filtrosFechaPagos.push(Prisma.sql`pa.pag_fecha <= ${fechaHastaColombia}`);
+      filtrosFechaGastos.push(Prisma.sql`g.gas_fecha <= ${fechaHastaColombia}`);
     }
 
     if (fechaHasta) {
-      filtrosFechaMovimientos.push(Prisma.sql`m.mca_creacion <= ${fechaHasta}`);
-      filtrosFechaPagos.push(Prisma.sql`pa.pag_fecha <= ${fechaHasta}`);
-      filtrosFechaGastos.push(Prisma.sql`g.gas_fecha <= ${fechaHasta}`);
-      filtrosFechaCreditos.push(Prisma.sql`cr.cre_fecha_inicio <= ${fechaHasta}`);
+      filtrosFechaCreditos.push(
+        Prisma.sql`cr.cre_fecha_inicio <= ${fechaHasta}`,
+      );
     }
 
-    const fechaMovimientosWhere =
-      filtrosFechaMovimientos.length > 0
-        ? Prisma.sql`AND ${Prisma.join(filtrosFechaMovimientos, ' AND ')}`
-        : Prisma.empty;
+    const fechaSaldoMovimientosWhere = fechaDesde
+      ? Prisma.sql`AND m.mca_creacion < ${fechaDesdeColombia}`
+      : Prisma.empty;
     const fechaPagosWhere =
       filtrosFechaPagos.length > 0
         ? Prisma.sql`AND ${Prisma.join(filtrosFechaPagos, ' AND ')}`
@@ -4852,7 +4912,7 @@ export class CobrosService {
         LEFT JOIN public.tbl_sesiones_cajas sc ON sc.caj_id = c.id_caj
         LEFT JOIN public.tbl_movimientos_cajas m
           ON m.sca_id = sc.id_sca
-          ${fechaMovimientosWhere}
+          ${fechaSaldoMovimientosWhere}
         LEFT JOIN LATERAL (
           SELECT SUM(pa.pag_monto) AS recaudado
           FROM public.tbl_pagos pa
@@ -4896,7 +4956,7 @@ export class CobrosService {
         recaudado,
         gastos,
         creditos,
-        caja_menor + recaudado - gastos - creditos AS presupuesto
+        caja_menor + recaudado - creditos - gastos AS presupuesto
       FROM resumen
       ORDER BY moneda_codigo ASC, caja_menor_id ASC
     `);
@@ -6868,6 +6928,20 @@ export class CobrosService {
       );
     }
 
+    if (query.fechaDesde) {
+      const fechaDesde = this.inicioDiaColombia(
+        this.parsearFecha(query.fechaDesde, 'fechaDesde'),
+      );
+      condiciones.push(Prisma.sql`a.creado_en >= ${fechaDesde}`);
+    }
+
+    if (query.fechaHasta) {
+      const fechaHasta = this.finDiaColombia(
+        this.parsearFecha(query.fechaHasta, 'fechaHasta'),
+      );
+      condiciones.push(Prisma.sql`a.creado_en <= ${fechaHasta}`);
+    }
+
     if (search) {
       const patron = `%${search}%`;
       condiciones.push(Prisma.sql`(
@@ -7261,6 +7335,19 @@ export class CobrosService {
     return next;
   }
 
+  private inicioDiaColombia(value: Date) {
+    const next = this.fechaUtc(value);
+    next.setUTCHours(5, 0, 0, 0);
+    return next;
+  }
+
+  private finDiaColombia(value: Date) {
+    const next = this.inicioDiaColombia(value);
+    next.setUTCDate(next.getUTCDate() + 1);
+    next.setUTCMilliseconds(next.getUTCMilliseconds() - 1);
+    return next;
+  }
+
   private sumarDias(value: Date, days: number) {
     const next = this.fechaUtc(value);
     next.setUTCDate(next.getUTCDate() + days);
@@ -7273,6 +7360,12 @@ export class CobrosService {
 
   private fechaIso(value: Date) {
     return this.fechaUtc(value).toISOString().slice(0, 10);
+  }
+
+  private fechaIsoColombia(value: Date) {
+    return new Date(value.getTime() - 5 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
   }
 
   private decimal(value: number, decimales = 2) {

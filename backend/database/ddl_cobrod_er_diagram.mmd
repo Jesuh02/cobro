@@ -1,4 +1,15 @@
 erDiagram
+  PRISMA_MIGRATIONS {
+    VARCHAR id PK
+    VARCHAR checksum
+    TIMESTAMPTZ finished_at
+    VARCHAR migration_name
+    TEXT logs
+    TIMESTAMPTZ rolled_back_at
+    TIMESTAMPTZ started_at
+    INTEGER applied_steps_count
+  }
+
   TBL_PERSONAS {
     BIGINT id_per PK
     VARCHAR per_primer_nombre
@@ -104,6 +115,7 @@ erDiagram
     BIGINT usu_id FK
     BIGINT pcr_id FK
     BIGINT cli_id FK
+    BIGINT mon_id FK
   }
 
   TBL_CUOTAS {
@@ -138,6 +150,7 @@ erDiagram
     ENUM pag_estado
     BIGINT med_id FK
     BIGINT cre_id FK
+    BIGINT mon_id FK
   }
 
   TBL_CUOTAS_PAGOS {
@@ -156,6 +169,16 @@ erDiagram
     VARCHAR cga_descripcion
   }
 
+  TBL_MONEDAS {
+    BIGINT id_mon PK
+    CHAR mon_codigo UK
+    VARCHAR mon_nombre
+    VARCHAR mon_simbolo
+    BIGINT mon_decimales
+    BOOLEAN mon_activa
+    TIMESTAMPTZ mon_creacion
+  }
+
   TBL_CAJAS {
     BIGINT id_caj PK
     VARCHAR caj_nombre UK
@@ -163,6 +186,7 @@ erDiagram
     BOOLEAN caj_activa
     TIMESTAMPTZ caj_creacion
     BIGINT org_id FK
+    BIGINT mon_id FK
     BIGINT gas_id FK
   }
 
@@ -215,6 +239,10 @@ erDiagram
   TBL_ORGANIZACIONES ||--o{ TBL_CAJAS : org_id
   TBL_ORGANIZACIONES ||--o{ TBL_MEDIOS_PAGOS : org_id
   TBL_ORGANIZACIONES ||--o{ TBL_MOVIMIENTOS_CAJAS : org_id
+
+  TBL_MONEDAS ||--o{ TBL_CAJAS : mon_id
+  TBL_MONEDAS ||--o{ TBL_CREDITOS : mon_id
+  TBL_MONEDAS ||--o{ TBL_PAGOS : mon_id
 
   TBL_USUARIOS ||--o{ TBL_RUTAS : usu_id
   TBL_USUARIOS ||--o{ TBL_CREDITOS : usu_id

@@ -48,7 +48,7 @@ backend/prisma/migrations/20260817000000_init/migration.sql
 La vista `cobros.vista_presupuesto_actual` calcula:
 
 ```text
-PRESUPUESTO = CAJA MENOR + RECAUDADO - GASTOS - CREDITOS
+PRESUPUESTO = CAJA MENOR + RECAUDADO - CREDITOS - GASTOS
 ```
 
 ## Backend

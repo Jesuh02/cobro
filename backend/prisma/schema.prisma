@@ -182,15 +182,17 @@ model Usuario {
   creadoEn        DateTime @default(now()) @map("creado_en") @db.Timestamptz(6)
   actualizadoEn   DateTime @default(now()) @map("actualizado_en") @db.Timestamptz(6)
 
-  estadoUsuario        EstadoUsuario         @relation(fields: [estadoUsuarioId], references: [estadoUsuarioId])
+  estadoUsuario        EstadoUsuario                  @relation(fields: [estadoUsuarioId], references: [estadoUsuarioId])
   roles                UsuarioRol[]
-  clientesCreados      Cliente[]             @relation("ClienteCreadoPor")
-  rutas                Ruta[]                @relation("RutaResponsable")
-  creditosCreados      Credito[]             @relation("CreditoCreadoPor")
-  cajasMenores         CajaMenor[]           @relation("CajaMenorResponsable")
+  clientesCreados      Cliente[]                      @relation("ClienteCreadoPor")
+  rutas                Ruta[]                         @relation("RutaResponsable")
+  creditosCreados      Credito[]                      @relation("CreditoCreadoPor")
+  cajasMenores         CajaMenor[]                    @relation("CajaMenorResponsable")
   movimientosCajaMenor CajaMenorMovimiento[]
-  gastosRegistrados    Gasto[]               @relation("GastoRegistradoPor")
-  pagosComoCobrador    Pago[]                @relation("PagoCobrador")
+  auditoriasCajaMenor  CajaMenorMovimientoAuditoria[] @relation("CajaMenorMovimientoAuditoriaUsuario")
+  auditorias           Auditoria[]                    @relation("AuditoriaUsuario")
+  gastosRegistrados    Gasto[]                        @relation("GastoRegistradoPor")
+  pagosComoCobrador    Pago[]                         @relation("PagoCobrador")
   presupuestosPeriodo  PresupuestoPeriodo[]
 
   @@map("usuario")
@@ -326,21 +328,24 @@ model RutaCliente {
 }
 
 model Credito {
-  creditoId          String   @id @default(dbgenerated("gen_random_uuid()")) @map("credito_id") @db.Uuid
-  clienteId          String   @map("cliente_id") @db.Uuid
-  rutaId             String   @map("ruta_id") @db.Uuid
-  monedaCodigo       String   @map("moneda_codigo") @db.Char(3)
-  frecuenciaPagoId   Int      @map("frecuencia_pago_id") @db.SmallInt
-  estadoCreditoId    Int      @map("estado_credito_id") @db.SmallInt
-  creadoPorUsuarioId String?  @map("creado_por_usuario_id") @db.Uuid
-  fechaInicio        DateTime @map("fecha_inicio") @db.Date
-  valorPrincipal     Decimal  @map("valor_principal") @db.Decimal(14, 2)
-  porcentajeInteres  Decimal  @map("porcentaje_interes") @db.Decimal(7, 4)
-  plazoDias          Int      @map("plazo_dias")
-  omitirDomingos     Boolean  @default(true) @map("omitir_domingos")
-  observacion        String?
-  creadoEn           DateTime @default(now()) @map("creado_en") @db.Timestamptz(6)
-  actualizadoEn      DateTime @default(now()) @map("actualizado_en") @db.Timestamptz(6)
+  creditoId                  String    @id @default(dbgenerated("gen_random_uuid()")) @map("credito_id") @db.Uuid
+  clienteId                  String    @map("cliente_id") @db.Uuid
+  rutaId                     String    @map("ruta_id") @db.Uuid
+  monedaCodigo               String    @map("moneda_codigo") @db.Char(3)
+  frecuenciaPagoId           Int       @map("frecuencia_pago_id") @db.SmallInt
+  estadoCreditoId            Int       @map("estado_credito_id") @db.SmallInt
+  creadoPorUsuarioId         String?   @map("creado_por_usuario_id") @db.Uuid
+  fechaInicio                DateTime  @map("fecha_inicio") @db.Date
+  valorPrincipal             Decimal   @map("valor_principal") @db.Decimal(14, 2)
+  porcentajeInteres          Decimal   @map("porcentaje_interes") @db.Decimal(7, 4)
+  plazoDias                  Int       @map("plazo_dias")
+  omitirDomingos             Boolean   @default(true) @map("omitir_domingos")
+  observacion                String?
+  refinanciadoEn             DateTime? @map("refinanciado_en") @db.Timestamptz(6)
+  valorPrincipalAnterior     Decimal?  @map("valor_principal_anterior") @db.Decimal(14, 2)
+  valorPrincipalRefinanciado Decimal?  @map("valor_principal_refinanciado") @db.Decimal(14, 2)
+  creadoEn                   DateTime  @default(now()) @map("creado_en") @db.Timestamptz(6)
+  actualizadoEn              DateTime  @default(now()) @map("actualizado_en") @db.Timestamptz(6)
 
   cliente        Cliente            @relation(fields: [clienteId], references: [clienteId], onDelete: Restrict)
   ruta           Ruta               @relation(fields: [rutaId], references: [rutaId], onDelete: Restrict)
@@ -395,17 +400,20 @@ model CreditoCuota {
 }
 
 model CajaMenor {
-  cajaMenorId          String   @id @default(dbgenerated("gen_random_uuid()")) @map("caja_menor_id") @db.Uuid
-  responsableUsuarioId String   @map("responsable_usuario_id") @db.Uuid
-  monedaCodigo         String   @map("moneda_codigo") @db.Char(3)
-  nombre               String   @db.VarChar(120)
-  activa               Boolean  @default(true)
-  creadaEn             DateTime @default(now()) @map("creada_en") @db.Timestamptz(6)
-  actualizadoEn        DateTime @default(now()) @map("actualizado_en") @db.Timestamptz(6)
+  cajaMenorId          String    @id @default(dbgenerated("gen_random_uuid()")) @map("caja_menor_id") @db.Uuid
+  responsableUsuarioId String    @map("responsable_usuario_id") @db.Uuid
+  monedaCodigo         String    @map("moneda_codigo") @db.Char(3)
+  nombre               String    @db.VarChar(120)
+  activa               Boolean   @default(true)
+  fechaApertura        DateTime  @default(now()) @map("fecha_apertura") @db.Timestamptz(6)
+  fechaCierre          DateTime? @map("fecha_cierre") @db.Timestamptz(6)
+  creadaEn             DateTime  @default(now()) @map("creada_en") @db.Timestamptz(6)
+  actualizadoEn        DateTime  @default(now()) @map("actualizado_en") @db.Timestamptz(6)
 
-  responsable Usuario               @relation("CajaMenorResponsable", fields: [responsableUsuarioId], references: [usuarioId])
-  moneda      Moneda                @relation(fields: [monedaCodigo], references: [codigoMoneda])
+  responsable Usuario                        @relation("CajaMenorResponsable", fields: [responsableUsuarioId], references: [usuarioId])
+  moneda      Moneda                         @relation(fields: [monedaCodigo], references: [codigoMoneda])
   movimientos CajaMenorMovimiento[]
+  auditorias  CajaMenorMovimientoAuditoria[]
   gastos      Gasto[]
 
   @@unique([responsableUsuarioId, nombre])
@@ -432,6 +440,43 @@ model CajaMenorMovimiento {
 
   @@index([cajaMenorId, fechaMovimiento], map: "ix_caja_menor_movimiento_fecha")
   @@map("caja_menor_movimiento")
+  @@schema("public")
+}
+
+model CajaMenorMovimientoAuditoria {
+  cajaMenorMovimientoAuditoriaId String   @id @default(dbgenerated("gen_random_uuid()")) @map("caja_menor_movimiento_auditoria_id") @db.Uuid
+  cajaMenorId                    String   @map("caja_menor_id") @db.Uuid
+  cajaMenorMovimientoId          String?  @map("caja_menor_movimiento_id") @db.Uuid
+  usuarioId                      String?  @map("usuario_id") @db.Uuid
+  accion                         String   @db.VarChar(20)
+  detalle                        String
+  creadoEn                       DateTime @default(now()) @map("creado_en") @db.Timestamptz(6)
+
+  cajaMenor CajaMenor @relation(fields: [cajaMenorId], references: [cajaMenorId])
+  usuario   Usuario?  @relation("CajaMenorMovimientoAuditoriaUsuario", fields: [usuarioId], references: [usuarioId])
+
+  @@index([cajaMenorId, creadoEn], map: "ix_caja_menor_movimiento_auditoria_fecha")
+  @@map("caja_menor_movimiento_auditoria")
+  @@schema("public")
+}
+
+model Auditoria {
+  auditoriaId       String   @id @default(dbgenerated("gen_random_uuid()")) @map("auditoria_id") @db.Uuid
+  usuarioId         String?  @map("usuario_id") @db.Uuid
+  tabla             String   @db.VarChar(80)
+  registroId        String?  @map("registro_id") @db.VarChar(120)
+  accion            String   @db.VarChar(40)
+  descripcion       String
+  valoresAnteriores Json?    @map("valores_anteriores")
+  valoresNuevos     Json?    @map("valores_nuevos")
+  metadata          Json?
+  creadoEn          DateTime @default(now()) @map("creado_en") @db.Timestamptz(6)
+
+  usuario Usuario? @relation("AuditoriaUsuario", fields: [usuarioId], references: [usuarioId])
+
+  @@index([tabla, registroId, creadoEn], map: "ix_auditoria_registro_fecha")
+  @@index([usuarioId, creadoEn], map: "ix_auditoria_usuario_fecha")
+  @@map("auditoria")
   @@schema("public")
 }
 
@@ -528,5 +573,353 @@ model PresupuestoPeriodo {
 
   @@unique([usuarioId, monedaCodigo, fechaInicio, fechaFin])
   @@map("presupuesto_periodo")
+  @@schema("public")
+}
+
+model TblPersona {
+  idPer        BigInt   @id @default(autoincrement()) @map("id_per")
+  primerNombre String   @map("per_primer_nombre")
+  apellido     String   @map("per_apellido")
+  documento    String   @unique @map("per_documento")
+  direccion    String?  @map("per_direccion")
+  celular      String?  @map("per_num_celular")
+  creacion     DateTime @default(now()) @map("per_creacion") @db.Timestamptz(6)
+
+  usuario  TblUsuario?
+  clientes TblCliente[] @relation("TblClientePersona")
+
+  @@map("tbl_personas")
+  @@schema("public")
+}
+
+model TblUsuario {
+  idUsu     BigInt   @id @default(autoincrement()) @map("id_usu")
+  usuario   String   @unique @map("usu_usuario")
+  password  String   @map("usu_password")
+  creacion  DateTime @default(now()) @map("usu_creacion") @db.Timestamptz(6)
+  email     String   @map("usu_email")
+  activo    Boolean  @default(true) @map("usu_activo")
+  personaId BigInt   @unique @map("persona_id")
+
+  persona         TblPersona               @relation(fields: [personaId], references: [idPer])
+  organizaciones  TblUsuarioOrganizacion[]
+  rutas           TblRuta[]
+  gastos          TblGasto[]
+  sesionesCajas   TblSesionCaja[]
+  movimientosCaja TblMovimientoCaja[]
+  creditos        TblCredito[]
+
+  @@map("tbl_usuarios")
+  @@schema("public")
+}
+
+model TblRol {
+  idRol    BigInt   @id @default(autoincrement()) @map("id_rol")
+  tipo     String   @unique @map("rol_tip")
+  nivel    BigInt   @map("rol_nivel")
+  creacion DateTime @default(now()) @map("rol_creacion") @db.Timestamptz(6)
+
+  recursos       TblRolRecurso[]
+  organizaciones TblUsuarioOrganizacion[]
+
+  @@map("tbl_roles")
+  @@schema("public")
+}
+
+model TblRecurso {
+  idRec     BigInt  @id @default(autoincrement()) @map("id_rec")
+  nombre    String  @map("nom")
+  icono     String? @map("rec_icono")
+  orden     BigInt  @default(0) @map("rec_orden")
+  interface String  @default("WEB") @map("rec_interface")
+
+  roles TblRolRecurso[]
+
+  @@map("tbl_recursos")
+  @@schema("public")
+}
+
+model TblRolRecurso {
+  idRor BigInt @id @default(autoincrement()) @map("id_ror")
+  recId BigInt @map("rec_id")
+  rolId BigInt @map("rol_id")
+
+  recurso TblRecurso @relation(fields: [recId], references: [idRec])
+  rol     TblRol     @relation(fields: [rolId], references: [idRol])
+
+  @@map("tbl_roles_recursos")
+  @@schema("public")
+}
+
+model TblOrganizacion {
+  idOrg    BigInt   @id @default(autoincrement()) @map("id_org")
+  nombre   String   @unique @map("org_nombre")
+  telefono String?  @map("org_telefono")
+  email    String?  @map("org_email")
+  activo   Boolean  @default(true) @map("org_activo")
+  creacion DateTime @default(now()) @map("org_creacion") @db.Timestamptz(6)
+
+  usuarios         TblUsuarioOrganizacion[]
+  clientes         TblCliente[]
+  rutas            TblRuta[]
+  productosCredito TblProductoCredito[]
+  cajas            TblCaja[]
+  mediosPago       TblMedioPago[]
+  movimientosCaja  TblMovimientoCaja[]
+
+  @@map("tbl_organizaciones")
+  @@schema("public")
+}
+
+model TblUsuarioOrganizacion {
+  idUrg  BigInt  @id @default(autoincrement()) @map("id_urg")
+  activo Boolean @default(true) @map("urg_activo")
+  rolId  BigInt  @map("rol_id")
+  usuId  BigInt  @map("usu_id")
+  orgId  BigInt  @map("org_id")
+
+  rol          TblRol          @relation(fields: [rolId], references: [idRol])
+  usuario      TblUsuario      @relation(fields: [usuId], references: [idUsu])
+  organizacion TblOrganizacion @relation(fields: [orgId], references: [idOrg])
+
+  @@map("tbl_usuarios_organizaciones")
+  @@schema("public")
+}
+
+model TblCliente {
+  idCli      BigInt   @id @default(autoincrement()) @map("id_cli")
+  referencia String?  @map("cli_referencia")
+  activo     Boolean  @default(true) @map("cli_activo")
+  creacion   DateTime @default(now()) @map("cli_creacion") @db.Timestamptz(6)
+  orgId      BigInt   @map("org_id")
+  personaId  BigInt   @map("cli_persona")
+
+  organizacion TblOrganizacion  @relation(fields: [orgId], references: [idOrg])
+  persona      TblPersona       @relation("TblClientePersona", fields: [personaId], references: [idPer])
+  rutas        TblRutaCliente[]
+  creditos     TblCredito[]
+
+  @@map("tbl_clientes")
+  @@schema("public")
+}
+
+model TblRuta {
+  idRut       BigInt   @id @default(autoincrement()) @map("id_rut")
+  nombre      String   @map("rut_nombre")
+  descripcion String?  @map("rut_descripcion")
+  activa      Boolean  @default(true) @map("rut_activa")
+  creacion    DateTime @default(now()) @map("rut_creacion") @db.Timestamptz(6)
+  usuId       BigInt   @map("usu_id")
+  orgId       BigInt   @map("org_id")
+
+  usuario      TblUsuario       @relation(fields: [usuId], references: [idUsu])
+  organizacion TblOrganizacion  @relation(fields: [orgId], references: [idOrg])
+  clientes     TblRutaCliente[]
+
+  @@map("tbl_rutas")
+  @@schema("public")
+}
+
+model TblRutaCliente {
+  idRcl    BigInt   @id @default(autoincrement()) @map("id_rcl")
+  activo   Boolean  @default(true) @map("rcl_activo")
+  creacion DateTime @default(now()) @map("rcl_creacion") @db.Timestamptz(6)
+  rutId    BigInt   @map("rut_id")
+  cliId    BigInt   @map("cli_id")
+
+  ruta    TblRuta    @relation(fields: [rutId], references: [idRut])
+  cliente TblCliente @relation(fields: [cliId], references: [idCli])
+
+  @@map("tbl_rutas_clientes")
+  @@schema("public")
+}
+
+model TblProductoCredito {
+  idPcr       BigInt  @id @default(autoincrement()) @map("id_pcr")
+  nombre      String  @map("pcr_nombre")
+  frecuencia  String  @map("pcr_frecuencia")
+  tasaInteres Decimal @map("pcr_tasa_interes")
+  orgId       BigInt  @map("org_id")
+
+  organizacion TblOrganizacion @relation(fields: [orgId], references: [idOrg])
+  creditos     TblCredito[]
+
+  @@map("tbl_productos_creditos")
+  @@schema("public")
+}
+
+model TblCategoriaGasto {
+  idCga       BigInt  @id @default(autoincrement()) @map("id_cga")
+  nombre      String  @unique @map("cga_nombre")
+  descripcion String? @map("cga_descripcion")
+
+  gastos TblGasto[]
+
+  @@map("tbl_categorias_gastos")
+  @@schema("public")
+}
+
+model TblCaja {
+  idCaj    BigInt   @id @default(autoincrement()) @map("id_caj")
+  nombre   String   @map("caj_nombre")
+  tipo     String   @default("MENOR") @map("caj_tipo")
+  activa   Boolean  @default(true) @map("caj_activa")
+  creacion DateTime @default(now()) @map("caj_creacion") @db.Timestamptz(6)
+  orgId    BigInt   @map("org_id")
+  gasId    BigInt?  @map("gas_id")
+
+  organizacion TblOrganizacion @relation(fields: [orgId], references: [idOrg])
+  gasto        TblGasto?       @relation("TblCajaGasto", fields: [gasId], references: [idGas])
+  gastos       TblGasto[]      @relation("TblGastoCaja")
+  sesiones     TblSesionCaja[]
+
+  @@map("tbl_cajas")
+  @@schema("public")
+}
+
+model TblGasto {
+  idGas BigInt   @id @default(autoincrement()) @map("id_gas")
+  fecha DateTime @default(now()) @map("gas_fecha") @db.Timestamptz(6)
+  monto Decimal  @map("gas_monto")
+  cajId BigInt   @map("caj_id")
+  usuId BigInt   @map("usu_id")
+  cgaId BigInt   @map("cga_id")
+
+  caja      TblCaja           @relation("TblGastoCaja", fields: [cajId], references: [idCaj])
+  usuario   TblUsuario        @relation(fields: [usuId], references: [idUsu])
+  categoria TblCategoriaGasto @relation(fields: [cgaId], references: [idCga])
+  cajas     TblCaja[]         @relation("TblCajaGasto")
+
+  @@map("tbl_gastos")
+  @@schema("public")
+}
+
+model TblSesionCaja {
+  idSca         BigInt    @id @default(autoincrement()) @map("id_sca")
+  fechaApertura DateTime  @default(now()) @map("sca_fecha_apertura") @db.Timestamptz(6)
+  fechaCierre   DateTime? @map("sca_fecha_cierre") @db.Timestamptz(6)
+  montoInicial  Decimal   @default(0) @map("sca_monto_inicial")
+  totalCobrado  Decimal   @default(0) @map("sca_total_cobrado")
+  totalGasto    Decimal   @default(0) @map("sca_total_gasto")
+  estado        String    @default("ABIERTA") @map("sca_estado")
+  cajId         BigInt    @map("caj_id")
+  usuId         BigInt    @map("usu_id")
+
+  caja            TblCaja             @relation(fields: [cajId], references: [idCaj])
+  usuario         TblUsuario          @relation(fields: [usuId], references: [idUsu])
+  movimientosCaja TblMovimientoCaja[]
+
+  @@map("tbl_sesiones_cajas")
+  @@schema("public")
+}
+
+model TblMovimientoCaja {
+  idMca          BigInt   @id @default(autoincrement()) @map("id_mca")
+  tipo           String   @map("mca_tipo")
+  monto          Decimal  @map("mca_monto")
+  referenciaId   BigInt?  @map("mca_referencia_id")
+  referenciaTipo String?  @map("mca_referencia_tipo")
+  creacion       DateTime @default(now()) @map("mca_creacion") @db.Timestamptz(6)
+  orgId          BigInt   @map("org_id")
+  usuId          BigInt   @map("usu_id")
+  scaId          BigInt?  @map("sca_id")
+
+  organizacion TblOrganizacion @relation(fields: [orgId], references: [idOrg])
+  usuario      TblUsuario      @relation(fields: [usuId], references: [idUsu])
+  sesion       TblSesionCaja?  @relation(fields: [scaId], references: [idSca])
+
+  @@map("tbl_movimientos_cajas")
+  @@schema("public")
+}
+
+model TblCredito {
+  idCre        BigInt   @id @default(autoincrement()) @map("id_cre")
+  total        Decimal  @map("cre_total")
+  estado       String   @default("ACTIVO") @map("cre_estado")
+  tasaInteres  Decimal  @map("cre_tasa_interes")
+  interesTotal Decimal  @map("cre_interes_total")
+  totalPagar   Decimal  @map("cre_total_pagar")
+  fechaInicio  DateTime @map("cre_fecha_inicio") @db.Date
+  fechaFin     DateTime @map("cre_fecha_fin") @db.Date
+  usuId        BigInt   @map("usu_id")
+  pcrId        BigInt   @map("pcr_id")
+  cliId        BigInt   @map("cli_id")
+
+  usuario  TblUsuario         @relation(fields: [usuId], references: [idUsu])
+  producto TblProductoCredito @relation(fields: [pcrId], references: [idPcr])
+  cliente  TblCliente         @relation(fields: [cliId], references: [idCli])
+  cuotas   TblCuota[]
+  pagos    TblPago[]
+
+  @@map("tbl_creditos")
+  @@schema("public")
+}
+
+model TblCuota {
+  idCuo            BigInt   @id @default(autoincrement()) @map("id_cuo")
+  numero           BigInt   @map("cuo_numero")
+  valor            Decimal  @map("cuo_valor")
+  totalPagado      Decimal  @default(0) @map("cuo_total_pagado")
+  estado           String   @default("PENDIENTE") @map("cuo_estado")
+  fechaVencimiento DateTime @map("cuo_fecha_vencimiento") @db.Date
+  creId            BigInt   @map("cre_id")
+
+  credito TblCredito     @relation(fields: [creId], references: [idCre])
+  pagos   TblCuotaPago[]
+
+  @@map("tbl_cuotas")
+  @@schema("public")
+}
+
+model TblMedioPago {
+  idMed            BigInt   @id @default(autoincrement()) @map("id_med")
+  nombre           String   @map("med_nombre")
+  tipo             String   @map("med_tipo")
+  proveedor        String?  @map("med_proveedor")
+  referenciaCuenta String?  @map("med_referencia_cuenta")
+  titular          String?  @map("med_titular")
+  activo           Boolean  @default(true) @map("med_activo")
+  creacion         DateTime @default(now()) @map("med_creacion") @db.Timestamptz(6)
+  actualizacion    DateTime @default(now()) @map("med_actualizacion") @db.Timestamptz(6)
+  orgId            BigInt   @map("org_id")
+
+  organizacion TblOrganizacion @relation(fields: [orgId], references: [idOrg])
+  pagos        TblPago[]
+
+  @@map("tbl_medios_pagos")
+  @@schema("public")
+}
+
+model TblPago {
+  idPag            BigInt   @id @default(autoincrement()) @map("id_pag")
+  monto            Decimal  @map("pag_monto")
+  fecha            DateTime @default(now()) @map("pag_fecha") @db.Timestamptz(6)
+  referencia       String?  @map("pag_referencia")
+  idempotencyLlave String   @unique @default(dbgenerated("gen_random_uuid()")) @map("pag_idempotency_llave") @db.Uuid
+  estado           String   @default("REGISTRADO") @map("pag_estado")
+  medId            BigInt   @map("med_id")
+  creId            BigInt   @map("cre_id")
+
+  medioPago TblMedioPago   @relation(fields: [medId], references: [idMed])
+  credito   TblCredito     @relation(fields: [creId], references: [idCre])
+  cuotas    TblCuotaPago[]
+
+  @@map("tbl_pagos")
+  @@schema("public")
+}
+
+model TblCuotaPago {
+  idCpa   BigInt  @id @default(autoincrement()) @map("id_cpa")
+  numero  BigInt? @map("cpa_numero")
+  capital Decimal @default(0) @map("cpa_capital")
+  interes Decimal @default(0) @map("cpa_interes")
+  total   Decimal @default(dbgenerated()) @map("cpa_total")
+  cuoId   BigInt  @map("cuo_id")
+  pagosId BigInt  @map("pagos_id")
+
+  cuota TblCuota @relation(fields: [cuoId], references: [idCuo])
+  pago  TblPago  @relation(fields: [pagosId], references: [idPag])
+
+  @@map("tbl_cuotas_pagos")
   @@schema("public")
 }

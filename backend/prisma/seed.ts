@@ -146,6 +146,14 @@ async function main() {
     ],
     skipDuplicates: true,
   });
+  await prisma.tipoMovimientoCaja.updateMany({
+    where: { codigo: { in: ['GASTO', 'DESEMBOLSO_CREDITO', 'AJUSTE_SALIDA'] } },
+    data: { naturaleza: 'S' },
+  });
+  await prisma.tipoMovimientoCaja.updateMany({
+    where: { codigo: { in: ['RECAUDO', 'AJUSTE_ENTRADA'] } },
+    data: { naturaleza: 'E' },
+  });
 
   await prisma.categoriaGasto.createMany({
     data: [

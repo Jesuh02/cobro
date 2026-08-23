@@ -8,8 +8,8 @@ import {
   IsNumber,
   IsOptional,
   IsString,
-  IsUUID,
   Length,
+  Max,
   MaxLength,
   Min,
   MinLength,
@@ -66,21 +66,75 @@ export class CrearClienteDto {
 
 export class ListarCobrosRutaQueryDto {
   @IsOptional()
-  @IsUUID()
+  @IsString()
+  @MaxLength(64)
   rutaId?: string;
 
   @IsOptional()
   @IsString()
   @MaxLength(120)
   search?: string;
+
+  @IsOptional()
+  @IsIn(['todos', 'AL_DIA', 'PENDIENTE', 'ATRASADO'])
+  estadoCobro?: 'todos' | 'AL_DIA' | 'PENDIENTE' | 'ATRASADO';
+}
+
+export class ListarCreditosQueryDto extends ListarCobrosRutaQueryDto {
+  @IsOptional()
+  @IsIn(['todos', 'activos', 'inactivos'])
+  estado?: 'todos' | 'activos' | 'inactivos';
+
+  @IsOptional()
+  @IsDateString()
+  fechaDesde?: string;
+
+  @IsOptional()
+  @IsDateString()
+  fechaHasta?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  offset?: number;
+}
+
+export class ObtenerPresupuestoQueryDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  cajaMenorId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  search?: string;
+
+  @IsOptional()
+  @IsDateString()
+  fechaDesde?: string;
+
+  @IsOptional()
+  @IsDateString()
+  fechaHasta?: string;
 }
 
 export class CrearCreditoDto {
-  @IsUUID()
+  @IsString()
+  @MaxLength(64)
   clienteId!: string;
 
   @IsOptional()
-  @IsUUID()
+  @IsString()
+  @MaxLength(64)
   rutaId?: string;
 
   @IsString()
@@ -116,7 +170,8 @@ export class CrearCreditoDto {
   omitirDomingos?: boolean;
 
   @IsOptional()
-  @IsUUID()
+  @IsString()
+  @MaxLength(64)
   cajaMenorId?: string;
 
   @IsOptional()
@@ -125,8 +180,60 @@ export class CrearCreditoDto {
   observacion?: string;
 }
 
+export class ActualizarCreditoDto extends CrearCreditoDto {}
+
+export class RefinanciarCreditoDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  rutaId?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(3, 3)
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().toUpperCase() : value,
+  )
+  monedaCodigo?: string;
+
+  @IsInt()
+  @Min(1)
+  frecuenciaPagoId!: number;
+
+  @IsDateString()
+  fechaInicio!: string;
+
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  valorPrincipal!: number;
+
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 4 })
+  @Min(0)
+  porcentajeInteres!: number;
+
+  @IsInt()
+  @Min(1)
+  plazoDias!: number;
+
+  @IsOptional()
+  @IsBoolean()
+  omitirDomingos?: boolean;
+
+  @IsString()
+  @MaxLength(64)
+  cajaMenorId!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  observacion?: string;
+}
+
 export class RegistrarPagoDto {
-  @IsUUID()
+  @IsString()
+  @MaxLength(64)
   creditoCuotaId!: string;
 
   @Type(() => Number)
@@ -155,16 +262,15 @@ export class RegistrarPagoDto {
 
 export class ListarMovimientosCajaQueryDto {
   @IsOptional()
-  @IsUUID()
+  @IsString()
+  @MaxLength(64)
   cajaMenorId?: string;
 
   @IsOptional()
   @IsString()
   @MaxLength(120)
   search?: string;
-}
 
-export class ExportarMovimientosCajaQueryDto extends ListarMovimientosCajaQueryDto {
   @IsOptional()
   @IsIn(['todos', 'entradas', 'salidas'])
   tipo?: 'todos' | 'entradas' | 'salidas';
@@ -176,7 +282,22 @@ export class ExportarMovimientosCajaQueryDto extends ListarMovimientosCajaQueryD
   @IsOptional()
   @IsDateString()
   fechaHasta?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  offset?: number;
 }
+
+export class ExportarMovimientosCajaQueryDto extends ListarMovimientosCajaQueryDto {}
 
 export class CrearCajaMenorDto {
   @IsOptional()
@@ -191,10 +312,19 @@ export class CrearCajaMenorDto {
   @MinLength(2)
   @MaxLength(120)
   nombre!: string;
+
+  @IsOptional()
+  @IsDateString()
+  fechaApertura?: string;
+
+  @IsOptional()
+  @IsDateString()
+  fechaCierre?: string;
 }
 
 export class CrearMovimientoCajaDto {
-  @IsUUID()
+  @IsString()
+  @MaxLength(64)
   cajaMenorId!: string;
 
   @IsString()
@@ -217,3 +347,5 @@ export class CrearMovimientoCajaDto {
   @MaxLength(500)
   motivo!: string;
 }
+
+export class ActualizarMovimientoCajaDto extends CrearMovimientoCajaDto {}

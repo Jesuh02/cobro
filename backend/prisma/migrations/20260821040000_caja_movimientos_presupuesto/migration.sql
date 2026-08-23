@@ -1,5 +1,3 @@
-BEGIN;
-
 UPDATE public.tipo_movimiento_caja
 SET naturaleza = 'S'
 WHERE codigo IN ('GASTO', 'DESEMBOLSO_CREDITO', 'AJUSTE_SALIDA')
@@ -43,18 +41,11 @@ SELECT
   COALESCE(desembolsos.total_creditos, 0) AS creditos,
   (
     vscm.saldo_caja_menor
-    + (
-      CASE
+    + CASE
         WHEN cr.caja_menor_id = cm.caja_menor_id THEN COALESCE(pagos.total_recaudado, 0)
         ELSE 0
       END
-      + COALESCE(entradas_caja.total_entradas, 0)
-    )
-    - COALESCE(desembolsos.total_creditos, 0)
-    - (
-      COALESCE(gastos.total_gastos, 0)
-      + COALESCE(gastos_caja.total_gastos_caja, 0)
-    )
+    - COALESCE(gastos.total_gastos, 0)
   ) AS presupuesto
 FROM public.caja_menor cm
 JOIN public.vista_saldo_caja_menor vscm
@@ -105,65 +96,4 @@ LEFT JOIN LATERAL (
 ) desembolsos ON TRUE;
 
 COMMENT ON VIEW public.vista_presupuesto_actual IS
-  'Calcula PRESUPUESTO = CAJA MENOR + RECAUDADO - CREDITOS - GASTOS.';
-
-WITH clientes_objetivo AS (
-  SELECT *
-  FROM (
-    VALUES
-      ('bb1ceb86-4a43-421e-982c-e6c7a5e27088'::uuid, 'jesus', 2),
-      ('e51eabe5-fd57-4a66-a56e-6391d8e94744'::uuid, 'carmen', 1)
-  ) AS objetivo(cliente_id, nombre, creditos_esperados)
-),
-resumen_creditos AS (
-  SELECT
-    o.nombre,
-    o.creditos_esperados,
-    COUNT(c.credito_id) AS creditos_encontrados,
-    COALESCE(SUM(c.valor_principal), 0) AS capital,
-    COALESCE(SUM(cpp.valor_total), 0) AS total_a_recaudar
-  FROM clientes_objetivo o
-  LEFT JOIN public.credito c
-    ON c.cliente_id = o.cliente_id
-   AND c.valor_principal = 20
-  LEFT JOIN public.credito_plan_pago cpp
-    ON cpp.credito_id = c.credito_id
-  GROUP BY o.nombre, o.creditos_esperados
-),
-resumen_pagos AS (
-  SELECT
-    o.nombre,
-    COUNT(p.pago_id) AS pagos_encontrados,
-    COALESCE(SUM(p.total_pagado), 0) AS recaudado
-  FROM clientes_objetivo o
-  LEFT JOIN public.pago p
-    ON p.cliente_id = o.cliente_id
-  GROUP BY o.nombre
-)
-SELECT
-  rc.nombre,
-  rc.creditos_esperados,
-  rc.creditos_encontrados,
-  rc.capital,
-  rc.total_a_recaudar,
-  rp.pagos_encontrados,
-  rp.recaudado
-FROM resumen_creditos rc
-JOIN resumen_pagos rp
-  ON rp.nombre = rc.nombre
-ORDER BY rc.nombre;
-
-SELECT
-  caja_menor_id,
-  responsable_usuario_id,
-  moneda_codigo,
-  caja_menor,
-  recaudado,
-  gastos,
-  creditos,
-  presupuesto
-FROM public.vista_presupuesto_actual
-WHERE responsable_usuario_id = 'de86884c-5ed9-45c9-9634-ed4a11bb03e0'::uuid
-ORDER BY moneda_codigo, caja_menor_id;
-
-COMMIT;
+  'Calcula presupuesto sin duplicar movimientos manuales: las entradas y gastos de caja se muestran en recaudado/gastos, pero ya afectan el saldo de caja menor.';

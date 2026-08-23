@@ -297,8 +297,14 @@ type CreditoTblRow = {
   credito_id: string;
   cliente_id: string;
   cliente: string;
+  cedula: string | null;
+  negocio: string | null;
+  direccion: string | null;
   ruta_id: string | null;
   ruta: string | null;
+  caja_menor_id: string | null;
+  caja_menor: string | null;
+  moneda_codigo: string;
   frecuencia_id: string;
   frecuencia_codigo: string;
   frecuencia_nombre: string;
@@ -311,6 +317,8 @@ type CreditoTblRow = {
   valor_total: Prisma.Decimal;
   numero_cuotas: number;
   valor_cuota: Prisma.Decimal;
+  total_abonado: Prisma.Decimal;
+  cuotas_restantes: number;
 };
 
 type MovimientoCajaTblRow = {
@@ -525,24 +533,52 @@ const maxExportRows = 10_000;
 const tiposMovimientoCajaTblBase = [
   {
     id: 1,
-    codigo: 'AJUSTE_ENTRADA',
-    nombre: 'Ajuste de entrada',
+    codigo: 'APERTURA',
+    nombre: 'Apertura',
     naturaleza: 'E',
-    referenciaTipo: 'AJUSTE',
+    referenciaTipo: 'SESION_CAJA',
   },
   {
     id: 2,
+    codigo: 'RECAUDO',
+    nombre: 'Recaudo',
+    naturaleza: 'E',
+    referenciaTipo: 'PAGO',
+  },
+  {
+    id: 3,
     codigo: 'GASTO',
     nombre: 'Gasto',
     naturaleza: 'S',
     referenciaTipo: 'GASTO',
   },
   {
-    id: 3,
+    id: 4,
+    codigo: 'DESEMBOLSO_CREDITO',
+    nombre: 'Desembolso de credito',
+    naturaleza: 'S',
+    referenciaTipo: 'CREDITO',
+  },
+  {
+    id: 5,
+    codigo: 'AJUSTE_ENTRADA',
+    nombre: 'Ajuste de entrada',
+    naturaleza: 'E',
+    referenciaTipo: 'AJUSTE',
+  },
+  {
+    id: 6,
     codigo: 'AJUSTE_SALIDA',
     nombre: 'Ajuste de salida',
     naturaleza: 'S',
     referenciaTipo: 'AJUSTE',
+  },
+  {
+    id: 7,
+    codigo: 'CIERRE',
+    nombre: 'Cierre',
+    naturaleza: 'N',
+    referenciaTipo: 'SESION_CAJA',
   },
 ] as const;
 const codigosMovimientoCajaTblBase = tiposMovimientoCajaTblBase.map(
@@ -2220,6 +2256,16 @@ export class CobrosService {
     const valorPrincipal = this.redondear(dto.valorPrincipal);
     const porcentajeInteres = this.redondear(dto.porcentajeInteres, 4);
 
+    if (await this.usarEsquemaTbl()) {
+      return this.crearCreditoTbl(
+        dto,
+        usuario,
+        fechaInicio,
+        valorPrincipal,
+        porcentajeInteres,
+      );
+    }
+
     const creditoId = await this.prisma.$transaction(async (tx) => {
       const [cliente, moneda, frecuenciaPago, estadoActivo, estadoPendiente] =
         await Promise.all([
@@ -2333,6 +2379,319 @@ export class CobrosService {
 
       return credito.creditoId;
     });
+
+    this.invalidarCacheLecturas();
+    const credito = await this.obtenerCredito(creditoId, usuario);
+    void this.notifications.notifyCreditApproved(creditoId);
+    return credito;
+  }
+
+  private async crearCreditoTbl(
+    dto: CrearCreditoDto,
+    usuario: AuthenticatedUser,
+    fechaInicio: Date,
+    valorPrincipal: number,
+    porcentajeInteres: number,
+  ) {
+    const creditoId = await this.prisma.$transaction(
+      async (tx) => {
+        const [scope] = await tx.$queryRaw<
+          Array<{ usuario_id: string; org_id: string }>
+        >(Prisma.sql`
+          SELECT
+            tu.id_usu::text AS usuario_id,
+            uo.org_id::text AS org_id
+          FROM public.tbl_usuarios tu
+          JOIN public.tbl_usuarios_organizaciones uo
+            ON uo.usu_id = tu.id_usu
+           AND uo.urg_activo
+          JOIN public.tbl_organizaciones o
+            ON o.id_org = uo.org_id
+           AND o.org_activo
+          WHERE tu.usu_activo
+            AND (
+              tu.id_usu::text = ${usuario.usuarioId}
+              OR lower(tu.usu_usuario) = lower(${usuario.usuario})
+            )
+          ORDER BY uo.id_urg ASC
+          LIMIT 1
+        `);
+
+        if (!scope) {
+          throw DomainError.notFound(
+            'No existe una organizacion activa para crear el credito',
+            'ORGANIZACION_ACTIVA_NO_EXISTE',
+          );
+        }
+
+        const [cliente] = await tx.$queryRaw<
+          Array<{ id: string; org_id: string; nombre: string }>
+        >(Prisma.sql`
+          SELECT
+            c.id_cli::text AS id,
+            c.org_id::text AS org_id,
+            TRIM(CONCAT_WS(' ', p.per_primer_nombre, p.per_apellido)) AS nombre
+          FROM public.tbl_clientes c
+          JOIN public.tbl_personas p ON p.id_per = c.cli_persona
+          WHERE c.id_cli = ${dto.clienteId}::bigint
+            AND c.cli_activo
+            AND c.org_id = ${scope.org_id}::bigint
+          LIMIT 1
+        `);
+
+        if (!cliente) {
+          throw DomainError.notFound(
+            'Cliente no encontrado',
+            'CLIENTE_NO_ENCONTRADO',
+          );
+        }
+
+        const [moneda] = await tx.$queryRaw<
+          Array<{ id: string; codigo: string; decimales: number | bigint }>
+        >(Prisma.sql`
+          SELECT
+            id_mon::text AS id,
+            mon_codigo::text AS codigo,
+            mon_decimales AS decimales
+          FROM public.tbl_monedas
+          WHERE mon_activa
+            AND UPPER(TRIM(mon_codigo::text)) = ${dto.monedaCodigo}
+          LIMIT 1
+        `);
+
+        if (!moneda) {
+          throw DomainError.notFound(
+            'Moneda no encontrada',
+            'MONEDA_NO_ENCONTRADA',
+          );
+        }
+
+        const [producto] = await tx.$queryRaw<
+          Array<{ id: string; dias_intervalo: number }>
+        >(Prisma.sql`
+          WITH seleccionado AS (
+            SELECT pcr_frecuencia
+            FROM public.tbl_productos_creditos
+            WHERE id_pcr = ${dto.frecuenciaPagoId}::bigint
+          )
+          SELECT
+            pc.id_pcr::text AS id,
+            CASE pc.pcr_frecuencia::text
+              WHEN 'SEMANAL' THEN 7
+              WHEN 'QUINCENAL' THEN 15
+              WHEN 'MENSUAL' THEN 30
+              ELSE 1
+            END AS dias_intervalo
+          FROM public.tbl_productos_creditos pc
+          LEFT JOIN seleccionado s ON TRUE
+          WHERE pc.org_id = ${cliente.org_id}::bigint
+            AND (
+              pc.id_pcr = ${dto.frecuenciaPagoId}::bigint
+              OR pc.pcr_frecuencia = s.pcr_frecuencia
+            )
+          ORDER BY
+            (pc.id_pcr = ${dto.frecuenciaPagoId}::bigint) DESC,
+            pc.id_pcr ASC
+          LIMIT 1
+        `);
+
+        if (!producto) {
+          throw DomainError.notFound(
+            'Frecuencia de pago no encontrada',
+            'FRECUENCIA_NO_ENCONTRADA',
+          );
+        }
+
+        const [caja] = await tx.$queryRaw<
+          Array<{ id: string; nombre: string; sesion_id: string | null }>
+        >(Prisma.sql`
+          SELECT
+            c.id_caj::text AS id,
+            c.caj_nombre AS nombre,
+            sc.id_sca::text AS sesion_id
+          FROM public.tbl_cajas c
+          LEFT JOIN LATERAL (
+            SELECT sca.id_sca
+            FROM public.tbl_sesiones_cajas sca
+            WHERE sca.caj_id = c.id_caj
+              AND sca.sca_estado::text = 'ABIERTA'
+            ORDER BY sca.sca_fecha_apertura DESC, sca.id_sca DESC
+            LIMIT 1
+          ) sc ON TRUE
+          WHERE c.id_caj = ${dto.cajaMenorId}::bigint
+            AND c.org_id = ${cliente.org_id}::bigint
+            AND c.mon_id = ${moneda.id}::bigint
+            AND c.caj_tipo::text = 'MENOR'
+            AND c.caj_activa
+          LIMIT 1
+        `);
+
+        if (!caja) {
+          throw DomainError.notFound(
+            'Caja menor no encontrada o no coincide con la moneda',
+            'CAJA_MENOR_NO_ENCONTRADA',
+          );
+        }
+
+        const [presupuesto] = await tx.$queryRaw<
+          Array<{ presupuesto: Prisma.Decimal }>
+        >(
+          Prisma.sql`
+            SELECT presupuesto
+            FROM public.vista_presupuesto_actual
+            WHERE caja_menor_id::text = ${caja.id}
+            LIMIT 1
+          `,
+        );
+
+        if (
+          this.decimalANumero(presupuesto?.presupuesto ?? null) <
+          valorPrincipal
+        ) {
+          throw DomainError.conflict(
+            'No se puede hacer credito sin caja suficiente',
+            'CAJA_MENOR_SALDO_INSUFICIENTE',
+          );
+        }
+
+        const rutaId = await this.obtenerOCrearRutaCreditoTbl(
+          tx,
+          dto.rutaId,
+          cliente.org_id,
+          scope.usuario_id,
+          usuario.usuario,
+        );
+
+        const plan = this.calcularPlan({
+          fechaInicio,
+          valorPrincipal,
+          porcentajeInteres,
+          plazoDias: dto.plazoDias,
+          diasIntervalo: Number(producto.dias_intervalo),
+          omitirDomingos: dto.omitirDomingos ?? true,
+          decimales: Number(moneda.decimales),
+        });
+        const interesTotal = this.redondear(
+          plan.valorTotal - valorPrincipal,
+          Number(moneda.decimales),
+        );
+
+        const [credito] = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+          INSERT INTO public.tbl_creditos (
+            cre_total,
+            cre_estado,
+            cre_tasa_interes,
+            cre_interes_total,
+            cre_total_pagar,
+            cre_fecha_inicio,
+            cre_fecha_fin,
+            usu_id,
+            pcr_id,
+            cli_id,
+            mon_id
+          )
+          VALUES (
+            ${this.decimal(valorPrincipal)},
+            'ACTIVO'::public.credito_estado_enum,
+            ${this.decimal(porcentajeInteres, 4)},
+            ${this.decimal(interesTotal)},
+            ${this.decimal(plan.valorTotal)},
+            ${fechaInicio}::date,
+            ${plan.fechaMaxima}::date,
+            ${scope.usuario_id}::bigint,
+            ${producto.id}::bigint,
+            ${cliente.id}::bigint,
+            ${moneda.id}::bigint
+          )
+          RETURNING id_cre::text AS id
+        `);
+
+        for (const cuota of plan.cuotas) {
+          await tx.$executeRaw(Prisma.sql`
+            INSERT INTO public.tbl_cuotas (
+              cuo_numero,
+              cuo_valor,
+              cuo_estado,
+              cuo_fecha_vencimiento,
+              cre_id
+            )
+            VALUES (
+              ${cuota.numeroCuota},
+              ${this.decimal(cuota.valorCapital + cuota.valorInteres)},
+              'PENDIENTE'::public.cuota_estado_enum,
+              ${cuota.fechaVencimiento}::date,
+              ${credito.id}::bigint
+            )
+          `);
+        }
+
+        await tx.$executeRaw(Prisma.sql`
+          INSERT INTO public.tbl_rutas_clientes (rut_id, cli_id)
+          VALUES (${rutaId}::bigint, ${cliente.id}::bigint)
+          ON CONFLICT (rut_id, cli_id) DO UPDATE
+          SET rcl_activo = TRUE
+        `);
+
+        const sesionId =
+          caja.sesion_id ??
+          (
+            await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+              INSERT INTO public.tbl_sesiones_cajas (
+                sca_fecha_apertura,
+                sca_monto_inicial,
+                caj_id,
+                usu_id
+              )
+              VALUES (
+                ${fechaInicio},
+                0,
+                ${caja.id}::bigint,
+                ${scope.usuario_id}::bigint
+              )
+              RETURNING id_sca::text AS id
+            `)
+          )[0]?.id;
+
+        if (!sesionId) {
+          throw DomainError.conflict(
+            'No se pudo abrir la sesion de caja menor',
+            'SESION_CAJA_NO_CREADA',
+          );
+        }
+
+        await tx.$executeRaw(Prisma.sql`
+          INSERT INTO public.tbl_movimientos_cajas (
+            mca_tipo,
+            mca_monto,
+            mca_referencia_id,
+            mca_referencia_tipo,
+            mca_creacion,
+            org_id,
+            usu_id,
+            sca_id
+          )
+          VALUES (
+            'DESEMBOLSO_CREDITO'::public.movimiento_caja_tipo_enum,
+            ${this.decimal(valorPrincipal)},
+            ${credito.id}::bigint,
+            'CREDITO'::public.movimiento_referencia_tipo_enum,
+            ${fechaInicio},
+            ${cliente.org_id}::bigint,
+            ${scope.usuario_id}::bigint,
+            ${sesionId}::bigint
+          )
+        `);
+
+        await tx.$executeRaw(Prisma.sql`
+          UPDATE public.tbl_sesiones_cajas
+          SET sca_total_gasto = sca_total_gasto + ${this.decimal(valorPrincipal)}
+          WHERE id_sca = ${sesionId}::bigint
+        `);
+
+        return credito.id;
+      },
+      { maxWait: 10_000, timeout: 20_000 },
+    );
 
     this.invalidarCacheLecturas();
     const credito = await this.obtenerCredito(creditoId, usuario);
@@ -4368,9 +4727,9 @@ export class CobrosService {
           sca_id
         )
         VALUES (
-          ${tipo.codigo},
+          ${tipo.codigo}::public.movimiento_caja_tipo_enum,
           ${this.decimal(monto)},
-          NULL,
+          NULL::public.movimiento_referencia_tipo_enum,
           ${fechaMovimiento},
           ${caja.org_id}::bigint,
           ${caja.usuario_id}::bigint,
@@ -5221,9 +5580,13 @@ export class CobrosService {
               TRUE
             FROM (
               VALUES
-                (1, 'AJUSTE_ENTRADA', 'Ajuste de entrada', 'E'),
-                (2, 'GASTO', 'Gasto', 'S'),
-                (3, 'AJUSTE_SALIDA', 'Ajuste de salida', 'S')
+                (1, 'APERTURA', 'Apertura', 'E'),
+                (2, 'RECAUDO', 'Recaudo', 'E'),
+                (3, 'GASTO', 'Gasto', 'S'),
+                (4, 'DESEMBOLSO_CREDITO', 'Desembolso de credito', 'S'),
+                (5, 'AJUSTE_ENTRADA', 'Ajuste de entrada', 'E'),
+                (6, 'AJUSTE_SALIDA', 'Ajuste de salida', 'S'),
+                (7, 'CIERRE', 'Cierre', 'N')
             ) AS base(id, codigo, nombre, naturaleza)
             UNION ALL
             SELECT
@@ -5244,7 +5607,7 @@ export class CobrosService {
               )})
             ) existentes
           ) catalogos
-          ORDER BY tipo ASC, nombre ASC
+          ORDER BY tipo ASC, id ASC
         `),
         this.listarRutasTbl(usuario),
         this.prisma.$queryRaw<CatalogoTblRow[]>(Prisma.sql`
@@ -6221,9 +6584,9 @@ export class CobrosService {
         p.per_direccion AS direccion,
         COALESCE(ruta_credito.ruta_id::text, '') AS ruta_id,
         COALESCE(ruta_credito.ruta, 'Sin ruta') AS ruta,
-        NULL::text AS caja_menor_id,
-        NULL::text AS caja_menor,
-        'COP' AS moneda_codigo,
+        caja_credito.caja_menor_id::text AS caja_menor_id,
+        caja_credito.caja_menor AS caja_menor,
+        mon.mon_codigo::text AS moneda_codigo,
         pc.id_pcr::int AS frecuencia_pago_id,
         pc.pcr_frecuencia::text AS frecuencia_codigo,
         INITCAP(REPLACE(pc.pcr_frecuencia::text, '_', ' ')) AS frecuencia_nombre,
@@ -6258,6 +6621,7 @@ export class CobrosService {
       JOIN public.tbl_clientes cl ON cl.id_cli = cr.cli_id
       JOIN public.tbl_personas p ON p.id_per = cl.cli_persona
       JOIN public.tbl_productos_creditos pc ON pc.id_pcr = cr.pcr_id
+      JOIN public.tbl_monedas mon ON mon.id_mon = cr.mon_id
       LEFT JOIN resumen_credito rc ON rc.cre_id = cr.id_cre
       LEFT JOIN pagos_credito pc_ultimo ON pc_ultimo.cre_id = cr.id_cre
       LEFT JOIN LATERAL (
@@ -6269,6 +6633,17 @@ export class CobrosService {
         ORDER BY (r.usu_id = cr.usu_id) DESC, r.rut_activa DESC, r.rut_nombre ASC
         LIMIT 1
       ) ruta_credito ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT c.id_caj AS caja_menor_id, c.caj_nombre AS caja_menor
+        FROM public.tbl_movimientos_cajas mc
+        JOIN public.tbl_sesiones_cajas sc ON sc.id_sca = mc.sca_id
+        JOIN public.tbl_cajas c ON c.id_caj = sc.caj_id
+        WHERE mc.mca_referencia_tipo::text = 'CREDITO'
+          AND mc.mca_referencia_id = cr.id_cre
+          AND mc.mca_tipo::text = 'DESEMBOLSO_CREDITO'
+        ORDER BY mc.id_mca DESC
+        LIMIT 1
+      ) caja_credito ON TRUE
       WHERE ${Prisma.join(conditions, ' AND ')}
       ORDER BY cr.cre_fecha_inicio DESC, cr.id_cre DESC
       ${limite ? Prisma.sql`LIMIT ${limite}` : Prisma.empty}
@@ -6469,8 +6844,14 @@ export class CobrosService {
         cr.id_cre::text AS credito_id,
         cl.id_cli::text AS cliente_id,
         TRIM(CONCAT_WS(' ', p.per_primer_nombre, p.per_apellido)) AS cliente,
+        p.per_documento AS cedula,
+        cl.cli_referencia AS negocio,
+        p.per_direccion AS direccion,
         ruta_credito.ruta_id::text AS ruta_id,
         ruta_credito.ruta AS ruta,
+        caja_credito.caja_menor_id::text AS caja_menor_id,
+        caja_credito.caja_menor AS caja_menor,
+        mon.mon_codigo::text AS moneda_codigo,
         pc.id_pcr::text AS frecuencia_id,
         pc.pcr_frecuencia::text AS frecuencia_codigo,
         INITCAP(REPLACE(pc.pcr_frecuencia::text, '_', ' ')) AS frecuencia_nombre,
@@ -6482,11 +6863,17 @@ export class CobrosService {
         cr.cre_interes_total AS interes_total,
         cr.cre_total_pagar AS valor_total,
         COUNT(cu.id_cuo)::int AS numero_cuotas,
-        COALESCE(MAX(cu.cuo_valor), 0) AS valor_cuota
+        COALESCE(MAX(cu.cuo_valor), 0) AS valor_cuota,
+        COALESCE(SUM(cu.cuo_total_pagado), 0) AS total_abonado,
+        COUNT(*) FILTER (
+          WHERE UPPER(cu.cuo_estado::text) NOT IN ('PAGADA', 'ANULADA')
+            AND (cu.cuo_valor - COALESCE(cu.cuo_total_pagado, 0)) > 0
+        )::int AS cuotas_restantes
       FROM public.tbl_creditos cr
       JOIN public.tbl_clientes cl ON cl.id_cli = cr.cli_id
       JOIN public.tbl_personas p ON p.id_per = cl.cli_persona
       JOIN public.tbl_productos_creditos pc ON pc.id_pcr = cr.pcr_id
+      JOIN public.tbl_monedas mon ON mon.id_mon = cr.mon_id
       LEFT JOIN public.tbl_cuotas cu ON cu.cre_id = cr.id_cre
       LEFT JOIN LATERAL (
         SELECT r.id_rut AS ruta_id, r.rut_nombre AS ruta
@@ -6497,8 +6884,28 @@ export class CobrosService {
         ORDER BY (r.usu_id = cr.usu_id) DESC, r.rut_activa DESC
         LIMIT 1
       ) ruta_credito ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT c.id_caj AS caja_menor_id, c.caj_nombre AS caja_menor
+        FROM public.tbl_movimientos_cajas mc
+        JOIN public.tbl_sesiones_cajas sc ON sc.id_sca = mc.sca_id
+        JOIN public.tbl_cajas c ON c.id_caj = sc.caj_id
+        WHERE mc.mca_referencia_tipo::text = 'CREDITO'
+          AND mc.mca_referencia_id = cr.id_cre
+          AND mc.mca_tipo::text = 'DESEMBOLSO_CREDITO'
+        ORDER BY mc.id_mca DESC
+        LIMIT 1
+      ) caja_credito ON TRUE
       WHERE cr.id_cre = ${creditoId}::bigint
-      GROUP BY cr.id_cre, cl.id_cli, p.id_per, pc.id_pcr, ruta_credito.ruta_id, ruta_credito.ruta
+      GROUP BY
+        cr.id_cre,
+        cl.id_cli,
+        p.id_per,
+        pc.id_pcr,
+        mon.id_mon,
+        ruta_credito.ruta_id,
+        ruta_credito.ruta,
+        caja_credito.caja_menor_id,
+        caja_credito.caja_menor
     `);
     const credito = rows[0];
 
@@ -6522,9 +6929,14 @@ export class CobrosService {
       id: credito.credito_id,
       clienteId: credito.cliente_id,
       cliente: credito.cliente,
-      rutaId: credito.ruta_id,
-      ruta: credito.ruta,
-      monedaCodigo: 'COP',
+      cedula: credito.cedula,
+      negocio: credito.negocio,
+      direccion: credito.direccion,
+      rutaId: credito.ruta_id ?? '',
+      ruta: credito.ruta ?? 'Sin ruta',
+      cajaMenorId: credito.caja_menor_id,
+      cajaMenor: credito.caja_menor,
+      monedaCodigo: credito.moneda_codigo.trim(),
       frecuenciaPago: {
         id: Number(credito.frecuencia_id),
         codigo: credito.frecuencia_codigo,
@@ -6541,6 +6953,19 @@ export class CobrosService {
       plazoDias,
       omitirDomingos: false,
       observacion: null,
+      valorTotal: this.decimalANumero(credito.valor_total),
+      valorCuota: this.decimalANumero(credito.valor_cuota),
+      totalAbonado: this.decimalANumero(credito.total_abonado),
+      saldo: this.redondear(
+        Math.max(
+          this.decimalANumero(credito.valor_total) -
+            this.decimalANumero(credito.total_abonado),
+          0,
+        ),
+      ),
+      numeroCuotas: credito.numero_cuotas,
+      cuotasRestantes: credito.cuotas_restantes,
+      fechaMaxima: this.fechaIso(credito.fecha_fin),
       planPago: {
         id: credito.credito_id,
         numeroCuotas: credito.numero_cuotas,
@@ -6618,7 +7043,8 @@ export class CobrosService {
           UPPER(m.mca_tipo::text) AS tipo_codigo,
           INITCAP(REPLACE(m.mca_tipo::text, '_', ' ')) AS tipo_nombre,
           CASE
-            WHEN UPPER(m.mca_tipo::text) IN ('SALIDA', 'EGRESO', 'GASTO', 'DESEMBOLSO', 'DESEMBOLSO_CREDITO') THEN 'S'
+            WHEN UPPER(m.mca_tipo::text) IN ('SALIDA', 'EGRESO', 'GASTO', 'DESEMBOLSO', 'DESEMBOLSO_CREDITO', 'AJUSTE_SALIDA') THEN 'S'
+            WHEN UPPER(m.mca_tipo::text) = 'CIERRE' THEN 'N'
             ELSE 'E'
           END AS naturaleza,
           tu.id_usu::text AS usuario_id,
@@ -6742,6 +7168,7 @@ export class CobrosService {
         INITCAP(REPLACE(m.mca_tipo::text, '_', ' ')) AS tipo_nombre,
         CASE
           WHEN UPPER(m.mca_tipo::text) IN ('SALIDA', 'EGRESO', 'GASTO', 'DESEMBOLSO', 'DESEMBOLSO_CREDITO', 'AJUSTE_SALIDA') THEN 'S'
+          WHEN UPPER(m.mca_tipo::text) = 'CIERRE' THEN 'N'
           ELSE 'E'
         END AS naturaleza,
         tu.id_usu::text AS usuario_id,
@@ -6802,7 +7229,12 @@ export class CobrosService {
       }),
       fechaMovimiento: this.fechaIsoColombia(movimiento.fecha_movimiento),
       monto,
-      montoConNaturaleza: movimiento.naturaleza === 'S' ? -monto : monto,
+      montoConNaturaleza:
+        movimiento.naturaleza === 'S'
+          ? -monto
+          : movimiento.naturaleza === 'N'
+            ? 0
+            : monto,
       motivo: movimiento.motivo,
       referenciaTabla: movimiento.referencia_tabla,
       referenciaId: movimiento.referencia_id,
@@ -6920,8 +7352,9 @@ export class CobrosService {
           COALESCE(MAX(sc.sca_monto_inicial), 0)
             + COALESCE(SUM(
               CASE
-                WHEN UPPER(m.mca_tipo::text) IN ('SALIDA', 'EGRESO', 'GASTO', 'DESEMBOLSO', 'DESEMBOLSO_CREDITO') THEN -m.mca_monto
-                ELSE m.mca_monto
+                WHEN UPPER(m.mca_tipo::text) IN ('APERTURA', 'RECAUDO', 'AJUSTE_ENTRADA') THEN m.mca_monto
+                WHEN UPPER(m.mca_tipo::text) IN ('GASTO', 'DESEMBOLSO_CREDITO', 'AJUSTE_SALIDA') THEN -m.mca_monto
+                ELSE 0
               END
             ), 0) AS caja_menor,
           COALESCE(pagos.recaudado, 0) AS recaudado,
@@ -7608,6 +8041,68 @@ export class CobrosService {
       },
       include: { estadoRuta: true },
     });
+  }
+
+  private async obtenerOCrearRutaCreditoTbl(
+    tx: Prisma.TransactionClient,
+    rutaId: string | undefined,
+    organizacionId: string,
+    usuarioId: string,
+    usuarioNombre: string,
+  ) {
+    if (rutaId) {
+      const [ruta] = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        SELECT id_rut::text AS id
+        FROM public.tbl_rutas
+        WHERE id_rut = ${rutaId}::bigint
+          AND org_id = ${organizacionId}::bigint
+          AND rut_activa
+        LIMIT 1
+      `);
+
+      if (!ruta) {
+        throw DomainError.notFound('Ruta no encontrada', 'RUTA_NO_ENCONTRADA');
+      }
+
+      return ruta.id;
+    }
+
+    const [existente] = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      SELECT id_rut::text AS id
+      FROM public.tbl_rutas
+      WHERE org_id = ${organizacionId}::bigint
+        AND usu_id = ${usuarioId}::bigint
+        AND rut_activa
+      ORDER BY id_rut ASC
+      LIMIT 1
+    `);
+
+    if (existente) {
+      return existente.id;
+    }
+
+    const nombre = `Ruta ${usuarioNombre}`;
+    const [creada] = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      INSERT INTO public.tbl_rutas (
+        rut_nombre,
+        rut_descripcion,
+        usu_id,
+        org_id
+      )
+      VALUES (
+        ${nombre},
+        'Creada automaticamente al registrar un credito',
+        ${usuarioId}::bigint,
+        ${organizacionId}::bigint
+      )
+      ON CONFLICT (org_id, rut_nombre) DO UPDATE
+      SET
+        rut_activa = TRUE,
+        usu_id = EXCLUDED.usu_id
+      RETURNING id_rut::text AS id
+    `);
+
+    return creada.id;
   }
 
   private async asegurarClienteEnRuta(
@@ -9085,7 +9580,15 @@ export class CobrosService {
   }
 
   private efectoPresupuestoMovimientoCaja(monto: number, naturaleza: string) {
-    return naturaleza === 'S' ? -monto : monto;
+    if (naturaleza === 'S') {
+      return -monto;
+    }
+
+    if (naturaleza === 'N') {
+      return 0;
+    }
+
+    return monto;
   }
 
   private naturalezaMovimientoCaja(tipo: {
@@ -9098,7 +9601,11 @@ export class CobrosService {
       return 'S';
     }
 
-    if (['RECAUDO', 'AJUSTE_ENTRADA'].includes(tipo.codigo)) {
+    if (tipo.codigo === 'CIERRE') {
+      return 'N';
+    }
+
+    if (['APERTURA', 'RECAUDO', 'AJUSTE_ENTRADA'].includes(tipo.codigo)) {
       return 'E';
     }
 

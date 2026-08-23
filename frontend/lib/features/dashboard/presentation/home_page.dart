@@ -677,8 +677,8 @@ class _HomePageState extends State<HomePage> {
               ? Padding(
                   key: const ValueKey<String>('menu-expandido'),
                   padding: const EdgeInsets.all(14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                  child: ListView(
+                    padding: EdgeInsets.zero,
                     children: <Widget>[
                       Row(
                         children: <Widget>[
@@ -736,7 +736,7 @@ class _HomePageState extends State<HomePage> {
                           );
                         },
                       ),
-                      const Spacer(),
+                      const SizedBox(height: 8),
                       TextButton.icon(
                         onPressed: _cerrarSesion,
                         icon: const Icon(Icons.logout_rounded),
@@ -1288,6 +1288,7 @@ class _HomePageState extends State<HomePage> {
         catalogos.monedas.isNotEmpty &&
         catalogos.cajasMenoresActivas.isNotEmpty;
     final bool faltanClientes = _clientes.isEmpty;
+    final String mensajeDatosBase = _mensajeDatosBaseCredito(catalogos);
 
     return _Pagina(
       titulo: 'Credito',
@@ -1319,7 +1320,7 @@ class _HomePageState extends State<HomePage> {
             titulo: 'Faltan datos base',
             mensaje: faltanClientes && puedeCrearClienteConCredito
                 ? 'Crea un cliente y registra su credito en el mismo formulario.'
-                : 'Necesitas clientes, monedas, frecuencias y caja menor activa.',
+                : mensajeDatosBase,
             accion: FilledButton.icon(
               onPressed: _guardando || !_puedeCrearCreditos
                   ? null
@@ -1377,6 +1378,25 @@ class _HomePageState extends State<HomePage> {
           ),
       ],
     );
+  }
+
+  String _mensajeDatosBaseCredito(Catalogos? catalogos) {
+    if (catalogos == null) {
+      return 'No se pudieron cargar los catalogos.';
+    }
+
+    final List<String> faltantes = <String>[
+      if (_clientes.isEmpty) 'clientes',
+      if (catalogos.monedas.isEmpty) 'monedas',
+      if (catalogos.frecuenciasPago.isEmpty) 'frecuencias',
+      if (catalogos.cajasMenoresActivas.isEmpty) 'caja menor activa',
+    ];
+
+    if (faltantes.isEmpty) {
+      return 'Los datos base estan listos.';
+    }
+
+    return 'Faltan: ${faltantes.join(', ')}.';
   }
 
   Widget _construirFiltrosCredito(BuildContext context) {
@@ -3676,9 +3696,7 @@ class _HomePageState extends State<HomePage> {
         return;
       }
 
-      _mostrarMensaje(
-        'Necesitas clientes, monedas, frecuencias y caja menor activa.',
-      );
+      _mostrarMensaje(_mensajeDatosBaseCredito(catalogos));
       return;
     }
 

@@ -247,11 +247,136 @@ void main() {
       tester.takeException();
 
       await tester.tap(find.text('Ruta'));
-      await tester.pumpAndSettle(const Duration(milliseconds: 500));
+      // MapCN keeps its marker pulse animation alive while the map is mounted,
+      // so this desktop route view intentionally never reaches "settled".
+      await tester.pump(const Duration(milliseconds: 500));
 
       expect(find.text(r'$0,8'), findsWidgets);
       expect(find.text(r'$0,04'), findsWidgets);
       expect(find.text(r'$1'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'muestra creditos pagados como inactivos en Inicio todos los dias',
+    (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1280, 1400);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+
+      Uri? resumenTodosLosDiasUri;
+      final ApiClient apiClient = ApiClient(
+        baseUrl: 'https://cobro.test/api/v1',
+        client: MockClient((http.Request request) async {
+          if (request.url.path.endsWith('/creditos/resumen')) {
+            final bool todosLosDias =
+                !request.url.queryParameters.containsKey('fechaDesde') &&
+                    !request.url.queryParameters.containsKey('fechaHasta');
+            if (todosLosDias) {
+              resumenTodosLosDiasUri = request.url;
+            }
+            return _jsonResponse(<String, dynamic>{
+              'total': todosLosDias ? 13 : 0,
+              'activos': todosLosDias ? 8 : 0,
+              'inactivos': todosLosDias ? 5 : 0,
+            });
+          }
+
+          return _responderApiPagosPrecisos(request);
+        }),
+      );
+      addTearDown(apiClient.close);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: CobroAppTheme.light(),
+          home: HomePage(
+            apiBaseUrl: 'https://cobro.test/api/v1',
+            apiClient: apiClient,
+            themeMode: ThemeMode.light,
+            onThemeModeChanged: (_) {},
+          ),
+        ),
+      );
+
+      await tester.enterText(find.byType(TextField).at(0), 'admin');
+      await tester.enterText(find.byType(TextField).at(1), 'Admin12345!');
+      await tester.tap(find.text('Entrar'));
+      await tester.pumpAndSettle(const Duration(seconds: 2));
+      tester.takeException();
+
+      final Finder todosLosDias =
+          find.widgetWithText(OutlinedButton, 'Todos los dias');
+      await tester.ensureVisible(todosLosDias);
+      await tester.tap(todosLosDias);
+      await tester.pumpAndSettle(const Duration(milliseconds: 500));
+
+      expect(resumenTodosLosDiasUri, isNotNull);
+      expect(
+        resumenTodosLosDiasUri!.queryParameters.containsKey('fechaDesde'),
+        isFalse,
+      );
+      expect(
+        resumenTodosLosDiasUri!.queryParameters.containsKey('fechaHasta'),
+        isFalse,
+      );
+      expect(
+        resumenTodosLosDiasUri!.queryParameters.containsKey('cajaMenorId'),
+        isFalse,
+      );
+      expect(find.text('Inactivos'), findsOneWidget);
+      expect(find.text('5'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'abre el formulario para registrar pago en ruta',
+    (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1280, 900);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+
+      final ApiClient apiClient = ApiClient(
+        baseUrl: 'https://cobro.test/api/v1',
+        client: MockClient(_responderApiPagosConMedio),
+      );
+      addTearDown(apiClient.close);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: CobroAppTheme.light(),
+          home: HomePage(
+            apiBaseUrl: 'https://cobro.test/api/v1',
+            apiClient: apiClient,
+            themeMode: ThemeMode.light,
+            onThemeModeChanged: (_) {},
+          ),
+        ),
+      );
+
+      await tester.enterText(find.byType(TextField).at(0), 'admin');
+      await tester.enterText(find.byType(TextField).at(1), 'Admin12345!');
+      await tester.tap(find.text('Entrar'));
+      await tester.pumpAndSettle(const Duration(seconds: 2));
+      tester.takeException();
+
+      await tester.tap(find.text('Ruta'));
+      // MapCN keeps its marker pulse alive while the desktop map is mounted.
+      await tester.pump(const Duration(milliseconds: 500));
+
+      final Finder registrarPago =
+          find.widgetWithText(FilledButton, 'Registrar pago').first;
+      await tester.ensureVisible(registrarPago);
+      await tester.tap(registrarPago);
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.text('Registrar pagos'), findsOneWidget);
+      expect(find.text('Buscar y agregar cliente'), findsOneWidget);
+      expect(find.text('Medio de pago'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );
@@ -573,9 +698,13 @@ Future<http.Response> _responderApiMovimientosConCliente(
   final String path = request.url.path;
 
   if (path.endsWith('/caja-menor/movimientos')) {
-    return _jsonResponse(<Map<String, dynamic>>[
-      _movimientoCajaConCliente(),
-    ]);
+    return _jsonResponse(<String, dynamic>{
+      'items': <Map<String, dynamic>>[
+        _movimientoCajaConCliente(),
+      ],
+      'nextOffset': null,
+      'hasMore': false,
+    });
   }
 
   return _responderApiPagosPrecisos(request);
@@ -699,10 +828,79 @@ Future<http.Response> _responderApiPagosPrecisos(http.Request request) async {
   }
 
   if (path.endsWith('/caja-menor/movimientos')) {
-    return _jsonResponse(<dynamic>[]);
+    return _jsonResponse(<String, dynamic>{
+      'items': <dynamic>[],
+      'nextOffset': null,
+      'hasMore': false,
+    });
   }
 
   return _responderApi(request);
+}
+
+Future<http.Response> _responderApiPagosConMedio(http.Request request) async {
+  final String path = request.url.path;
+
+  if (path.endsWith('/catalogos')) {
+    final Map<String, dynamic> catalogos = _catalogosCredito();
+    catalogos['mediosPago'] = <Map<String, dynamic>>[
+      <String, dynamic>{'codigo': 'EFECTIVO', 'nombre': 'Efectivo'},
+    ];
+    return _jsonResponse(catalogos);
+  }
+
+  if (path.endsWith('/cobros/ruta')) {
+    return _jsonResponse(<Map<String, dynamic>>[
+      <String, dynamic>{
+        'id': 'cobro-decimal',
+        'cliente': 'Cliente decimal',
+        'cedula': '100',
+        'negocio': null,
+        'rutaId': 'ruta-1',
+        'ruta': 'Ruta decimal',
+        'valorTotal': 0.8,
+        'valorCuota': 0.04,
+        'totalAbonado': 0,
+        'saldo': 0.8,
+        'numeroCuotas': 20,
+        'cuotasRestantes': 20,
+        'proximaCuotaId': 'cuota-decimal',
+        'proximaNumeroCuota': 1,
+        'proximaFechaPago': '2026-08-20',
+        'proximoSaldoCuota': 0.04,
+        'estadoCobro': 'PENDIENTE',
+      },
+      <String, dynamic>{
+        'id': 'cobro-extra',
+        'cliente': 'Cliente adicional',
+        'cedula': '200',
+        'negocio': null,
+        'rutaId': 'ruta-1',
+        'ruta': 'Ruta decimal',
+        'valorTotal': 1.2,
+        'valorCuota': 0.06,
+        'totalAbonado': 0,
+        'saldo': 1.2,
+        'numeroCuotas': 20,
+        'cuotasRestantes': 20,
+        'proximaCuotaId': 'cuota-extra',
+        'proximaNumeroCuota': 1,
+        'proximaFechaPago': '2026-08-20',
+        'proximoSaldoCuota': 0.06,
+        'estadoCobro': 'PENDIENTE',
+      },
+    ]);
+  }
+
+  if (path.endsWith('/caja-menor/movimientos')) {
+    return _jsonResponse(<String, dynamic>{
+      'items': <dynamic>[],
+      'nextOffset': null,
+      'hasMore': false,
+    });
+  }
+
+  return _responderApiPagosPrecisos(request);
 }
 
 Future<http.Response> _responderApiCredito(http.Request request) async {
@@ -794,7 +992,7 @@ Future<http.Response> _responderApi(http.Request request) async {
 
   if (request.method == 'POST' && path.endsWith('/auth/login')) {
     return _jsonResponse(<String, dynamic>{
-      'token': 'token-de-prueba',
+      'token': 'header-de-prueba.payload-de-prueba.signature-de-prueba',
       'usuario': <String, dynamic>{
         'id': 'usuario-1',
         'usuario': 'admin',
@@ -840,9 +1038,23 @@ Future<http.Response> _responderApi(http.Request request) async {
     });
   }
 
-  if (path.endsWith('/clientes') ||
-      path.endsWith('/cobros/ruta') ||
-      path.endsWith('/caja-menor/movimientos')) {
+  if (path.endsWith('/creditos/resumen')) {
+    return _jsonResponse(<String, dynamic>{
+      'total': 0,
+      'activos': 0,
+      'inactivos': 0,
+    });
+  }
+
+  if (path.endsWith('/caja-menor/movimientos')) {
+    return _jsonResponse(<String, dynamic>{
+      'items': <dynamic>[],
+      'nextOffset': null,
+      'hasMore': false,
+    });
+  }
+
+  if (path.endsWith('/clientes') || path.endsWith('/cobros/ruta')) {
     return _jsonResponse(<dynamic>[]);
   }
 

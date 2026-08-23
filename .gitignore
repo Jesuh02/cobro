@@ -5,6 +5,8 @@ coverage/
 .env.*
 !.env.example
 backend/.env
+*.log
+**/.runtime/
 
 # Prisma
 backend/prisma/dev.db

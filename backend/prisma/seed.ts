@@ -1,9 +1,62 @@
-import { PrismaClient } from '@prisma/client';
-import { randomBytes, scrypt } from 'crypto';
-import { promisify } from 'util';
+import { Prisma, PrismaClient } from '@prisma/client';
+
+import { PasswordService } from '../src/modules/auth/password.service';
 
 const prisma = new PrismaClient();
-const scryptAsync = promisify(scrypt);
+const passwords = new PasswordService();
+
+const permisosEmpleadoSeed = [
+  {
+    codigo: 'VER_EMPLEADOS',
+    nombre: 'Ver empleados',
+    rolNombre: 'Permiso ver empleados',
+  },
+  {
+    codigo: 'CREAR_CAJA_MENOR',
+    nombre: 'Crear caja menor',
+    rolNombre: 'Permiso crear caja menor',
+  },
+  {
+    codigo: 'REGISTRAR_FLUJO_CAJA',
+    nombre: 'Registrar flujo en caja menor',
+    rolNombre: 'Permiso registrar flujo en caja menor',
+  },
+  {
+    codigo: 'CREAR_CREDITOS',
+    nombre: 'Crear creditos',
+    rolNombre: 'Permiso crear creditos',
+  },
+  {
+    codigo: 'REFINANCIAR_CREDITOS',
+    nombre: 'Refinanciar creditos',
+    rolNombre: 'Permiso refinanciar creditos',
+  },
+  {
+    codigo: 'MODIFICAR_CREDITOS',
+    nombre: 'Modificar creditos',
+    rolNombre: 'Permiso modificar creditos',
+  },
+  {
+    codigo: 'ELIMINAR_CREDITOS',
+    nombre: 'Eliminar creditos',
+    rolNombre: 'Permiso eliminar creditos',
+  },
+  {
+    codigo: 'AGREGAR_CUOTA',
+    nombre: 'Agregar cuota',
+    rolNombre: 'Permiso agregar cuota',
+  },
+  {
+    codigo: 'MODIFICAR_MOVIMIENTOS',
+    nombre: 'Modificar movimientos',
+    rolNombre: 'Permiso modificar movimientos',
+  },
+  {
+    codigo: 'ELIMINAR_MOVIMIENTOS',
+    nombre: 'Eliminar movimientos',
+    rolNombre: 'Permiso eliminar movimientos',
+  },
+] as const;
 
 async function main() {
   await prisma.moneda.createMany({
@@ -40,6 +93,8 @@ async function main() {
     ],
     skipDuplicates: true,
   });
+
+  await sincronizarPermisosEmpleado();
 
   await prisma.estadoCliente.createMany({
     data: [
@@ -168,6 +223,49 @@ async function main() {
   await crearAdministradorInicial();
 }
 
+async function sincronizarPermisosEmpleado() {
+  const rolAdministrador = await prisma.rol.findUnique({
+    where: { codigo: 'ADMINISTRADOR' },
+  });
+
+  for (const permiso of permisosEmpleadoSeed) {
+    const [rol, recurso] = await Promise.all([
+      prisma.rol.upsert({
+        where: { codigo: permiso.codigo },
+        create: { codigo: permiso.codigo, nombre: permiso.rolNombre },
+        update: { nombre: permiso.rolNombre },
+      }),
+      prisma.$queryRaw<Array<{ recurso_id: number }>>(Prisma.sql`
+        INSERT INTO public.recurso (codigo, nombre)
+        VALUES (${permiso.codigo}, ${permiso.nombre})
+        ON CONFLICT (codigo) DO UPDATE
+        SET nombre = EXCLUDED.nombre,
+            actualizado_en = now()
+        RETURNING recurso_id
+      `),
+    ]);
+    const recursoId = recurso[0]?.recurso_id;
+
+    if (!recursoId) {
+      throw new Error(`No existe el recurso ${permiso.codigo}`);
+    }
+
+    await prisma.$executeRaw(Prisma.sql`
+      INSERT INTO public.rol_recurso (rol_id, recurso_id)
+      VALUES (${rol.rolId}, ${recursoId})
+      ON CONFLICT DO NOTHING
+    `);
+
+    if (rolAdministrador) {
+      await prisma.$executeRaw(Prisma.sql`
+        INSERT INTO public.rol_recurso (rol_id, recurso_id)
+        VALUES (${rolAdministrador.rolId}, ${recursoId})
+        ON CONFLICT DO NOTHING
+      `);
+    }
+  }
+}
+
 async function crearAdministradorInicial() {
   const administradores = await prisma.usuario.count({
     where: {
@@ -199,7 +297,17 @@ async function crearAdministradorInicial() {
   const correo = (process.env.ADMIN_EMAIL ?? 'admin@cobro.local')
     .trim()
     .toLowerCase();
-  const contrasena = process.env.ADMIN_PASSWORD ?? 'Admin12345!';
+  const contrasena =
+    process.env.ADMIN_PASSWORD ?? 'Admin-local-development-12345!';
+  if (
+    contrasena.length < 12 ||
+    contrasena.length > 128 ||
+    (process.env.NODE_ENV === 'production' && !process.env.ADMIN_PASSWORD)
+  ) {
+    throw new Error(
+      'ADMIN_PASSWORD is required in production and must have 12 to 128 characters',
+    );
+  }
   const nombreCompleto = process.env.ADMIN_FULL_NAME ?? 'Administrador Cobro';
   const nombre = separarNombre(nombreCompleto);
   const existente = await prisma.usuario.findUnique({
@@ -211,7 +319,7 @@ async function crearAdministradorInicial() {
       where: { usuarioId: existente.usuarioId },
       data: {
         estadoUsuarioId: estadoActivo.estadoUsuarioId,
-        passwordHash: await hashPassword(contrasena),
+        passwordHash: await passwords.hash(contrasena),
       },
     });
     await prisma.usuarioRol.upsert({
@@ -234,7 +342,7 @@ async function crearAdministradorInicial() {
     data: {
       estadoUsuarioId: estadoActivo.estadoUsuarioId,
       nombreUsuario,
-      passwordHash: await hashPassword(contrasena),
+      passwordHash: await passwords.hash(contrasena),
       nombres: nombre.nombres,
       apellidos: nombre.apellidos,
       correo,
@@ -247,12 +355,6 @@ async function crearAdministradorInicial() {
   });
 
   console.info(`Administrador inicial creado: ${nombreUsuario}`);
-}
-
-async function hashPassword(password: string) {
-  const salt = randomBytes(24).toString('base64url');
-  const key = (await scryptAsync(password, salt, 64)) as Buffer;
-  return `scrypt$${salt}$${key.toString('base64url')}`;
 }
 
 function separarNombre(nombreCompleto: string) {

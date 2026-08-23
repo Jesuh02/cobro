@@ -2,15 +2,22 @@ import { ForbiddenException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { Workbook, type Worksheet } from 'exceljs';
 import { Buffer } from 'node:buffer';
+import { randomUUID } from 'node:crypto';
 
 import { cacheKeyFromCriteria } from '../../common/cache/cache-key';
 import { InMemoryCacheService } from '../../common/cache/in-memory-cache.service';
 import { DomainError } from '../../common/domain/domain-error';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuthenticatedUser } from '../auth/auth.types';
+import {
+  permisosEmpleadoPorCodigo,
+  type PermisoEmpleadoCodigo,
+} from '../auth/permissions';
 import { NotificationsService } from '../notifications/notifications.service';
 import {
+  ActualizarClienteDto,
   ActualizarCreditoDto,
+  ActualizarUbicacionClienteDto,
   ActualizarMovimientoCajaDto,
   CrearCajaMenorDto,
   CrearClienteDto,
@@ -59,6 +66,8 @@ type CobroRutaRow = {
   cedula: string | null;
   negocio: string | null;
   direccion: string | null;
+  latitud: Prisma.Decimal | null;
+  longitud: Prisma.Decimal | null;
   ruta_id: string;
   ruta: string;
   moneda_codigo: string;
@@ -117,6 +126,12 @@ type CreditoListadoRow = {
   actualizado_en: Date;
 };
 
+type CreditoConteoRow = {
+  total: number;
+  activos: number;
+  inactivos: number;
+};
+
 type PresupuestoRow = {
   caja_menor_id: string;
   caja_menor_nombre: string;
@@ -151,8 +166,40 @@ type CatalogoTblRow = {
   activo: boolean | null;
 };
 
+type MonedaTblRow = {
+  codigo: string;
+  nombre: string;
+  simbolo: string;
+  decimales: number | bigint;
+};
+
 type UsuarioTblRow = {
   id: string;
+  usuario: string;
+  nombres: string;
+  apellidos: string;
+  correo: string;
+  telefono: string | null;
+};
+
+type UsuarioOrganizacionTblRow = UsuarioTblRow & {
+  organizacion_id: string;
+};
+
+type CajaMenorCreadaTblRow = {
+  id: string;
+  nombre: string;
+  activa: boolean;
+  fecha_apertura: Date;
+};
+
+type CajaMovimientoTblRow = {
+  caja_menor_id: string;
+  caja_menor: string;
+  activa: boolean;
+  org_id: string;
+  sesion_id: string | null;
+  usuario_id: string;
   usuario: string;
   nombres: string;
   apellidos: string;
@@ -182,10 +229,26 @@ type ClienteTblRow = {
   notas: string | null;
   cedula: string;
   direccion: string | null;
+  latitud: Prisma.Decimal | null;
+  longitud: Prisma.Decimal | null;
   telefono: string | null;
   creado_en: Date;
   actualizado_en: Date;
   activo: boolean;
+};
+
+type ClienteUbicacionTblRow = {
+  persona_id: string;
+  direccion: string | null;
+};
+
+type ClienteTblDetalleRow = ClienteTblRow & {
+  persona_id: string;
+};
+
+type UsuarioOrganizacionActivaTblRow = {
+  usuario_id: string | null;
+  org_id: string;
 };
 
 type CobroRutaTblRow = {
@@ -195,6 +258,8 @@ type CobroRutaTblRow = {
   cedula: string | null;
   negocio: string | null;
   direccion: string | null;
+  latitud: Prisma.Decimal | null;
+  longitud: Prisma.Decimal | null;
   ruta_id: string;
   ruta: string;
   moneda_codigo: string;
@@ -456,9 +521,38 @@ type PaginaRespuesta<T> = {
   hasMore: boolean;
 };
 
+const maxExportRows = 10_000;
+const tiposMovimientoCajaTblBase = [
+  {
+    id: 1,
+    codigo: 'AJUSTE_ENTRADA',
+    nombre: 'Ajuste de entrada',
+    naturaleza: 'E',
+    referenciaTipo: 'AJUSTE',
+  },
+  {
+    id: 2,
+    codigo: 'GASTO',
+    nombre: 'Gasto',
+    naturaleza: 'S',
+    referenciaTipo: 'GASTO',
+  },
+  {
+    id: 3,
+    codigo: 'AJUSTE_SALIDA',
+    nombre: 'Ajuste de salida',
+    naturaleza: 'S',
+    referenciaTipo: 'AJUSTE',
+  },
+] as const;
+const codigosMovimientoCajaTblBase = tiposMovimientoCajaTblBase.map(
+  (tipo) => tipo.codigo,
+);
+
 @Injectable()
 export class CobrosService {
   private esquemaTblDisponible?: boolean;
+  private readonly tablaExisteCache = new Map<string, boolean>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -513,7 +607,7 @@ export class CobrosService {
       return this.obtenerCatalogosTbl(usuario);
     }
 
-    const puedeVerTodo = this.esAdministrador(usuario);
+    const puedeVerTodo = this.puedeVerDatosOrganizacion(usuario);
     const [
       monedas,
       frecuenciasPago,
@@ -622,7 +716,9 @@ export class CobrosService {
     }
 
     const search = this.normalizarTextoOpcional(query.search);
-    const where: Prisma.ClienteWhereInput = this.esAdministrador(usuario)
+    const where: Prisma.ClienteWhereInput = this.puedeVerDatosOrganizacion(
+      usuario,
+    )
       ? {}
       : { creadoPorUsuarioId: usuario.usuarioId };
 
@@ -668,10 +764,54 @@ export class CobrosService {
     const cedula = this.normalizarTextoOpcional(dto.cedula);
     const nombreComercial = this.normalizarTextoOpcional(dto.nombreComercial);
     const direccion = this.normalizarTextoOpcional(dto.direccion);
+    const latitud = dto.latitud;
+    const longitud = dto.longitud;
+    if (
+      [latitud, longitud].some(
+        (value: unknown) =>
+          value !== undefined &&
+          (typeof value !== 'number' || !Number.isFinite(value)),
+      )
+    ) {
+      throw DomainError.validation(
+        'Las coordenadas deben ser números finitos',
+        'COORDENADAS_INVALIDAS',
+      );
+    }
+    if ((latitud === undefined) !== (longitud === undefined)) {
+      throw DomainError.validation(
+        'La latitud y la longitud deben enviarse juntas',
+        'COORDENADAS_INCOMPLETAS',
+      );
+    }
+    if (latitud !== undefined && !direccion) {
+      throw DomainError.validation(
+        'La dirección es obligatoria cuando se envían coordenadas',
+        'DIRECCION_COORDENADAS_REQUERIDA',
+      );
+    }
     const notas = this.normalizarTextoOpcional(dto.notas);
     const correo = this.normalizarCorreo(dto.correo);
     const telefono = this.normalizarTextoOpcional(dto.telefono);
     const whatsapp = this.normalizarTextoOpcional(dto.whatsapp);
+
+    if (await this.usarEsquemaTbl()) {
+      return this.crearClienteTbl(
+        {
+          nombreCompleto,
+          cedula,
+          nombreComercial,
+          direccion,
+          notas,
+          correo,
+          telefono,
+          whatsapp,
+          latitud,
+          longitud,
+        },
+        usuario,
+      );
+    }
 
     const cliente = await this.prisma.$transaction(async (tx) => {
       const estadoActivo = await tx.estadoCliente.findUnique({
@@ -709,7 +849,13 @@ export class CobrosService {
         'WHATSAPP',
         whatsapp,
       );
-      await this.crearDireccionCliente(tx, created.clienteId, direccion);
+      await this.crearDireccionCliente(
+        tx,
+        created.clienteId,
+        direccion,
+        latitud,
+        longitud,
+      );
 
       const completo = await tx.cliente.findUnique({
         where: { clienteId: created.clienteId },
@@ -734,13 +880,411 @@ export class CobrosService {
     return this.formatearCliente(cliente);
   }
 
+  async actualizarCliente(
+    clienteId: string,
+    dto: ActualizarClienteDto,
+    usuario: AuthenticatedUser,
+  ) {
+    this.asegurarAdministrador(usuario);
+
+    if (await this.usarEsquemaTbl()) {
+      return this.actualizarClienteTbl(clienteId, dto, usuario);
+    }
+
+    const nombreCompleto = this.requerirTexto(
+      dto.nombreCompleto,
+      'El nombre del cliente es obligatorio',
+    );
+    const cedula = this.normalizarTextoOpcional(dto.cedula);
+    const nombreComercial = this.normalizarTextoOpcional(dto.nombreComercial);
+    const direccion = this.normalizarTextoOpcional(dto.direccion);
+    const notas = this.normalizarTextoOpcional(dto.notas);
+    const correo = this.normalizarCorreo(dto.correo);
+    const telefono = this.normalizarTextoOpcional(dto.telefono);
+    const whatsapp = this.normalizarTextoOpcional(dto.whatsapp);
+    const latitud = dto.latitud;
+    const longitud = dto.longitud;
+    if (
+      [latitud, longitud].some(
+        (value: unknown) =>
+          value !== undefined &&
+          (typeof value !== 'number' || !Number.isFinite(value)),
+      )
+    ) {
+      throw DomainError.validation(
+        'Las coordenadas deben ser números finitos',
+        'COORDENADAS_INVALIDAS',
+      );
+    }
+    if ((latitud === undefined) !== (longitud === undefined)) {
+      throw DomainError.validation(
+        'La latitud y la longitud deben enviarse juntas',
+        'COORDENADAS_INCOMPLETAS',
+      );
+    }
+    if (latitud !== undefined && !direccion) {
+      throw DomainError.validation(
+        'La dirección es obligatoria cuando se envían coordenadas',
+        'DIRECCION_COORDENADAS_REQUERIDA',
+      );
+    }
+
+    await this.prisma.$transaction(
+      async (tx) => {
+        const actual = await tx.cliente.findUnique({
+          where: { clienteId },
+          include: {
+            estadoCliente: true,
+            contactos: { include: { tipoContacto: true } },
+            documentos: { include: { tipoDocumento: true } },
+            direcciones: { include: { tipoDireccion: true } },
+          },
+        });
+
+        if (!actual) {
+          throw DomainError.notFound(
+            'Cliente no encontrado',
+            'CLIENTE_NO_ENCONTRADO',
+          );
+        }
+
+        await tx.cliente.update({
+          where: { clienteId },
+          data: {
+            nombreCompleto,
+            nombreComercial,
+            notas,
+            actualizadoEn: new Date(),
+          },
+        });
+
+        await this.reemplazarDocumentoCliente(tx, clienteId, 'CC', cedula);
+        await this.reemplazarContactoCliente(tx, clienteId, 'CORREO', correo);
+        await this.reemplazarContactoCliente(
+          tx,
+          clienteId,
+          'TELEFONO',
+          telefono,
+        );
+        await this.reemplazarContactoCliente(
+          tx,
+          clienteId,
+          'WHATSAPP',
+          whatsapp,
+        );
+        const direccionPrincipal =
+          actual.direcciones.find((item) => item.esPrincipal) ??
+          actual.direcciones[0];
+        const latitudFinal =
+          latitud ??
+          (direccionPrincipal?.latitud === null ||
+          direccionPrincipal?.latitud === undefined
+            ? null
+            : this.decimalANumero(direccionPrincipal.latitud));
+        const longitudFinal =
+          longitud ??
+          (direccionPrincipal?.longitud === null ||
+          direccionPrincipal?.longitud === undefined
+            ? null
+            : this.decimalANumero(direccionPrincipal.longitud));
+        await this.reemplazarDireccionCliente(
+          tx,
+          clienteId,
+          direccion,
+          latitudFinal,
+          longitudFinal,
+        );
+
+        await this.registrarAuditoria(tx, {
+          usuarioId: usuario.usuarioId,
+          tabla: 'cliente',
+          registroId: clienteId,
+          accion: 'MODIFICAR',
+          descripcion: `Se modifico cliente ${actual.nombreCompleto}`,
+          valoresAnteriores: this.formatearCliente(actual),
+          valoresNuevos: {
+            nombreCompleto,
+            cedula,
+            nombreComercial,
+            direccion,
+            notas,
+            correo,
+            telefono,
+            whatsapp,
+            latitud: latitudFinal,
+            longitud: longitudFinal,
+          },
+        });
+      },
+      { maxWait: 10_000, timeout: 10_000 },
+    );
+
+    const cliente = await this.prisma.cliente.findUnique({
+      where: { clienteId },
+      include: {
+        estadoCliente: true,
+        contactos: { include: { tipoContacto: true } },
+        documentos: { include: { tipoDocumento: true } },
+        direcciones: { include: { tipoDireccion: true } },
+      },
+    });
+
+    if (!cliente) {
+      throw DomainError.notFound(
+        'Cliente no encontrado despues de modificar',
+        'CLIENTE_NO_ENCONTRADO',
+      );
+    }
+
+    this.invalidarCacheLecturas();
+    return this.formatearCliente(cliente);
+  }
+
+  async eliminarCliente(clienteId: string, usuario: AuthenticatedUser) {
+    this.asegurarAdministrador(usuario);
+
+    if (await this.usarEsquemaTbl()) {
+      return this.eliminarClienteTbl(clienteId, usuario);
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      const cliente = await tx.cliente.findUnique({
+        where: { clienteId },
+        include: {
+          estadoCliente: true,
+          contactos: { include: { tipoContacto: true } },
+          documentos: { include: { tipoDocumento: true } },
+          direcciones: { include: { tipoDireccion: true } },
+        },
+      });
+
+      if (!cliente) {
+        throw DomainError.notFound(
+          'Cliente no encontrado',
+          'CLIENTE_NO_ENCONTRADO',
+        );
+      }
+
+      const [creditos, pagos] = await Promise.all([
+        tx.credito.count({ where: { clienteId } }),
+        tx.pago.count({ where: { clienteId } }),
+      ]);
+
+      if (creditos > 0 || pagos > 0) {
+        throw DomainError.conflict(
+          'No se puede eliminar un cliente con creditos o pagos registrados',
+          'CLIENTE_CON_MOVIMIENTOS_NO_ELIMINABLE',
+        );
+      }
+
+      await this.registrarAuditoria(tx, {
+        usuarioId: usuario.usuarioId,
+        tabla: 'cliente',
+        registroId: clienteId,
+        accion: 'ELIMINAR',
+        descripcion: `Se elimino cliente ${cliente.nombreCompleto}`,
+        valoresAnteriores: this.formatearCliente(cliente),
+      });
+
+      await tx.rutaCliente.deleteMany({ where: { clienteId } });
+      await tx.cliente.delete({ where: { clienteId } });
+    });
+
+    this.invalidarCacheLecturas();
+    return { ok: true };
+  }
+
+  async actualizarUbicacionCliente(
+    clienteId: string,
+    dto: ActualizarUbicacionClienteDto,
+    usuario: AuthenticatedUser,
+  ) {
+    if (
+      !Number.isFinite(dto.latitud) ||
+      !Number.isFinite(dto.longitud) ||
+      dto.latitud < -90 ||
+      dto.latitud > 90 ||
+      dto.longitud < -180 ||
+      dto.longitud > 180
+    ) {
+      throw DomainError.validation(
+        'Las coordenadas no son válidas',
+        'COORDENADAS_INVALIDAS',
+      );
+    }
+
+    if (await this.usarEsquemaTbl()) {
+      return this.actualizarUbicacionClienteTbl(clienteId, dto, usuario);
+    }
+
+    const direccionSolicitada = this.normalizarTextoOpcional(dto.direccion);
+    return this.prisma.$transaction(async (tx) => {
+      const cliente = await tx.cliente.findUnique({
+        where: { clienteId },
+        include: {
+          direcciones: {
+            orderBy: [{ esPrincipal: 'desc' }, { direccion: 'asc' }],
+          },
+        },
+      });
+      if (!cliente) {
+        throw DomainError.notFound(
+          'Cliente no encontrado',
+          'CLIENTE_NO_ENCONTRADO',
+        );
+      }
+
+      if (!this.esAdministrador(usuario)) {
+        const creditoVisible = await tx.credito.findFirst({
+          where: {
+            clienteId,
+            OR: [
+              { creadoPorUsuarioId: usuario.usuarioId },
+              { ruta: { responsableUsuarioId: usuario.usuarioId } },
+            ],
+          },
+          select: { creditoId: true },
+        });
+        if (!creditoVisible) {
+          throw new ForbiddenException('No tienes acceso a este cliente');
+        }
+      }
+
+      const direccionActual = cliente.direcciones[0];
+      const direccion = direccionSolicitada ?? direccionActual?.direccion;
+      if (!direccion) {
+        throw DomainError.validation(
+          'La dirección es obligatoria para guardar la ubicación',
+          'DIRECCION_COORDENADAS_REQUERIDA',
+        );
+      }
+
+      if (direccionActual) {
+        await tx.clienteDireccion.update({
+          where: {
+            clienteDireccionId: direccionActual.clienteDireccionId,
+          },
+          data: {
+            direccion,
+            latitud: dto.latitud,
+            longitud: dto.longitud,
+            esPrincipal: true,
+          },
+        });
+      } else {
+        const tipoDireccion = await tx.tipoDireccion.findUnique({
+          where: { codigo: 'CASA' },
+        });
+        if (!tipoDireccion) {
+          throw DomainError.notFound(
+            'No existe el tipo de dirección CASA',
+            'TIPO_DIRECCION_NO_EXISTE',
+          );
+        }
+        await tx.clienteDireccion.create({
+          data: {
+            clienteId,
+            tipoDireccionId: tipoDireccion.tipoDireccionId,
+            direccion,
+            municipio: 'No especificado',
+            departamento: 'No especificado',
+            latitud: dto.latitud,
+            longitud: dto.longitud,
+            esPrincipal: true,
+          },
+        });
+      }
+
+      return {
+        clienteId,
+        direccion,
+        latitud: dto.latitud,
+        longitud: dto.longitud,
+      };
+    });
+  }
+
+  private async actualizarUbicacionClienteTbl(
+    clienteId: string,
+    dto: ActualizarUbicacionClienteDto,
+    usuario: AuthenticatedUser,
+  ) {
+    const rows = await this.prisma.$queryRaw<
+      ClienteUbicacionTblRow[]
+    >(Prisma.sql`
+      SELECT
+        p.id_per::text AS persona_id,
+        p.per_direccion AS direccion
+      FROM public.tbl_clientes c
+      JOIN public.tbl_personas p ON p.id_per = c.cli_persona
+      WHERE c.id_cli::text = ${clienteId}
+        AND ${
+          this.esAdministrador(usuario)
+            ? Prisma.sql`TRUE`
+            : Prisma.sql`(
+              EXISTS (
+                SELECT 1
+                FROM public.tbl_creditos cr
+                JOIN public.tbl_usuarios tu ON tu.id_usu = cr.usu_id
+                WHERE cr.cli_id = c.id_cli
+                  AND UPPER(cr.cre_estado::text) <> 'ANULADO'
+                  AND tu.usu_usuario = ${usuario.usuario}
+              )
+              OR EXISTS (
+                SELECT 1
+                FROM public.tbl_rutas_clientes rc
+                JOIN public.tbl_rutas r ON r.id_rut = rc.rut_id
+                JOIN public.tbl_usuarios tu ON tu.id_usu = r.usu_id
+                WHERE rc.cli_id = c.id_cli
+                  AND r.org_id = c.org_id
+                  AND rc.rcl_activo
+                  AND tu.usu_usuario = ${usuario.usuario}
+              )
+            )`
+        }
+      LIMIT 1
+    `);
+    const cliente = rows[0];
+    if (!cliente) {
+      throw DomainError.notFound(
+        'Cliente no encontrado',
+        'CLIENTE_NO_ENCONTRADO',
+      );
+    }
+
+    const direccion =
+      this.normalizarTextoOpcional(dto.direccion) ?? cliente.direccion;
+    if (!direccion) {
+      throw DomainError.validation(
+        'La dirección es obligatoria para guardar la ubicación',
+        'DIRECCION_COORDENADAS_REQUERIDA',
+      );
+    }
+
+    await this.prisma.$executeRaw(Prisma.sql`
+      UPDATE public.tbl_personas
+      SET
+        per_direccion = ${direccion},
+        per_latitud = ${dto.latitud},
+        per_longitud = ${dto.longitud}
+      WHERE id_per::text = ${cliente.persona_id}
+    `);
+
+    return {
+      clienteId,
+      direccion,
+      latitud: dto.latitud,
+      longitud: dto.longitud,
+    };
+  }
+
   async listarRutas(usuario: AuthenticatedUser) {
     if (await this.usarEsquemaTbl()) {
       return this.listarRutasTbl(usuario);
     }
 
     const rutas = await this.prisma.ruta.findMany({
-      where: this.esAdministrador(usuario)
+      where: this.puedeVerDatosOrganizacion(usuario)
         ? undefined
         : { responsableUsuarioId: usuario.usuarioId },
       include: {
@@ -769,17 +1313,16 @@ export class CobrosService {
   async listarCobrosRuta(
     query: ListarCobrosRutaQueryDto,
     usuario: AuthenticatedUser,
+    limit?: number,
   ) {
     if (await this.usarEsquemaTbl()) {
-      return this.listarCobrosRutaTbl(query, usuario);
+      return this.listarCobrosRutaTbl(query, usuario, limit);
     }
 
-    const conditions: Prisma.Sql[] = [
-      Prisma.sql`ecr.codigo NOT IN ('PAGADO', 'ANULADO')`,
-    ];
+    const conditions: Prisma.Sql[] = [Prisma.sql`ecr.codigo <> 'ANULADO'`];
     const search = this.normalizarTextoOpcional(query.search);
 
-    if (!this.esAdministrador(usuario)) {
+    if (!this.puedeVerDatosOrganizacion(usuario)) {
       conditions.push(
         Prisma.sql`c.creado_por_usuario_id = ${usuario.usuarioId}::uuid`,
       );
@@ -789,12 +1332,39 @@ export class CobrosService {
       conditions.push(Prisma.sql`c.ruta_id = ${query.rutaId}::uuid`);
     }
 
-    if (query.estadoCobro === 'ATRASADO') {
-      conditions.push(Prisma.sql`prox.fecha_vencimiento < CURRENT_DATE`);
+    if (query.estadoCobro === 'PAGADO') {
+      conditions.push(Prisma.sql`(
+        ecr.codigo = 'PAGADO'
+        OR COALESCE(rp.cuotas_restantes, 0) <= 0
+        OR (cpp.valor_total - COALESCE(rp.total_abonado, 0)) <= 0
+      )`);
+    } else if (query.estadoCobro === 'ATRASADO') {
+      conditions.push(Prisma.sql`
+        ecr.codigo <> 'PAGADO'
+        AND
+        COALESCE(rp.cuotas_restantes, 0) > 0
+        AND
+        (cpp.valor_total - COALESCE(rp.total_abonado, 0)) > 0
+        AND prox.fecha_vencimiento < CURRENT_DATE
+      `);
     } else if (query.estadoCobro === 'PENDIENTE') {
-      conditions.push(Prisma.sql`prox.fecha_vencimiento = CURRENT_DATE`);
+      conditions.push(Prisma.sql`
+        ecr.codigo <> 'PAGADO'
+        AND
+        COALESCE(rp.cuotas_restantes, 0) > 0
+        AND
+        (cpp.valor_total - COALESCE(rp.total_abonado, 0)) > 0
+        AND prox.fecha_vencimiento = CURRENT_DATE
+      `);
     } else if (query.estadoCobro === 'AL_DIA') {
-      conditions.push(Prisma.sql`prox.fecha_vencimiento > CURRENT_DATE`);
+      conditions.push(Prisma.sql`
+        ecr.codigo <> 'PAGADO'
+        AND
+        COALESCE(rp.cuotas_restantes, 0) > 0
+        AND
+        (cpp.valor_total - COALESCE(rp.total_abonado, 0)) > 0
+        AND prox.fecha_vencimiento > CURRENT_DATE
+      `);
     }
 
     if (search) {
@@ -860,6 +1430,8 @@ export class CobrosService {
         doc_cc.numero_documento AS cedula,
         cl.nombre_comercial AS negocio,
         dir_principal.direccion,
+        dir_principal.latitud,
+        dir_principal.longitud,
         r.ruta_id,
         r.nombre AS ruta,
         c.moneda_codigo,
@@ -878,6 +1450,10 @@ export class CobrosService {
         prox.valor_total AS proximo_valor_cuota,
         prox.saldo_cuota AS proximo_saldo_cuota,
         CASE
+          WHEN ecr.codigo = 'PAGADO'
+            OR COALESCE(rp.cuotas_restantes, 0) <= 0
+            OR (cpp.valor_total - COALESCE(rp.total_abonado, 0)) <= 0
+            THEN 'PAGADO'
           WHEN prox.fecha_vencimiento < CURRENT_DATE THEN 'ATRASADO'
           WHEN prox.fecha_vencimiento = CURRENT_DATE THEN 'PENDIENTE'
           ELSE 'AL_DIA'
@@ -902,7 +1478,7 @@ export class CobrosService {
         LIMIT 1
       ) doc_cc ON TRUE
       LEFT JOIN LATERAL (
-        SELECT cd.direccion
+        SELECT cd.direccion, cd.latitud, cd.longitud
         FROM public.cliente_direccion cd
         WHERE cd.cliente_id = cl.cliente_id
         ORDER BY cd.es_principal DESC, cd.direccion ASC
@@ -929,8 +1505,8 @@ export class CobrosService {
         LIMIT 1
       ) prox ON TRUE
       WHERE ${Prisma.join(conditions, ' AND ')}
-        AND GREATEST(cpp.valor_total - COALESCE(rp.total_abonado, 0), 0) > 0
       ORDER BY r.nombre ASC, prox.fecha_vencimiento ASC NULLS LAST, cl.nombre_completo ASC
+      ${limit ? Prisma.sql`LIMIT ${limit}` : Prisma.empty}
     `);
 
     return rows.map((row) => ({
@@ -941,6 +1517,9 @@ export class CobrosService {
       cedula: row.cedula,
       negocio: row.negocio,
       direccion: row.direccion,
+      latitud: row.latitud === null ? null : this.decimalANumero(row.latitud),
+      longitud:
+        row.longitud === null ? null : this.decimalANumero(row.longitud),
       rutaId: row.ruta_id,
       ruta: row.ruta,
       monedaCodigo: row.moneda_codigo,
@@ -971,7 +1550,9 @@ export class CobrosService {
     const cobros = (await this.listarCobrosRuta(
       query,
       usuario,
+      maxExportRows + 1,
     )) as CobroRutaExportado[];
+    this.asegurarTamanoExportacion(cobros.length);
     const workbook = new Workbook();
     workbook.creator = 'Cobro';
     workbook.created = new Date();
@@ -1053,6 +1634,7 @@ export class CobrosService {
     const offset = paginado ? this.offsetPagina(query) : 0;
     const cacheKey = `cobros:${this.usuarioCacheKey(usuario)}:creditos:${cacheKeyFromCriteria(
       {
+        cajaMenorId: query.cajaMenorId,
         estado: query.estado,
         estadoCobro: query.estadoCobro,
         fechaDesde: query.fechaDesde,
@@ -1081,6 +1663,35 @@ export class CobrosService {
     );
   }
 
+  async resumenCreditos(
+    query: ListarCreditosQueryDto,
+    usuario: AuthenticatedUser,
+  ) {
+    const cacheKey = `cobros:${this.usuarioCacheKey(usuario)}:creditos-resumen:${cacheKeyFromCriteria(
+      {
+        cajaMenorId: query.cajaMenorId,
+        fechaDesde: query.fechaDesde,
+        fechaHasta: query.fechaHasta,
+        rutaId: query.rutaId,
+        search: query.search,
+      },
+    )}`;
+
+    return this.cache.remember(
+      cacheKey,
+      async () => {
+        const [row] = await this.contarCreditosPorEstado(query, usuario);
+
+        return {
+          total: Number(row?.total ?? 0),
+          activos: Number(row?.activos ?? 0),
+          inactivos: Number(row?.inactivos ?? 0),
+        };
+      },
+      { ttlMs: 15_000 },
+    );
+  }
+
   async exportarCreditos(
     query: ListarCreditosQueryDto,
     usuario: AuthenticatedUser,
@@ -1088,7 +1699,9 @@ export class CobrosService {
     const creditos = (await this.consultarCreditos(
       query,
       usuario,
+      maxExportRows + 1,
     )) as CreditoExportado[];
+    this.asegurarTamanoExportacion(creditos.length);
     const workbook = new Workbook();
     workbook.creator = 'Cobro';
     workbook.created = new Date();
@@ -1170,11 +1783,15 @@ export class CobrosService {
     limite?: number,
     offset = 0,
   ) {
+    if (await this.usarEsquemaTbl()) {
+      return this.consultarCreditosTbl(query, usuario, limite, offset);
+    }
+
     const conditions: Prisma.Sql[] = [Prisma.sql`1 = 1`];
     const search = this.normalizarTextoOpcional(query.search);
     const estado = query.estado ?? 'todos';
 
-    if (!this.esAdministrador(usuario)) {
+    if (!this.puedeVerDatosOrganizacion(usuario)) {
       conditions.push(Prisma.sql`(
         c.creado_por_usuario_id = ${usuario.usuarioId}::uuid
         OR r.responsable_usuario_id = ${usuario.usuarioId}::uuid
@@ -1185,20 +1802,44 @@ export class CobrosService {
       conditions.push(Prisma.sql`c.ruta_id = ${query.rutaId}::uuid`);
     }
 
+    if (query.cajaMenorId) {
+      conditions.push(
+        Prisma.sql`cm.caja_menor_id = ${query.cajaMenorId}::uuid`,
+      );
+    }
+
     if (estado === 'activos') {
-      conditions.push(Prisma.sql`ecr.codigo NOT IN ('PAGADO', 'ANULADO')`);
+      conditions.push(Prisma.sql`ecr.codigo = 'ACTIVO'`);
     } else if (estado === 'inactivos') {
-      conditions.push(Prisma.sql`ecr.codigo IN ('PAGADO', 'ANULADO')`);
+      conditions.push(Prisma.sql`ecr.codigo = 'PAGADO'`);
     }
 
     if (query.fechaDesde) {
       const fechaDesde = this.parsearFecha(query.fechaDesde, 'fechaDesde');
-      conditions.push(Prisma.sql`c.fecha_inicio >= ${fechaDesde}`);
+      conditions.push(Prisma.sql`
+        CASE
+          WHEN ecr.codigo = 'ACTIVO' THEN c.fecha_inicio
+          ELSE COALESCE(
+            pc.fecha_ultimo_pago,
+            (c.actualizado_en AT TIME ZONE 'America/Bogota')::date,
+            c.fecha_inicio
+          )
+        END >= ${fechaDesde}::date
+      `);
     }
 
     if (query.fechaHasta) {
       const fechaHasta = this.parsearFecha(query.fechaHasta, 'fechaHasta');
-      conditions.push(Prisma.sql`c.fecha_inicio <= ${fechaHasta}`);
+      conditions.push(Prisma.sql`
+        CASE
+          WHEN ecr.codigo = 'ACTIVO' THEN c.fecha_inicio
+          ELSE COALESCE(
+            pc.fecha_ultimo_pago,
+            (c.actualizado_en AT TIME ZONE 'America/Bogota')::date,
+            c.fecha_inicio
+          )
+        END <= ${fechaHasta}::date
+      `);
     }
 
     if (search) {
@@ -1256,6 +1897,19 @@ export class CobrosService {
         LEFT JOIN abonos_cuota ac
           ON ac.credito_cuota_id = cc.credito_cuota_id
         GROUP BY cc.credito_plan_pago_id
+      ),
+      pagos_credito AS (
+        SELECT
+          cpp_pago.credito_id,
+          MAX((p.fecha_pago AT TIME ZONE 'America/Bogota')::date) AS fecha_ultimo_pago
+        FROM public.credito_plan_pago cpp_pago
+        JOIN public.credito_cuota cc_pago
+          ON cc_pago.credito_plan_pago_id = cpp_pago.credito_plan_pago_id
+        JOIN public.pago_aplicacion pa_pago
+          ON pa_pago.credito_cuota_id = cc_pago.credito_cuota_id
+        JOIN public.pago p
+          ON p.pago_id = pa_pago.pago_id
+        GROUP BY cpp_pago.credito_id
       )
       SELECT
         c.credito_id,
@@ -1306,6 +1960,8 @@ export class CobrosService {
         ON cpp.credito_id = c.credito_id
       LEFT JOIN resumen_plan rp
         ON rp.credito_plan_pago_id = cpp.credito_plan_pago_id
+      LEFT JOIN pagos_credito pc
+        ON pc.credito_id = c.credito_id
       LEFT JOIN public.credito_desembolso cde
         ON cde.credito_id = c.credito_id
       LEFT JOIN public.caja_menor_movimiento cmm
@@ -1336,6 +1992,164 @@ export class CobrosService {
     `);
 
     return rows.map((row) => this.formatearCreditoListado(row));
+  }
+
+  private async contarCreditosPorEstado(
+    query: ListarCreditosQueryDto,
+    usuario: AuthenticatedUser,
+  ) {
+    if (await this.usarEsquemaTbl()) {
+      return this.contarCreditosPorEstadoTbl(query, usuario);
+    }
+
+    const conditions: Prisma.Sql[] = [Prisma.sql`1 = 1`];
+    const fechaConditions: Prisma.Sql[] = [Prisma.sql`1 = 1`];
+    const search = this.normalizarTextoOpcional(query.search);
+
+    if (!this.puedeVerDatosOrganizacion(usuario)) {
+      conditions.push(Prisma.sql`(
+        c.creado_por_usuario_id = ${usuario.usuarioId}::uuid
+        OR r.responsable_usuario_id = ${usuario.usuarioId}::uuid
+      )`);
+    }
+
+    if (query.rutaId) {
+      conditions.push(Prisma.sql`c.ruta_id = ${query.rutaId}::uuid`);
+    }
+
+    if (query.cajaMenorId) {
+      conditions.push(
+        Prisma.sql`cm.caja_menor_id = ${query.cajaMenorId}::uuid`,
+      );
+    }
+
+    if (query.fechaDesde) {
+      const fechaDesde = this.parsearFecha(query.fechaDesde, 'fechaDesde');
+      fechaConditions.push(Prisma.sql`fecha_referencia >= ${fechaDesde}::date`);
+    }
+
+    if (query.fechaHasta) {
+      const fechaHasta = this.parsearFecha(query.fechaHasta, 'fechaHasta');
+      fechaConditions.push(Prisma.sql`fecha_referencia <= ${fechaHasta}::date`);
+    }
+
+    if (search) {
+      const pattern = `%${search}%`;
+      conditions.push(Prisma.sql`(
+        cl.nombre_completo ILIKE ${pattern}
+        OR cl.nombre_comercial ILIKE ${pattern}
+        OR r.nombre ILIKE ${pattern}
+        OR cm.nombre ILIKE ${pattern}
+        OR c.observacion ILIKE ${pattern}
+        OR EXISTS (
+          SELECT 1
+          FROM public.cliente_direccion cd_busqueda
+          WHERE cd_busqueda.cliente_id = cl.cliente_id
+            AND cd_busqueda.direccion ILIKE ${pattern}
+        )
+        OR EXISTS (
+          SELECT 1
+          FROM public.cliente_documento cd_busqueda
+          WHERE cd_busqueda.cliente_id = cl.cliente_id
+            AND cd_busqueda.numero_documento ILIKE ${pattern}
+        )
+      )`);
+    }
+
+    return this.prisma.$queryRaw<CreditoConteoRow[]>(Prisma.sql`
+      WITH abonos_cuota AS (
+        SELECT
+          cc.credito_cuota_id,
+          COALESCE(
+            SUM(
+              pa.monto_capital
+              + pa.monto_interes
+              + pa.monto_mora
+              - pa.monto_descuento
+            ),
+            0
+          ) AS abonado
+        FROM public.credito_cuota cc
+        LEFT JOIN public.pago_aplicacion pa
+          ON pa.credito_cuota_id = cc.credito_cuota_id
+        GROUP BY cc.credito_cuota_id
+      ),
+      resumen_plan AS (
+        SELECT
+          cc.credito_plan_pago_id,
+          COALESCE(SUM(ac.abonado), 0) AS total_abonado,
+          COUNT(*) FILTER (
+            WHERE ecu.codigo NOT IN ('PAGADA', 'ANULADA')
+              AND (cc.valor_total - COALESCE(ac.abonado, 0)) > 0
+          )::int AS cuotas_restantes
+        FROM public.credito_cuota cc
+        JOIN public.estado_cuota ecu
+          ON ecu.estado_cuota_id = cc.estado_cuota_id
+        LEFT JOIN abonos_cuota ac
+          ON ac.credito_cuota_id = cc.credito_cuota_id
+        GROUP BY cc.credito_plan_pago_id
+      ),
+      pagos_credito AS (
+        SELECT
+          cpp_pago.credito_id,
+          MAX((p.fecha_pago AT TIME ZONE 'America/Bogota')::date) AS fecha_ultimo_pago
+        FROM public.credito_plan_pago cpp_pago
+        JOIN public.credito_cuota cc_pago
+          ON cc_pago.credito_plan_pago_id = cpp_pago.credito_plan_pago_id
+        JOIN public.pago_aplicacion pa_pago
+          ON pa_pago.credito_cuota_id = cc_pago.credito_cuota_id
+        JOIN public.pago p
+          ON p.pago_id = pa_pago.pago_id
+        GROUP BY cpp_pago.credito_id
+      ),
+      creditos_estado AS (
+        SELECT
+          ecr.codigo,
+          COALESCE(rp.cuotas_restantes, 0) AS cuotas_restantes,
+          GREATEST(cpp.valor_total - COALESCE(rp.total_abonado, 0), 0) AS saldo,
+          (ecr.codigo = 'ACTIVO') AS es_activo,
+          (ecr.codigo = 'PAGADO') AS es_inactivo,
+          CASE
+            WHEN ecr.codigo = 'ACTIVO' THEN c.fecha_inicio
+            ELSE COALESCE(
+              pc.fecha_ultimo_pago,
+              (c.actualizado_en AT TIME ZONE 'America/Bogota')::date,
+              c.fecha_inicio
+            )
+          END AS fecha_referencia
+        FROM public.credito c
+        JOIN public.cliente cl ON cl.cliente_id = c.cliente_id
+        JOIN public.ruta r ON r.ruta_id = c.ruta_id
+        JOIN public.estado_credito ecr
+          ON ecr.estado_credito_id = c.estado_credito_id
+        JOIN public.credito_plan_pago cpp ON cpp.credito_id = c.credito_id
+        LEFT JOIN public.credito_desembolso cde
+          ON cde.credito_id = c.credito_id
+        LEFT JOIN public.caja_menor_movimiento cmm
+          ON cmm.caja_menor_movimiento_id = cde.caja_menor_movimiento_id
+        LEFT JOIN public.caja_menor cm
+          ON cm.caja_menor_id = cmm.caja_menor_id
+        LEFT JOIN resumen_plan rp
+          ON rp.credito_plan_pago_id = cpp.credito_plan_pago_id
+        LEFT JOIN pagos_credito pc
+          ON pc.credito_id = c.credito_id
+        WHERE ${Prisma.join(conditions, ' AND ')}
+      ),
+      creditos_filtrados AS (
+        SELECT *
+        FROM creditos_estado
+        WHERE ${Prisma.join(fechaConditions, ' AND ')}
+      )
+      SELECT
+        COUNT(*)::int AS total,
+        COUNT(*) FILTER (
+          WHERE es_activo
+        )::int AS activos,
+        COUNT(*) FILTER (
+          WHERE es_inactivo
+        )::int AS inactivos
+      FROM creditos_filtrados
+    `);
   }
 
   async listarCuotasCredito(creditoId: string, usuario: AuthenticatedUser) {
@@ -1400,6 +2214,8 @@ export class CobrosService {
   }
 
   async crearCredito(dto: CrearCreditoDto, usuario: AuthenticatedUser) {
+    this.asegurarPermiso(usuario, 'CREAR_CREDITOS');
+
     const fechaInicio = this.parsearFecha(dto.fechaInicio, 'fechaInicio');
     const valorPrincipal = this.redondear(dto.valorPrincipal);
     const porcentajeInteres = this.redondear(dto.porcentajeInteres, 4);
@@ -1529,7 +2345,7 @@ export class CobrosService {
     dto: ActualizarCreditoDto,
     usuario: AuthenticatedUser,
   ) {
-    this.asegurarAdministrador(usuario);
+    this.asegurarPermiso(usuario, 'MODIFICAR_CREDITOS');
 
     const fechaInicio = this.parsearFecha(dto.fechaInicio, 'fechaInicio');
     const valorPrincipal = this.redondear(dto.valorPrincipal);
@@ -1579,18 +2395,23 @@ export class CobrosService {
         });
         const tienePagosAplicados = pagosAplicados > 0;
 
-        const [cliente, moneda, frecuenciaPago, estadoPendiente, tipoDesembolso] =
-          await Promise.all([
-            tx.cliente.findUnique({ where: { clienteId: dto.clienteId } }),
-            tx.moneda.findUnique({ where: { codigoMoneda: dto.monedaCodigo } }),
-            tx.frecuenciaPago.findUnique({
-              where: { frecuenciaPagoId: dto.frecuenciaPagoId },
-            }),
-            tx.estadoCuota.findUnique({ where: { codigo: 'PENDIENTE' } }),
-            tx.tipoMovimientoCaja.findUnique({
-              where: { codigo: 'DESEMBOLSO_CREDITO' },
-            }),
-          ]);
+        const [
+          cliente,
+          moneda,
+          frecuenciaPago,
+          estadoPendiente,
+          tipoDesembolso,
+        ] = await Promise.all([
+          tx.cliente.findUnique({ where: { clienteId: dto.clienteId } }),
+          tx.moneda.findUnique({ where: { codigoMoneda: dto.monedaCodigo } }),
+          tx.frecuenciaPago.findUnique({
+            where: { frecuenciaPagoId: dto.frecuenciaPagoId },
+          }),
+          tx.estadoCuota.findUnique({ where: { codigo: 'PENDIENTE' } }),
+          tx.tipoMovimientoCaja.findUnique({
+            where: { codigo: 'DESEMBOLSO_CREDITO' },
+          }),
+        ]);
 
         if (!cliente) {
           throw DomainError.notFound(
@@ -1631,7 +2452,10 @@ export class CobrosService {
             });
 
         if (!ruta) {
-          throw DomainError.notFound('Ruta no encontrada', 'RUTA_NO_ENCONTRADA');
+          throw DomainError.notFound(
+            'Ruta no encontrada',
+            'RUTA_NO_ENCONTRADA',
+          );
         }
 
         this.asegurarResponsableRuta(ruta.responsableUsuarioId, usuario);
@@ -1705,10 +2529,8 @@ export class CobrosService {
           frecuenciaPago.frecuenciaPagoId !== credito.frecuenciaPagoId ||
           this.fechaIso(fechaInicio) !== this.fechaIso(credito.fechaInicio) ||
           cambiaValorPrincipal ||
-          this.redondear(
-            this.decimalANumero(credito.porcentajeInteres),
-            4,
-          ) !== porcentajeInteres ||
+          this.redondear(this.decimalANumero(credito.porcentajeInteres), 4) !==
+            porcentajeInteres ||
           dto.plazoDias !== credito.plazoDias ||
           omitirDomingos !== credito.omitirDomingos;
 
@@ -1747,8 +2569,7 @@ export class CobrosService {
 
           const movimientoActualizado = await tx.cajaMenorMovimiento.update({
             where: {
-              cajaMenorMovimientoId:
-                movimientoAnterior.cajaMenorMovimientoId,
+              cajaMenorMovimientoId: movimientoAnterior.cajaMenorMovimientoId,
             },
             data: {
               cajaMenorId: caja.cajaMenorId,
@@ -1860,7 +2681,9 @@ export class CobrosService {
 
         if (credito.desembolso) {
           await tx.creditoDesembolso.update({
-            where: { creditoDesembolsoId: credito.desembolso.creditoDesembolsoId },
+            where: {
+              creditoDesembolsoId: credito.desembolso.creditoDesembolsoId,
+            },
             data: {
               cajaMenorMovimientoId,
               fechaDesembolso: fechaInicio,
@@ -1972,7 +2795,7 @@ export class CobrosService {
   }
 
   async eliminarCredito(creditoId: string, usuario: AuthenticatedUser) {
-    this.asegurarAdministrador(usuario);
+    this.asegurarPermiso(usuario, 'ELIMINAR_CREDITOS');
 
     await this.prisma.$transaction(
       async (tx) => {
@@ -2074,6 +2897,8 @@ export class CobrosService {
     dto: RefinanciarCreditoDto,
     usuario: AuthenticatedUser,
   ) {
+    this.asegurarPermiso(usuario, 'REFINANCIAR_CREDITOS');
+
     const fechaInicio = this.parsearFecha(dto.fechaInicio, 'fechaInicio');
     const valorNuevo = this.redondear(dto.valorPrincipal);
     const porcentajeInteres = this.redondear(dto.porcentajeInteres, 4);
@@ -2579,6 +3404,8 @@ export class CobrosService {
   }
 
   async registrarPago(dto: RegistrarPagoDto, usuario: AuthenticatedUser) {
+    this.asegurarPermiso(usuario, 'AGREGAR_CUOTA');
+
     const resultadoPago = await this.prisma.$transaction(
       async (tx) => {
         await tx.$queryRaw(Prisma.sql`
@@ -2945,7 +3772,7 @@ export class CobrosService {
       where.tipoMovimientoCaja = { naturaleza: 'S' };
     }
 
-    if (!this.esAdministrador(usuario)) {
+    if (!this.puedeVerDatosOrganizacion(usuario)) {
       where.cajaMenor = { responsableUsuarioId: usuario.usuarioId };
     }
 
@@ -3000,7 +3827,7 @@ export class CobrosService {
       : null;
     const cajaFiltroVisible =
       cajaFiltro &&
-      (this.esAdministrador(usuario) ||
+      (this.puedeVerDatosOrganizacion(usuario) ||
         cajaFiltro.responsableUsuarioId === usuario.usuarioId)
         ? cajaFiltro
         : null;
@@ -3015,7 +3842,7 @@ export class CobrosService {
       pagoWhere.ruta = {
         responsableUsuarioId: cajaFiltroVisible.responsableUsuarioId,
       };
-    } else if (!this.esAdministrador(usuario)) {
+    } else if (!this.puedeVerDatosOrganizacion(usuario)) {
       pagoWhere.ruta = { responsableUsuarioId: usuario.usuarioId };
     }
 
@@ -3346,11 +4173,17 @@ export class CobrosService {
     dto: CrearMovimientoCajaDto,
     usuario: AuthenticatedUser,
   ) {
+    this.asegurarPermiso(usuario, 'REGISTRAR_FLUJO_CAJA');
+
     const fechaMovimiento = this.parsearFecha(
       dto.fechaMovimiento,
       'fechaMovimiento',
     );
     const monto = this.redondear(dto.monto);
+
+    if (await this.usarEsquemaTbl()) {
+      return this.crearMovimientoCajaTbl(dto, usuario, fechaMovimiento, monto);
+    }
 
     const movimiento = await this.prisma.$transaction(async (tx) => {
       const caja = await tx.cajaMenor.findUnique({
@@ -3419,12 +4252,158 @@ export class CobrosService {
     return this.formatearMovimientoCaja(movimiento);
   }
 
+  private async crearMovimientoCajaTbl(
+    dto: CrearMovimientoCajaDto,
+    usuario: AuthenticatedUser,
+    fechaMovimiento: Date,
+    monto: number,
+  ) {
+    const tipoMovimientoCodigo = this.requerirTexto(
+      dto.tipoMovimientoCodigo,
+      'El tipo de movimiento es obligatorio',
+    ).toUpperCase();
+    const tipo = tiposMovimientoCajaTblBase.find(
+      (item) => item.codigo === tipoMovimientoCodigo,
+    );
+
+    if (!tipo) {
+      throw DomainError.notFound(
+        'Tipo de movimiento de caja no encontrado',
+        'TIPO_MOVIMIENTO_CAJA_NO_EXISTE',
+      );
+    }
+
+    const motivo = this.requerirTexto(
+      dto.motivo,
+      'El motivo del movimiento es obligatorio',
+    );
+    const condicionUsuario = this.esIdTbl(usuario.usuarioId)
+      ? Prisma.sql`tu.id_usu = ${usuario.usuarioId}::bigint`
+      : Prisma.sql`tu.usu_usuario = ${usuario.usuario}`;
+
+    const movimiento = await this.prisma.$transaction(async (tx) => {
+      const [caja] = await tx.$queryRaw<CajaMovimientoTblRow[]>(Prisma.sql`
+        SELECT
+          c.id_caj::text AS caja_menor_id,
+          c.caj_nombre AS caja_menor,
+          c.caj_activa AS activa,
+          c.org_id::text AS org_id,
+          sc.id_sca::text AS sesion_id,
+          tu.id_usu::text AS usuario_id,
+          tu.usu_usuario AS usuario,
+          p.per_primer_nombre AS nombres,
+          p.per_apellido AS apellidos,
+          tu.usu_email AS correo,
+          p.per_num_celular AS telefono
+        FROM public.tbl_cajas c
+        JOIN public.tbl_usuarios_organizaciones uo
+          ON uo.org_id = c.org_id
+        JOIN public.tbl_usuarios tu ON tu.id_usu = uo.usu_id
+        JOIN public.tbl_personas p ON p.id_per = tu.persona_id
+        LEFT JOIN LATERAL (
+          SELECT sca.id_sca
+          FROM public.tbl_sesiones_cajas sca
+          WHERE sca.caj_id = c.id_caj
+            AND sca.sca_estado::text = 'ABIERTA'
+          ORDER BY sca.sca_fecha_apertura DESC, sca.id_sca DESC
+          LIMIT 1
+        ) sc ON TRUE
+        WHERE c.id_caj::text = ${dto.cajaMenorId}
+          AND c.caj_tipo::text = 'MENOR'
+          AND uo.urg_activo
+          AND tu.usu_activo
+          AND ${condicionUsuario}
+        LIMIT 1
+      `);
+
+      if (!caja) {
+        throw DomainError.notFound(
+          'Caja menor no encontrada',
+          'CAJA_MENOR_NO_ENCONTRADA',
+        );
+      }
+
+      if (!caja.activa) {
+        throw DomainError.conflict(
+          'La caja menor no esta activa',
+          'CAJA_MENOR_INACTIVA',
+        );
+      }
+
+      const sesionId =
+        caja.sesion_id ??
+        (
+          await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+            INSERT INTO public.tbl_sesiones_cajas (
+              sca_fecha_apertura,
+              sca_monto_inicial,
+              caj_id,
+              usu_id
+            )
+            VALUES (
+              ${fechaMovimiento},
+              0,
+              ${caja.caja_menor_id}::bigint,
+              ${caja.usuario_id}::bigint
+            )
+            RETURNING id_sca::text AS id
+          `)
+        )[0]?.id;
+
+      if (!sesionId) {
+        throw DomainError.conflict(
+          'No se pudo abrir la sesion de caja menor',
+          'SESION_CAJA_NO_CREADA',
+        );
+      }
+
+      const [creado] = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        INSERT INTO public.tbl_movimientos_cajas (
+          mca_tipo,
+          mca_monto,
+          mca_referencia_tipo,
+          mca_creacion,
+          org_id,
+          usu_id,
+          sca_id
+        )
+        VALUES (
+          ${tipo.codigo},
+          ${this.decimal(monto)},
+          NULL,
+          ${fechaMovimiento},
+          ${caja.org_id}::bigint,
+          ${caja.usuario_id}::bigint,
+          ${sesionId}::bigint
+        )
+        RETURNING id_mca::text AS id
+      `);
+
+      await tx.$executeRaw(Prisma.sql`
+        UPDATE public.tbl_sesiones_cajas
+        SET
+          sca_total_cobrado = sca_total_cobrado + ${
+            tipo.naturaleza === 'E' ? this.decimal(monto) : 0
+          },
+          sca_total_gasto = sca_total_gasto + ${
+            tipo.naturaleza === 'S' ? this.decimal(monto) : 0
+          }
+        WHERE id_sca = ${sesionId}::bigint
+      `);
+
+      return this.obtenerMovimientoCajaTblPorId(tx, creado.id, motivo);
+    });
+
+    this.invalidarCacheLecturas();
+    return this.formatearMovimientoCajaTbl(movimiento);
+  }
+
   async actualizarMovimientoCaja(
     id: string,
     dto: ActualizarMovimientoCajaDto,
     usuario: AuthenticatedUser,
   ) {
-    this.asegurarAdministrador(usuario);
+    this.asegurarPermiso(usuario, 'MODIFICAR_MOVIMIENTOS');
 
     if (this.esIdPagoCaja(id)) {
       const movimiento = await this.actualizarPagoComoMovimientoCaja(
@@ -3499,10 +4478,11 @@ export class CobrosService {
           )
         : null;
 
-      if (
-        creditoDesembolso &&
-        tipo.codigo !== 'DESEMBOLSO_CREDITO'
-      ) {
+      if (creditoDesembolso) {
+        this.asegurarPermiso(usuario, 'MODIFICAR_CREDITOS');
+      }
+
+      if (creditoDesembolso && tipo.codigo !== 'DESEMBOLSO_CREDITO') {
         throw DomainError.conflict(
           'Los desembolsos de credito deben conservar el tipo de desembolso',
           'DESEMBOLSO_CREDITO_TIPO_NO_EDITABLE',
@@ -3510,7 +4490,10 @@ export class CobrosService {
       }
 
       if (creditoDesembolso) {
-        if (caja.responsableUsuarioId !== creditoDesembolso.ruta.responsableUsuarioId) {
+        if (
+          caja.responsableUsuarioId !==
+          creditoDesembolso.ruta.responsableUsuarioId
+        ) {
           throw DomainError.conflict(
             'La caja menor no pertenece al responsable de la ruta',
             'CAJA_MENOR_RUTA_RESPONSABLE_DIFERENTE',
@@ -3595,7 +4578,7 @@ export class CobrosService {
   }
 
   async eliminarMovimientoCaja(id: string, usuario: AuthenticatedUser) {
-    this.asegurarAdministrador(usuario);
+    this.asegurarPermiso(usuario, 'ELIMINAR_MOVIMIENTOS');
 
     if (this.esIdPagoCaja(id)) {
       await this.eliminarPagoComoMovimientoCaja(
@@ -3625,6 +4608,7 @@ export class CobrosService {
       }
 
       if (actual.desembolsoCredito) {
+        this.asegurarPermiso(usuario, 'ELIMINAR_CREDITOS');
         await this.eliminarCreditoDesdeMovimientoDesembolso(
           tx,
           actual,
@@ -3669,6 +4653,12 @@ export class CobrosService {
   }
 
   async crearCajaMenor(dto: CrearCajaMenorDto, usuario: AuthenticatedUser) {
+    this.asegurarPermiso(usuario, 'CREAR_CAJA_MENOR');
+
+    if (await this.usarEsquemaTbl()) {
+      return this.crearCajaMenorTbl(dto, usuario);
+    }
+
     const nombre = this.requerirTexto(
       dto.nombre,
       'El nombre de la caja menor es obligatorio',
@@ -3746,6 +4736,164 @@ export class CobrosService {
     };
   }
 
+  private async crearCajaMenorTbl(
+    dto: CrearCajaMenorDto,
+    usuario: AuthenticatedUser,
+  ) {
+    const nombre = this.requerirTexto(
+      dto.nombre,
+      'El nombre de la caja menor es obligatorio',
+    );
+    const monedaCodigo = (dto.monedaCodigo ?? 'COP').trim().toUpperCase();
+    const fechaApertura = dto.fechaApertura
+      ? this.parsearFechaHora(dto.fechaApertura, 'fechaApertura')
+      : new Date();
+    const fechaCierre = dto.fechaCierre
+      ? this.parsearFechaHora(dto.fechaCierre, 'fechaCierre')
+      : null;
+
+    if (fechaCierre && fechaCierre <= fechaApertura) {
+      throw DomainError.validation(
+        'La fecha de cierre debe ser posterior a la fecha de apertura',
+        'CAJA_MENOR_FECHA_CIERRE_INVALIDA',
+      );
+    }
+
+    const condicionUsuario = this.esIdTbl(usuario.usuarioId)
+      ? Prisma.sql`tu.id_usu = ${usuario.usuarioId}::bigint`
+      : Prisma.sql`tu.usu_usuario = ${usuario.usuario}`;
+
+    const caja = await this.prisma.$transaction(async (tx) => {
+      const [responsable] = await tx.$queryRaw<UsuarioOrganizacionTblRow[]>(
+        Prisma.sql`
+          SELECT
+            tu.id_usu::text AS id,
+            tu.usu_usuario AS usuario,
+            p.per_primer_nombre AS nombres,
+            p.per_apellido AS apellidos,
+            tu.usu_email AS correo,
+            p.per_num_celular AS telefono,
+            uo.org_id::text AS organizacion_id
+          FROM public.tbl_usuarios tu
+          JOIN public.tbl_personas p ON p.id_per = tu.persona_id
+          JOIN public.tbl_usuarios_organizaciones uo ON uo.usu_id = tu.id_usu
+          WHERE ${condicionUsuario}
+            AND tu.usu_activo
+            AND uo.urg_activo
+          ORDER BY uo.id_urg ASC
+          LIMIT 1
+        `,
+      );
+
+      if (!responsable) {
+        throw DomainError.notFound(
+          'Responsable no encontrado',
+          'RESPONSABLE_NO_ENCONTRADO',
+        );
+      }
+
+      const [moneda] = await tx.$queryRaw<
+        Array<{ id: string; codigo: string }>
+      >(
+        Prisma.sql`
+          SELECT
+            id_mon::text AS id,
+            mon_codigo::text AS codigo
+          FROM public.tbl_monedas
+          WHERE mon_activa
+            AND (
+              UPPER(TRIM(mon_codigo::text)) = ${monedaCodigo}
+              OR UPPER(TRIM(mon_codigo::text)) = LEFT(${monedaCodigo}, 1)
+            )
+          ORDER BY
+            CASE WHEN UPPER(TRIM(mon_codigo::text)) = ${monedaCodigo} THEN 0 ELSE 1 END,
+            id_mon ASC
+          LIMIT 1
+        `,
+      );
+
+      if (!moneda) {
+        throw DomainError.notFound(
+          'Moneda no encontrada',
+          'MONEDA_NO_ENCONTRADA',
+        );
+      }
+
+      const [existente] = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        SELECT id_caj::text AS id
+        FROM public.tbl_cajas
+        WHERE org_id = ${responsable.organizacion_id}::bigint
+          AND caj_tipo::text = 'MENOR'
+          AND UPPER(TRIM(caj_nombre)) = UPPER(${nombre})
+        LIMIT 1
+      `);
+
+      if (existente) {
+        throw DomainError.conflict(
+          'El responsable ya tiene una caja menor con ese nombre',
+          'CAJA_MENOR_DUPLICADA',
+        );
+      }
+
+      const [cajaCreada] = await tx.$queryRaw<CajaMenorCreadaTblRow[]>(
+        Prisma.sql`
+          INSERT INTO public.tbl_cajas (
+            caj_nombre,
+            caj_activa,
+            caj_creacion,
+            org_id,
+            mon_id
+          )
+          VALUES (
+            ${nombre},
+            TRUE,
+            ${fechaApertura},
+            ${responsable.organizacion_id}::bigint,
+            ${moneda.id}::bigint
+          )
+          RETURNING
+            id_caj::text AS id,
+            caj_nombre AS nombre,
+            caj_activa AS activa,
+            caj_creacion AS fecha_apertura
+        `,
+      );
+
+      await tx.$executeRaw(Prisma.sql`
+        INSERT INTO public.tbl_sesiones_cajas (
+          sca_fecha_apertura,
+          sca_fecha_cierre,
+          sca_monto_inicial,
+          caj_id,
+          usu_id
+        )
+        VALUES (
+          ${fechaApertura},
+          ${fechaCierre},
+          0,
+          ${cajaCreada.id}::bigint,
+          ${responsable.id}::bigint
+        )
+      `);
+
+      return {
+        caja: cajaCreada,
+        responsable,
+      };
+    });
+
+    this.invalidarCacheLecturas();
+    return {
+      id: caja.caja.id,
+      nombre: caja.caja.nombre,
+      activa: caja.caja.activa,
+      monedaCodigo,
+      fechaApertura: caja.caja.fecha_apertura.toISOString(),
+      fechaCierre: fechaCierre?.toISOString() ?? null,
+      responsable: this.formatearUsuarioTbl(caja.responsable),
+    };
+  }
+
   async obtenerPresupuesto(
     query: ObtenerPresupuestoQueryDto,
     usuario: AuthenticatedUser,
@@ -3775,7 +4923,7 @@ export class CobrosService {
     const filtrosFechaGasto: Prisma.Sql[] = [];
     const filtrosFechaCredito: Prisma.Sql[] = [];
 
-    if (!this.esAdministrador(usuario)) {
+    if (!this.puedeVerDatosOrganizacion(usuario)) {
       condiciones.push(
         Prisma.sql`cm.responsable_usuario_id = ${usuario.usuarioId}::uuid`,
       );
@@ -3797,9 +4945,7 @@ export class CobrosService {
         Prisma.sql`cmm.fecha_movimiento >= ${fechaDesde}`,
       );
       filtrosFechaGasto.push(Prisma.sql`g.fecha_gasto >= ${fechaDesde}`);
-      filtrosFechaCredito.push(
-        Prisma.sql`c.fecha_inicio >= ${fechaDesde}`,
-      );
+      filtrosFechaCredito.push(Prisma.sql`c.fecha_inicio >= ${fechaDesde}`);
     }
 
     if (fechaDesdePago) {
@@ -3811,9 +4957,7 @@ export class CobrosService {
         Prisma.sql`cmm.fecha_movimiento <= ${fechaHasta}`,
       );
       filtrosFechaGasto.push(Prisma.sql`g.fecha_gasto <= ${fechaHasta}`);
-      filtrosFechaCredito.push(
-        Prisma.sql`c.fecha_inicio <= ${fechaHasta}`,
-      );
+      filtrosFechaCredito.push(Prisma.sql`c.fecha_inicio <= ${fechaHasta}`);
     }
 
     if (fechaHastaPago) {
@@ -4012,7 +5156,11 @@ export class CobrosService {
 
     try {
       const rows = await this.prisma.$queryRaw<EsquemaTblDisponibleRow[]>`
-        SELECT EXISTS (SELECT 1 FROM public.tbl_clientes LIMIT 1) AS disponible
+        SELECT (
+          to_regclass('public.tbl_usuarios') IS NOT NULL
+          AND to_regclass('public.tbl_organizaciones') IS NOT NULL
+          AND to_regclass('public.tbl_clientes') IS NOT NULL
+        ) AS disponible
       `;
       this.esquemaTblDisponible = rows[0]?.disponible ?? false;
     } catch {
@@ -4026,7 +5174,7 @@ export class CobrosService {
     const puedeVerTodo = this.esAdministrador(usuario);
     const [monedas, catalogos, rutas, cajasMenores, usuarios] =
       await Promise.all([
-        this.prisma.moneda.findMany({ orderBy: { codigoMoneda: 'asc' } }),
+        this.obtenerMonedasTbl(),
         this.prisma.$queryRaw<CatalogoTblRow[]>(Prisma.sql`
           SELECT *
           FROM (
@@ -4064,17 +5212,37 @@ export class CobrosService {
               TRUE
             FROM public.tbl_categorias_gastos
             UNION ALL
-            SELECT DISTINCT
+            SELECT
               'tipo_movimiento_caja',
-              ROW_NUMBER() OVER (ORDER BY mca_tipo::text)::text,
-              UPPER(mca_tipo::text),
-              INITCAP(REPLACE(mca_tipo::text, '_', ' ')),
+              base.id::text,
+              base.codigo,
+              base.nombre,
+              base.naturaleza,
+              TRUE
+            FROM (
+              VALUES
+                (1, 'AJUSTE_ENTRADA', 'Ajuste de entrada', 'E'),
+                (2, 'GASTO', 'Gasto', 'S'),
+                (3, 'AJUSTE_SALIDA', 'Ajuste de salida', 'S')
+            ) AS base(id, codigo, nombre, naturaleza)
+            UNION ALL
+            SELECT
+              'tipo_movimiento_caja',
+              (100 + ROW_NUMBER() OVER (ORDER BY existentes.codigo))::text,
+              existentes.codigo,
+              INITCAP(REPLACE(existentes.codigo, '_', ' ')),
               CASE
-                WHEN UPPER(mca_tipo::text) IN ('SALIDA', 'EGRESO', 'GASTO', 'DESEMBOLSO', 'DESEMBOLSO_CREDITO') THEN 'S'
+                WHEN existentes.codigo IN ('SALIDA', 'EGRESO', 'GASTO', 'DESEMBOLSO', 'DESEMBOLSO_CREDITO', 'AJUSTE_SALIDA') THEN 'S'
                 ELSE 'E'
               END,
               TRUE
-            FROM public.tbl_movimientos_cajas
+            FROM (
+              SELECT DISTINCT UPPER(mca_tipo::text) AS codigo
+              FROM public.tbl_movimientos_cajas
+              WHERE UPPER(mca_tipo::text) NOT IN (${Prisma.join(
+                codigosMovimientoCajaTblBase,
+              )})
+            ) existentes
           ) catalogos
           ORDER BY tipo ASC, nombre ASC
         `),
@@ -4145,10 +5313,10 @@ export class CobrosService {
       monedas:
         monedas.length > 0
           ? monedas.map((moneda) => ({
-              codigo: moneda.codigoMoneda,
+              codigo: moneda.codigo.trim(),
               nombre: moneda.nombre,
               simbolo: moneda.simbolo,
-              decimales: moneda.decimales,
+              decimales: Number(moneda.decimales),
             }))
           : [
               {
@@ -4200,6 +5368,30 @@ export class CobrosService {
     };
   }
 
+  private async obtenerMonedasTbl(): Promise<MonedaTblRow[]> {
+    try {
+      return await this.prisma.$queryRaw<MonedaTblRow[]>(Prisma.sql`
+        SELECT
+          mon_codigo::text AS codigo,
+          mon_nombre AS nombre,
+          mon_simbolo AS simbolo,
+          mon_decimales AS decimales
+        FROM public.tbl_monedas
+        WHERE mon_activa
+        ORDER BY mon_codigo ASC
+      `);
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        ['P2021', 'P2022'].includes(error.code)
+      ) {
+        return [];
+      }
+
+      throw error;
+    }
+  }
+
   private async listarClientesTbl(
     query: ListarClientesQueryDto,
     usuario: AuthenticatedUser,
@@ -4243,6 +5435,8 @@ export class CobrosService {
         NULL::text AS notas,
         p.per_documento AS cedula,
         p.per_direccion AS direccion,
+        p.per_latitud AS latitud,
+        p.per_longitud AS longitud,
         p.per_num_celular AS telefono,
         c.cli_creacion AS creado_en,
         c.cli_creacion AS actualizado_en,
@@ -4254,6 +5448,449 @@ export class CobrosService {
     `);
 
     return rows.map((cliente) => this.formatearClienteTbl(cliente));
+  }
+
+  private async crearClienteTbl(
+    input: {
+      nombreCompleto: string;
+      cedula: string | null;
+      nombreComercial: string | null;
+      direccion: string | null;
+      notas: string | null;
+      correo: string | null;
+      telefono: string | null;
+      whatsapp: string | null;
+      latitud?: number;
+      longitud?: number;
+    },
+    usuario: AuthenticatedUser,
+  ) {
+    const nombrePersona = this.dividirNombrePersonaTbl(input.nombreCompleto);
+    const telefono = input.telefono ?? input.whatsapp;
+    const cedula = input.cedula ?? this.generarDocumentoClienteTbl();
+
+    const clienteId = await this.prisma.$transaction(
+      async (tx) => {
+        const [scope] = await tx.$queryRaw<UsuarioOrganizacionActivaTblRow[]>(
+          Prisma.sql`
+            SELECT
+              tu.id_usu::text AS usuario_id,
+              uo.org_id::text AS org_id
+            FROM public.tbl_usuarios tu
+            JOIN public.tbl_usuarios_organizaciones uo
+              ON uo.usu_id = tu.id_usu
+             AND uo.urg_activo
+            JOIN public.tbl_organizaciones o
+              ON o.id_org = uo.org_id
+             AND o.org_activo
+            WHERE tu.usu_activo
+              AND (
+                tu.id_usu::text = ${usuario.usuarioId}
+                OR lower(tu.usu_usuario) = lower(${usuario.usuario})
+              )
+            ORDER BY uo.id_urg ASC
+            LIMIT 1
+          `,
+        );
+        const organizacion =
+          scope ??
+          (this.esAdministrador(usuario)
+            ? (
+                await tx.$queryRaw<UsuarioOrganizacionActivaTblRow[]>(
+                  Prisma.sql`
+                    SELECT
+                      NULL::text AS usuario_id,
+                      o.id_org::text AS org_id
+                    FROM public.tbl_organizaciones o
+                    WHERE o.org_activo
+                    ORDER BY o.id_org ASC
+                    LIMIT 1
+                  `,
+                )
+              )[0]
+            : null);
+
+        if (!organizacion) {
+          throw DomainError.notFound(
+            'No existe una organizacion activa para crear el cliente',
+            'ORGANIZACION_ACTIVA_NO_EXISTE',
+          );
+        }
+
+        if (input.cedula) {
+          const [duplicado] = await tx.$queryRaw<Array<{ existe: boolean }>>(
+            Prisma.sql`
+              SELECT EXISTS (
+                SELECT 1
+                FROM public.tbl_personas
+                WHERE per_documento = ${input.cedula}
+              ) AS existe
+            `,
+          );
+
+          if (duplicado?.existe) {
+            throw DomainError.conflict(
+              'Ya existe un cliente con esta cedula',
+              'CEDULA_YA_REGISTRADA',
+            );
+          }
+        }
+
+        const [persona] = await tx.$queryRaw<Array<{ id: string }>>(
+          Prisma.sql`
+            INSERT INTO public.tbl_personas (
+              per_primer_nombre,
+              per_apellido,
+              per_documento,
+              per_direccion,
+              per_num_celular,
+              per_latitud,
+              per_longitud
+            )
+            VALUES (
+              ${nombrePersona.nombres},
+              ${nombrePersona.apellidos},
+              ${cedula},
+              ${input.direccion},
+              ${telefono},
+              ${input.latitud ?? null},
+              ${input.longitud ?? null}
+            )
+            RETURNING id_per::text AS id
+          `,
+        );
+
+        const [cliente] = await tx.$queryRaw<Array<{ id: string }>>(
+          Prisma.sql`
+            INSERT INTO public.tbl_clientes (
+              cli_referencia,
+              org_id,
+              cli_persona
+            )
+            VALUES (
+              ${input.nombreComercial},
+              ${BigInt(organizacion.org_id)},
+              ${BigInt(persona.id)}
+            )
+            RETURNING id_cli::text AS id
+          `,
+        );
+
+        await this.registrarAuditoria(tx, {
+          usuarioId: usuario.usuarioId,
+          tabla: 'tbl_clientes',
+          registroId: cliente.id,
+          accion: 'CREAR',
+          descripcion: `Se creo cliente ${input.nombreCompleto}`,
+          valoresNuevos: {
+            nombreCompleto: input.nombreCompleto,
+            cedula: input.cedula,
+            nombreComercial: input.nombreComercial,
+            direccion: input.direccion,
+            notas: input.notas,
+            correo: input.correo,
+            telefono,
+            latitud: input.latitud ?? null,
+            longitud: input.longitud ?? null,
+            organizacionId: organizacion.org_id,
+          },
+        });
+
+        return cliente.id;
+      },
+      { maxWait: 10_000, timeout: 10_000 },
+    );
+
+    const creados = await this.prisma.$queryRaw<ClienteTblRow[]>(Prisma.sql`
+      SELECT
+        c.id_cli::text AS id,
+        TRIM(CONCAT_WS(' ', p.per_primer_nombre, p.per_apellido)) AS nombre_completo,
+        c.cli_referencia AS nombre_comercial,
+        NULL::text AS notas,
+        p.per_documento AS cedula,
+        p.per_direccion AS direccion,
+        p.per_latitud AS latitud,
+        p.per_longitud AS longitud,
+        p.per_num_celular AS telefono,
+        c.cli_creacion AS creado_en,
+        c.cli_creacion AS actualizado_en,
+        c.cli_activo AS activo
+      FROM public.tbl_clientes c
+      JOIN public.tbl_personas p ON p.id_per = c.cli_persona
+      WHERE c.id_cli::text = ${clienteId}
+    `);
+    const cliente = creados[0];
+
+    if (!cliente) {
+      throw DomainError.notFound(
+        'Cliente no encontrado despues de crear',
+        'CLIENTE_NO_ENCONTRADO',
+      );
+    }
+
+    this.invalidarCacheLecturas();
+    return this.formatearClienteTbl(cliente);
+  }
+
+  private async actualizarClienteTbl(
+    clienteId: string,
+    dto: ActualizarClienteDto,
+    usuario: AuthenticatedUser,
+  ) {
+    this.asegurarAdministrador(usuario);
+
+    const nombreCompleto = this.requerirTexto(
+      dto.nombreCompleto,
+      'El nombre del cliente es obligatorio',
+    );
+    const cedula = this.normalizarTextoOpcional(dto.cedula);
+    const nombreComercial = this.normalizarTextoOpcional(dto.nombreComercial);
+    const direccion = this.normalizarTextoOpcional(dto.direccion);
+    const telefono = this.normalizarTextoOpcional(dto.telefono);
+    const latitud = dto.latitud;
+    const longitud = dto.longitud;
+    if (
+      [latitud, longitud].some(
+        (value: unknown) =>
+          value !== undefined &&
+          (typeof value !== 'number' || !Number.isFinite(value)),
+      )
+    ) {
+      throw DomainError.validation(
+        'Las coordenadas deben ser números finitos',
+        'COORDENADAS_INVALIDAS',
+      );
+    }
+    if ((latitud === undefined) !== (longitud === undefined)) {
+      throw DomainError.validation(
+        'La latitud y la longitud deben enviarse juntas',
+        'COORDENADAS_INCOMPLETAS',
+      );
+    }
+    if (latitud !== undefined && !direccion) {
+      throw DomainError.validation(
+        'La dirección es obligatoria cuando se envían coordenadas',
+        'DIRECCION_COORDENADAS_REQUERIDA',
+      );
+    }
+    const nombrePersona = this.dividirNombrePersonaTbl(nombreCompleto);
+
+    await this.prisma.$transaction(
+      async (tx) => {
+        const rows = await tx.$queryRaw<ClienteTblDetalleRow[]>(Prisma.sql`
+        SELECT
+          c.id_cli::text AS id,
+          c.cli_persona::text AS persona_id,
+          TRIM(CONCAT_WS(' ', p.per_primer_nombre, p.per_apellido)) AS nombre_completo,
+          c.cli_referencia AS nombre_comercial,
+          NULL::text AS notas,
+          p.per_documento AS cedula,
+          p.per_direccion AS direccion,
+          p.per_latitud AS latitud,
+          p.per_longitud AS longitud,
+          p.per_num_celular AS telefono,
+          c.cli_creacion AS creado_en,
+          c.cli_creacion AS actualizado_en,
+          c.cli_activo AS activo
+        FROM public.tbl_clientes c
+        JOIN public.tbl_personas p ON p.id_per = c.cli_persona
+        WHERE c.id_cli::text = ${clienteId}
+        FOR UPDATE OF c, p
+      `);
+        const actual = rows[0];
+
+        if (!actual) {
+          throw DomainError.notFound(
+            'Cliente no encontrado',
+            'CLIENTE_NO_ENCONTRADO',
+          );
+        }
+
+        const cedulaFinal = cedula ?? actual.cedula;
+        const latitudFinal =
+          latitud ??
+          (actual.latitud === null
+            ? null
+            : this.decimalANumero(actual.latitud));
+        const longitudFinal =
+          longitud ??
+          (actual.longitud === null
+            ? null
+            : this.decimalANumero(actual.longitud));
+        if (cedulaFinal !== actual.cedula) {
+          const duplicados = await tx.$queryRaw<Array<{ existe: boolean }>>(
+            Prisma.sql`
+            SELECT EXISTS (
+              SELECT 1
+              FROM public.tbl_personas
+              WHERE per_documento = ${cedulaFinal}
+                AND id_per::text <> ${actual.persona_id}
+            ) AS existe
+          `,
+          );
+
+          if (duplicados[0]?.existe) {
+            throw DomainError.conflict(
+              'Ya existe un cliente con esta cedula',
+              'CEDULA_YA_REGISTRADA',
+            );
+          }
+        }
+
+        await tx.$executeRaw(Prisma.sql`
+        UPDATE public.tbl_personas
+        SET
+          per_primer_nombre = ${nombrePersona.nombres},
+          per_apellido = ${nombrePersona.apellidos},
+          per_documento = ${cedulaFinal},
+          per_direccion = ${direccion},
+          per_latitud = ${latitudFinal},
+          per_longitud = ${longitudFinal},
+          per_num_celular = ${telefono}
+        WHERE id_per::text = ${actual.persona_id}
+      `);
+
+        await tx.$executeRaw(Prisma.sql`
+        UPDATE public.tbl_clientes
+        SET cli_referencia = ${nombreComercial}
+        WHERE id_cli::text = ${clienteId}
+      `);
+
+        await this.registrarAuditoria(tx, {
+          usuarioId: usuario.usuarioId,
+          tabla: 'tbl_clientes',
+          registroId: clienteId,
+          accion: 'MODIFICAR',
+          descripcion: `Se modifico cliente ${actual.nombre_completo}`,
+          valoresAnteriores: this.formatearClienteTbl(actual),
+          valoresNuevos: {
+            nombreCompleto,
+            cedula: cedulaFinal,
+            nombreComercial,
+            direccion,
+            telefono,
+            latitud: latitudFinal,
+            longitud: longitudFinal,
+          },
+        });
+      },
+      { maxWait: 10_000, timeout: 10_000 },
+    );
+
+    const actualizados = await this.prisma.$queryRaw<
+      ClienteTblRow[]
+    >(Prisma.sql`
+      SELECT
+        c.id_cli::text AS id,
+        TRIM(CONCAT_WS(' ', p.per_primer_nombre, p.per_apellido)) AS nombre_completo,
+        c.cli_referencia AS nombre_comercial,
+        NULL::text AS notas,
+        p.per_documento AS cedula,
+        p.per_direccion AS direccion,
+        p.per_latitud AS latitud,
+        p.per_longitud AS longitud,
+        p.per_num_celular AS telefono,
+        c.cli_creacion AS creado_en,
+        c.cli_creacion AS actualizado_en,
+        c.cli_activo AS activo
+      FROM public.tbl_clientes c
+      JOIN public.tbl_personas p ON p.id_per = c.cli_persona
+      WHERE c.id_cli::text = ${clienteId}
+    `);
+    const cliente = actualizados[0];
+
+    if (!cliente) {
+      throw DomainError.notFound(
+        'Cliente no encontrado despues de modificar',
+        'CLIENTE_NO_ENCONTRADO',
+      );
+    }
+
+    this.invalidarCacheLecturas();
+    return this.formatearClienteTbl(cliente);
+  }
+
+  private async eliminarClienteTbl(
+    clienteId: string,
+    usuario: AuthenticatedUser,
+  ) {
+    this.asegurarAdministrador(usuario);
+
+    await this.prisma.$transaction(async (tx) => {
+      const rows = await tx.$queryRaw<ClienteTblDetalleRow[]>(Prisma.sql`
+        SELECT
+          c.id_cli::text AS id,
+          c.cli_persona::text AS persona_id,
+          TRIM(CONCAT_WS(' ', p.per_primer_nombre, p.per_apellido)) AS nombre_completo,
+          c.cli_referencia AS nombre_comercial,
+          NULL::text AS notas,
+          p.per_documento AS cedula,
+          p.per_direccion AS direccion,
+          p.per_latitud AS latitud,
+          p.per_longitud AS longitud,
+          p.per_num_celular AS telefono,
+          c.cli_creacion AS creado_en,
+          c.cli_creacion AS actualizado_en,
+          c.cli_activo AS activo
+        FROM public.tbl_clientes c
+        JOIN public.tbl_personas p ON p.id_per = c.cli_persona
+        WHERE c.id_cli::text = ${clienteId}
+        FOR UPDATE OF c, p
+      `);
+      const cliente = rows[0];
+
+      if (!cliente) {
+        throw DomainError.notFound(
+          'Cliente no encontrado',
+          'CLIENTE_NO_ENCONTRADO',
+        );
+      }
+
+      const relaciones = await tx.$queryRaw<
+        Array<{ creditos: number; pagos: number }>
+      >(Prisma.sql`
+        SELECT
+          COUNT(DISTINCT cr.id_cre)::int AS creditos,
+          COUNT(DISTINCT pa.id_pag)::int AS pagos
+        FROM public.tbl_clientes c
+        LEFT JOIN public.tbl_creditos cr ON cr.cli_id = c.id_cli
+        LEFT JOIN public.tbl_pagos pa ON pa.cre_id = cr.id_cre
+        WHERE c.id_cli::text = ${clienteId}
+      `);
+      const conteo = relaciones[0];
+
+      if ((conteo?.creditos ?? 0) > 0 || (conteo?.pagos ?? 0) > 0) {
+        throw DomainError.conflict(
+          'No se puede eliminar un cliente con creditos o pagos registrados',
+          'CLIENTE_CON_MOVIMIENTOS_NO_ELIMINABLE',
+        );
+      }
+
+      await this.registrarAuditoria(tx, {
+        usuarioId: usuario.usuarioId,
+        tabla: 'tbl_clientes',
+        registroId: clienteId,
+        accion: 'ELIMINAR',
+        descripcion: `Se elimino cliente ${cliente.nombre_completo}`,
+        valoresAnteriores: this.formatearClienteTbl(cliente),
+      });
+
+      await tx.$executeRaw(Prisma.sql`
+        DELETE FROM public.tbl_rutas_clientes
+        WHERE cli_id::text = ${clienteId}
+      `);
+      await tx.$executeRaw(Prisma.sql`
+        DELETE FROM public.tbl_clientes
+        WHERE id_cli::text = ${clienteId}
+      `);
+      await tx.$executeRaw(Prisma.sql`
+        DELETE FROM public.tbl_personas
+        WHERE id_per::text = ${cliente.persona_id}
+      `);
+    });
+
+    this.invalidarCacheLecturas();
+    return { ok: true };
   }
 
   private async listarRutasTbl(usuario: AuthenticatedUser) {
@@ -4314,10 +5951,11 @@ export class CobrosService {
   private async listarCobrosRutaTbl(
     query: ListarCobrosRutaQueryDto,
     usuario: AuthenticatedUser,
+    limit?: number,
   ) {
     const search = this.normalizarTextoOpcional(query.search);
     const conditions: Prisma.Sql[] = [
-      Prisma.sql`UPPER(cr.cre_estado::text) NOT IN ('PAGADO', 'ANULADO')`,
+      Prisma.sql`UPPER(cr.cre_estado::text) <> 'ANULADO'`,
     ];
 
     if (!this.esAdministrador(usuario)) {
@@ -4330,12 +5968,39 @@ export class CobrosService {
       );
     }
 
-    if (query.estadoCobro === 'ATRASADO') {
-      conditions.push(Prisma.sql`prox.cuo_fecha_vencimiento < CURRENT_DATE`);
+    if (query.estadoCobro === 'PAGADO') {
+      conditions.push(Prisma.sql`(
+        UPPER(cr.cre_estado::text) = 'PAGADO'
+        OR COALESCE(rc.cuotas_restantes, 0) <= 0
+        OR (cr.cre_total_pagar - COALESCE(rc.total_abonado, 0)) <= 0
+      )`);
+    } else if (query.estadoCobro === 'ATRASADO') {
+      conditions.push(Prisma.sql`
+        UPPER(cr.cre_estado::text) <> 'PAGADO'
+        AND
+        COALESCE(rc.cuotas_restantes, 0) > 0
+        AND
+        (cr.cre_total_pagar - COALESCE(rc.total_abonado, 0)) > 0
+        AND prox.cuo_fecha_vencimiento < CURRENT_DATE
+      `);
     } else if (query.estadoCobro === 'PENDIENTE') {
-      conditions.push(Prisma.sql`prox.cuo_fecha_vencimiento = CURRENT_DATE`);
+      conditions.push(Prisma.sql`
+        UPPER(cr.cre_estado::text) <> 'PAGADO'
+        AND
+        COALESCE(rc.cuotas_restantes, 0) > 0
+        AND
+        (cr.cre_total_pagar - COALESCE(rc.total_abonado, 0)) > 0
+        AND prox.cuo_fecha_vencimiento = CURRENT_DATE
+      `);
     } else if (query.estadoCobro === 'AL_DIA') {
-      conditions.push(Prisma.sql`prox.cuo_fecha_vencimiento > CURRENT_DATE`);
+      conditions.push(Prisma.sql`
+        UPPER(cr.cre_estado::text) <> 'PAGADO'
+        AND
+        COALESCE(rc.cuotas_restantes, 0) > 0
+        AND
+        (cr.cre_total_pagar - COALESCE(rc.total_abonado, 0)) > 0
+        AND prox.cuo_fecha_vencimiento > CURRENT_DATE
+      `);
     }
 
     if (search) {
@@ -4382,8 +6047,10 @@ export class CobrosService {
         p.per_documento AS cedula,
         cl.cli_referencia AS negocio,
         p.per_direccion AS direccion,
-        ruta_credito.ruta_id::text AS ruta_id,
-        ruta_credito.ruta AS ruta,
+        p.per_latitud AS latitud,
+        p.per_longitud AS longitud,
+        COALESCE(ruta_credito.ruta_id::text, '') AS ruta_id,
+        COALESCE(ruta_credito.ruta, 'Sin ruta') AS ruta,
         'COP' AS moneda_codigo,
         cr.cre_total AS valor_principal,
         cr.cre_total_pagar AS valor_total,
@@ -4400,6 +6067,10 @@ export class CobrosService {
         prox.cuo_valor AS proximo_valor_cuota,
         prox.saldo_cuota AS proximo_saldo_cuota,
         CASE
+          WHEN UPPER(cr.cre_estado::text) = 'PAGADO'
+            OR COALESCE(rc.cuotas_restantes, 0) <= 0
+            OR (cr.cre_total_pagar - COALESCE(rc.total_abonado, 0)) <= 0
+            THEN 'PAGADO'
           WHEN prox.cuo_fecha_vencimiento < CURRENT_DATE THEN 'ATRASADO'
           WHEN prox.cuo_fecha_vencimiento = CURRENT_DATE THEN 'PENDIENTE'
           ELSE 'AL_DIA'
@@ -4435,11 +6106,304 @@ export class CobrosService {
         LIMIT 1
       ) prox ON TRUE
       WHERE ${Prisma.join(conditions, ' AND ')}
-        AND GREATEST(cr.cre_total_pagar - COALESCE(rc.total_abonado, 0), 0) > 0
       ORDER BY ruta_credito.ruta ASC NULLS LAST, prox.cuo_fecha_vencimiento ASC NULLS LAST, cliente ASC
+      ${limit ? Prisma.sql`LIMIT ${limit}` : Prisma.empty}
     `);
 
     return rows.map((row) => this.formatearCobroRutaTbl(row));
+  }
+
+  private async consultarCreditosTbl(
+    query: ListarCreditosQueryDto,
+    usuario: AuthenticatedUser,
+    limite?: number,
+    offset = 0,
+  ) {
+    const search = this.normalizarTextoOpcional(query.search);
+    const estado = query.estado ?? 'todos';
+    const conditions: Prisma.Sql[] = [Prisma.sql`1 = 1`];
+
+    if (!this.esAdministrador(usuario)) {
+      conditions.push(Prisma.sql`tu.usu_usuario = ${usuario.usuario}`);
+    }
+
+    if (query.rutaId) {
+      conditions.push(
+        Prisma.sql`ruta_credito.ruta_id = ${query.rutaId}::bigint`,
+      );
+    }
+
+    if (estado === 'activos') {
+      conditions.push(Prisma.sql`UPPER(cr.cre_estado::text) = 'ACTIVO'`);
+    } else if (estado === 'inactivos') {
+      conditions.push(Prisma.sql`UPPER(cr.cre_estado::text) = 'PAGADO'`);
+    }
+
+    if (query.fechaDesde) {
+      const fechaDesde = this.parsearFecha(query.fechaDesde, 'fechaDesde');
+      conditions.push(Prisma.sql`
+        CASE
+          WHEN UPPER(cr.cre_estado::text) = 'ACTIVO' THEN cr.cre_fecha_inicio
+          ELSE COALESCE(
+            pc_ultimo.fecha_ultimo_pago,
+            cr.cre_fecha_fin,
+            cr.cre_fecha_inicio
+          )
+        END >= ${fechaDesde}::date
+      `);
+    }
+
+    if (query.fechaHasta) {
+      const fechaHasta = this.parsearFecha(query.fechaHasta, 'fechaHasta');
+      conditions.push(Prisma.sql`
+        CASE
+          WHEN UPPER(cr.cre_estado::text) = 'ACTIVO' THEN cr.cre_fecha_inicio
+          ELSE COALESCE(
+            pc_ultimo.fecha_ultimo_pago,
+            cr.cre_fecha_fin,
+            cr.cre_fecha_inicio
+          )
+        END <= ${fechaHasta}::date
+      `);
+    }
+
+    if (search) {
+      const pattern = `%${search}%`;
+      conditions.push(Prisma.sql`(
+        TRIM(CONCAT_WS(' ', p.per_primer_nombre, p.per_apellido)) ILIKE ${pattern}
+        OR p.per_documento ILIKE ${pattern}
+        OR p.per_direccion ILIKE ${pattern}
+        OR cl.cli_referencia ILIKE ${pattern}
+        OR ruta_credito.ruta ILIKE ${pattern}
+        OR UPPER(cr.cre_estado::text) ILIKE ${pattern}
+      )`);
+    }
+
+    const rows = await this.prisma.$queryRaw<CreditoListadoRow[]>(Prisma.sql`
+      WITH abonos_cuota AS (
+        SELECT
+          cu.id_cuo,
+          GREATEST(
+            COALESCE(cu.cuo_total_pagado, 0),
+            COALESCE(SUM(cp.cpa_total), 0)
+          ) AS abonado
+        FROM public.tbl_cuotas cu
+        LEFT JOIN public.tbl_cuotas_pagos cp ON cp.cuo_id = cu.id_cuo
+        GROUP BY cu.id_cuo, cu.cuo_total_pagado
+      ),
+      resumen_credito AS (
+        SELECT
+          cu.cre_id,
+          COALESCE(SUM(ac.abonado), 0) AS total_abonado,
+          COUNT(*)::int AS numero_cuotas,
+          COUNT(*) FILTER (
+            WHERE UPPER(cu.cuo_estado::text) NOT IN ('PAGADA', 'ANULADA')
+              AND (cu.cuo_valor - COALESCE(ac.abonado, 0)) > 0
+          )::int AS cuotas_restantes,
+          COALESCE(MAX(cu.cuo_valor), 0) AS valor_cuota
+        FROM public.tbl_cuotas cu
+        LEFT JOIN abonos_cuota ac ON ac.id_cuo = cu.id_cuo
+        GROUP BY cu.cre_id
+      ),
+      pagos_credito AS (
+        SELECT
+          pa.cre_id,
+          MAX((pa.pag_fecha AT TIME ZONE 'America/Bogota')::date) AS fecha_ultimo_pago
+        FROM public.tbl_pagos pa
+        GROUP BY pa.cre_id
+      )
+      SELECT
+        cr.id_cre::text AS credito_id,
+        cl.id_cli::text AS cliente_id,
+        TRIM(CONCAT_WS(' ', p.per_primer_nombre, p.per_apellido)) AS cliente,
+        p.per_documento AS cedula,
+        cl.cli_referencia AS negocio,
+        p.per_direccion AS direccion,
+        COALESCE(ruta_credito.ruta_id::text, '') AS ruta_id,
+        COALESCE(ruta_credito.ruta, 'Sin ruta') AS ruta,
+        NULL::text AS caja_menor_id,
+        NULL::text AS caja_menor,
+        'COP' AS moneda_codigo,
+        pc.id_pcr::int AS frecuencia_pago_id,
+        pc.pcr_frecuencia::text AS frecuencia_codigo,
+        INITCAP(REPLACE(pc.pcr_frecuencia::text, '_', ' ')) AS frecuencia_nombre,
+        CASE pc.pcr_frecuencia::text
+          WHEN 'SEMANAL' THEN 7
+          WHEN 'QUINCENAL' THEN 15
+          WHEN 'MENSUAL' THEN 30
+          ELSE 1
+        END AS dias_intervalo,
+        UPPER(cr.cre_estado::text) AS estado_codigo,
+        INITCAP(REPLACE(cr.cre_estado::text, '_', ' ')) AS estado_nombre,
+        cr.cre_total AS valor_principal,
+        cr.cre_tasa_interes AS porcentaje_interes,
+        GREATEST((cr.cre_fecha_fin - cr.cre_fecha_inicio), 1)::int AS plazo_dias,
+        false AS omitir_domingos,
+        cr.cre_total_pagar AS valor_total,
+        COALESCE(rc.valor_cuota, 0) AS valor_cuota,
+        COALESCE(rc.total_abonado, 0) AS total_abonado,
+        GREATEST(cr.cre_total_pagar - COALESCE(rc.total_abonado, 0), 0) AS saldo,
+        COALESCE(rc.numero_cuotas, 0) AS numero_cuotas,
+        COALESCE(rc.cuotas_restantes, 0) AS cuotas_restantes,
+        cr.cre_fecha_inicio AS fecha_inicio,
+        cr.cre_fecha_fin AS fecha_maxima,
+        NULL::timestamp AS refinanciado_en,
+        NULL::numeric AS valor_principal_anterior,
+        NULL::numeric AS valor_principal_refinanciado,
+        NULL::text AS observacion,
+        cr.cre_fecha_inicio::timestamp AS creado_en,
+        cr.cre_fecha_inicio::timestamp AS actualizado_en
+      FROM public.tbl_creditos cr
+      JOIN public.tbl_usuarios tu ON tu.id_usu = cr.usu_id
+      JOIN public.tbl_clientes cl ON cl.id_cli = cr.cli_id
+      JOIN public.tbl_personas p ON p.id_per = cl.cli_persona
+      JOIN public.tbl_productos_creditos pc ON pc.id_pcr = cr.pcr_id
+      LEFT JOIN resumen_credito rc ON rc.cre_id = cr.id_cre
+      LEFT JOIN pagos_credito pc_ultimo ON pc_ultimo.cre_id = cr.id_cre
+      LEFT JOIN LATERAL (
+        SELECT r.id_rut AS ruta_id, r.rut_nombre AS ruta
+        FROM public.tbl_rutas_clientes rc_ruta
+        JOIN public.tbl_rutas r ON r.id_rut = rc_ruta.rut_id
+        WHERE rc_ruta.cli_id = cl.id_cli
+          AND r.org_id = cl.org_id
+        ORDER BY (r.usu_id = cr.usu_id) DESC, r.rut_activa DESC, r.rut_nombre ASC
+        LIMIT 1
+      ) ruta_credito ON TRUE
+      WHERE ${Prisma.join(conditions, ' AND ')}
+      ORDER BY cr.cre_fecha_inicio DESC, cr.id_cre DESC
+      ${limite ? Prisma.sql`LIMIT ${limite}` : Prisma.empty}
+      ${offset > 0 ? Prisma.sql`OFFSET ${offset}` : Prisma.empty}
+    `);
+
+    return rows.map((row) => ({
+      ...this.formatearCreditoListado(row),
+      frecuenciaPago: {
+        id: row.frecuencia_pago_id,
+        codigo: row.frecuencia_codigo,
+        nombre: row.frecuencia_nombre,
+        diasIntervalo: this.diasIntervaloFrecuencia(row.frecuencia_codigo),
+      },
+    }));
+  }
+
+  private async contarCreditosPorEstadoTbl(
+    query: ListarCreditosQueryDto,
+    usuario: AuthenticatedUser,
+  ) {
+    const search = this.normalizarTextoOpcional(query.search);
+    const conditions: Prisma.Sql[] = [Prisma.sql`1 = 1`];
+    const fechaConditions: Prisma.Sql[] = [Prisma.sql`1 = 1`];
+
+    if (!this.esAdministrador(usuario)) {
+      conditions.push(Prisma.sql`tu.usu_usuario = ${usuario.usuario}`);
+    }
+
+    if (query.rutaId) {
+      conditions.push(
+        Prisma.sql`ruta_credito.ruta_id = ${query.rutaId}::bigint`,
+      );
+    }
+
+    if (query.fechaDesde) {
+      const fechaDesde = this.parsearFecha(query.fechaDesde, 'fechaDesde');
+      fechaConditions.push(Prisma.sql`fecha_referencia >= ${fechaDesde}::date`);
+    }
+
+    if (query.fechaHasta) {
+      const fechaHasta = this.parsearFecha(query.fechaHasta, 'fechaHasta');
+      fechaConditions.push(Prisma.sql`fecha_referencia <= ${fechaHasta}::date`);
+    }
+
+    if (search) {
+      const pattern = `%${search}%`;
+      conditions.push(Prisma.sql`(
+        TRIM(CONCAT_WS(' ', p.per_primer_nombre, p.per_apellido)) ILIKE ${pattern}
+        OR p.per_documento ILIKE ${pattern}
+        OR p.per_direccion ILIKE ${pattern}
+        OR cl.cli_referencia ILIKE ${pattern}
+        OR ruta_credito.ruta ILIKE ${pattern}
+        OR UPPER(cr.cre_estado::text) ILIKE ${pattern}
+      )`);
+    }
+
+    return this.prisma.$queryRaw<CreditoConteoRow[]>(Prisma.sql`
+      WITH abonos_cuota AS (
+        SELECT
+          cu.id_cuo,
+          GREATEST(
+            COALESCE(cu.cuo_total_pagado, 0),
+            COALESCE(SUM(cp.cpa_total), 0)
+          ) AS abonado
+        FROM public.tbl_cuotas cu
+        LEFT JOIN public.tbl_cuotas_pagos cp ON cp.cuo_id = cu.id_cuo
+        GROUP BY cu.id_cuo, cu.cuo_total_pagado
+      ),
+      resumen_credito AS (
+        SELECT
+          cu.cre_id,
+          COALESCE(SUM(ac.abonado), 0) AS total_abonado,
+          COUNT(*) FILTER (
+            WHERE UPPER(cu.cuo_estado::text) NOT IN ('PAGADA', 'ANULADA')
+              AND (cu.cuo_valor - COALESCE(ac.abonado, 0)) > 0
+          )::int AS cuotas_restantes
+        FROM public.tbl_cuotas cu
+        LEFT JOIN abonos_cuota ac ON ac.id_cuo = cu.id_cuo
+        GROUP BY cu.cre_id
+      ),
+      pagos_credito AS (
+        SELECT
+          pa.cre_id,
+          MAX((pa.pag_fecha AT TIME ZONE 'America/Bogota')::date) AS fecha_ultimo_pago
+        FROM public.tbl_pagos pa
+        GROUP BY pa.cre_id
+      ),
+      creditos_estado AS (
+        SELECT
+          UPPER(cr.cre_estado::text) AS codigo,
+          COALESCE(rc.cuotas_restantes, 0) AS cuotas_restantes,
+          GREATEST(cr.cre_total_pagar - COALESCE(rc.total_abonado, 0), 0) AS saldo,
+          (UPPER(cr.cre_estado::text) = 'ACTIVO') AS es_activo,
+          (UPPER(cr.cre_estado::text) = 'PAGADO') AS es_inactivo,
+          CASE
+            WHEN UPPER(cr.cre_estado::text) = 'ACTIVO' THEN cr.cre_fecha_inicio
+            ELSE COALESCE(
+              pc_ultimo.fecha_ultimo_pago,
+              cr.cre_fecha_fin,
+              cr.cre_fecha_inicio
+            )
+          END AS fecha_referencia
+        FROM public.tbl_creditos cr
+        JOIN public.tbl_usuarios tu ON tu.id_usu = cr.usu_id
+        JOIN public.tbl_clientes cl ON cl.id_cli = cr.cli_id
+        JOIN public.tbl_personas p ON p.id_per = cl.cli_persona
+        LEFT JOIN resumen_credito rc ON rc.cre_id = cr.id_cre
+        LEFT JOIN pagos_credito pc_ultimo ON pc_ultimo.cre_id = cr.id_cre
+        LEFT JOIN LATERAL (
+          SELECT r.id_rut AS ruta_id, r.rut_nombre AS ruta
+          FROM public.tbl_rutas_clientes rc_ruta
+          JOIN public.tbl_rutas r ON r.id_rut = rc_ruta.rut_id
+          WHERE rc_ruta.cli_id = cl.id_cli
+            AND r.org_id = cl.org_id
+          ORDER BY (r.usu_id = cr.usu_id) DESC, r.rut_activa DESC, r.rut_nombre ASC
+          LIMIT 1
+        ) ruta_credito ON TRUE
+        WHERE ${Prisma.join(conditions, ' AND ')}
+      ),
+      creditos_filtrados AS (
+        SELECT *
+        FROM creditos_estado
+        WHERE ${Prisma.join(fechaConditions, ' AND ')}
+      )
+      SELECT
+        COUNT(*)::int AS total,
+        COUNT(*) FILTER (
+          WHERE es_activo
+        )::int AS activos,
+        COUNT(*) FILTER (
+          WHERE es_inactivo
+        )::int AS inactivos
+      FROM creditos_filtrados
+    `);
   }
 
   private async listarCuotasCreditoTbl(
@@ -4757,38 +6721,93 @@ export class CobrosService {
       ${offset > 0 ? Prisma.sql`OFFSET ${offset}` : Prisma.empty}
     `);
 
-    return rows.map((movimiento) => {
-      const monto = this.decimalANumero(movimiento.monto);
+    return rows.map((movimiento) =>
+      this.formatearMovimientoCajaTbl(movimiento),
+    );
+  }
 
-      return {
-        id: movimiento.id,
-        cajaMenorId: movimiento.caja_menor_id,
-        cajaMenor: movimiento.caja_menor,
-        cliente: movimiento.cliente,
-        clienteIdentificacion: movimiento.cliente_identificacion,
-        tipoMovimiento: {
-          id: 0,
-          codigo: movimiento.tipo_codigo,
-          nombre: movimiento.tipo_nombre,
-          naturaleza: movimiento.naturaleza,
-        },
-        usuario: this.formatearUsuarioTbl({
-          id: movimiento.usuario_id,
-          usuario: movimiento.usuario,
-          nombres: movimiento.nombres,
-          apellidos: movimiento.apellidos,
-          correo: movimiento.correo,
-          telefono: movimiento.telefono,
-        }),
-        fechaMovimiento: this.fechaIsoColombia(movimiento.fecha_movimiento),
-        monto,
-        montoConNaturaleza: movimiento.naturaleza === 'S' ? -monto : monto,
-        motivo: movimiento.motivo,
-        referenciaTabla: movimiento.referencia_tabla,
-        referenciaId: movimiento.referencia_id,
-        creadoEn: movimiento.creado_en.toISOString(),
-      };
-    });
+  private async obtenerMovimientoCajaTblPorId(
+    tx: PrismaExecutor,
+    movimientoId: string,
+    motivo: string,
+  ) {
+    const rows = await tx.$queryRaw<MovimientoCajaTblRow[]>(Prisma.sql`
+      SELECT
+        CONCAT('mov-', m.id_mca::text) AS id,
+        c.id_caj::text AS caja_menor_id,
+        COALESCE(c.caj_nombre, o.org_nombre) AS caja_menor,
+        NULL::text AS cliente,
+        NULL::text AS cliente_identificacion,
+        UPPER(m.mca_tipo::text) AS tipo_codigo,
+        INITCAP(REPLACE(m.mca_tipo::text, '_', ' ')) AS tipo_nombre,
+        CASE
+          WHEN UPPER(m.mca_tipo::text) IN ('SALIDA', 'EGRESO', 'GASTO', 'DESEMBOLSO', 'DESEMBOLSO_CREDITO', 'AJUSTE_SALIDA') THEN 'S'
+          ELSE 'E'
+        END AS naturaleza,
+        tu.id_usu::text AS usuario_id,
+        tu.usu_usuario AS usuario,
+        p.per_primer_nombre AS nombres,
+        p.per_apellido AS apellidos,
+        tu.usu_email AS correo,
+        p.per_num_celular AS telefono,
+        m.mca_creacion AS fecha_movimiento,
+        m.mca_monto AS monto,
+        ${motivo} AS motivo,
+        m.mca_referencia_tipo::text AS referencia_tabla,
+        m.mca_referencia_id::text AS referencia_id,
+        m.mca_creacion AS creado_en
+      FROM public.tbl_movimientos_cajas m
+      JOIN public.tbl_organizaciones o ON o.id_org = m.org_id
+      JOIN public.tbl_usuarios tu ON tu.id_usu = m.usu_id
+      JOIN public.tbl_personas p ON p.id_per = tu.persona_id
+      LEFT JOIN public.tbl_sesiones_cajas sc ON sc.id_sca = m.sca_id
+      LEFT JOIN public.tbl_cajas c ON c.id_caj = sc.caj_id
+      WHERE m.id_mca::text = ${movimientoId}
+      LIMIT 1
+    `);
+
+    const movimiento = rows[0];
+    if (!movimiento) {
+      throw DomainError.notFound(
+        'Movimiento de caja menor no encontrado',
+        'MOVIMIENTO_CAJA_NO_ENCONTRADO',
+      );
+    }
+
+    return movimiento;
+  }
+
+  private formatearMovimientoCajaTbl(movimiento: MovimientoCajaTblRow) {
+    const monto = this.decimalANumero(movimiento.monto);
+
+    return {
+      id: movimiento.id,
+      cajaMenorId: movimiento.caja_menor_id,
+      cajaMenor: movimiento.caja_menor,
+      cliente: movimiento.cliente,
+      clienteIdentificacion: movimiento.cliente_identificacion,
+      tipoMovimiento: {
+        id: 0,
+        codigo: movimiento.tipo_codigo,
+        nombre: movimiento.tipo_nombre,
+        naturaleza: movimiento.naturaleza,
+      },
+      usuario: this.formatearUsuarioTbl({
+        id: movimiento.usuario_id,
+        usuario: movimiento.usuario,
+        nombres: movimiento.nombres,
+        apellidos: movimiento.apellidos,
+        correo: movimiento.correo,
+        telefono: movimiento.telefono,
+      }),
+      fechaMovimiento: this.fechaIsoColombia(movimiento.fecha_movimiento),
+      monto,
+      montoConNaturaleza: movimiento.naturaleza === 'S' ? -monto : monto,
+      motivo: movimiento.motivo,
+      referenciaTabla: movimiento.referencia_tabla,
+      referenciaId: movimiento.referencia_id,
+      creadoEn: movimiento.creado_en.toISOString(),
+    };
   }
 
   private async obtenerPresupuestoTbl(
@@ -5032,6 +7051,9 @@ export class CobrosService {
       cedula: row.cedula,
       negocio: row.negocio,
       direccion: row.direccion,
+      latitud: row.latitud === null ? null : this.decimalANumero(row.latitud),
+      longitud:
+        row.longitud === null ? null : this.decimalANumero(row.longitud),
       rutaId: row.ruta_id,
       ruta: row.ruta,
       monedaCodigo: row.moneda_codigo,
@@ -5056,12 +7078,16 @@ export class CobrosService {
   }
 
   private formatearClienteTbl(cliente: ClienteTblRow) {
+    const cedula = this.esDocumentoClienteGeneradoTbl(cliente.cedula)
+      ? null
+      : cliente.cedula;
+
     return {
       id: cliente.id,
       nombreCompleto: cliente.nombre_completo,
       nombreComercial: cliente.nombre_comercial,
       notas: cliente.notas,
-      cedula: cliente.cedula,
+      cedula,
       direccion: cliente.direccion,
       correo: null,
       telefono: cliente.telefono,
@@ -5071,12 +7097,16 @@ export class CobrosService {
         nombre: cliente.activo ? 'Activo' : 'Inactivo',
       },
       documentos: [
-        {
-          id: `doc-${cliente.id}`,
-          tipo: { id: 1, codigo: 'CC', nombre: 'Documento' },
-          numeroDocumento: cliente.cedula,
-          expedidoEn: null,
-        },
+        ...(cedula
+          ? [
+              {
+                id: `doc-${cliente.id}`,
+                tipo: { id: 1, codigo: 'CC', nombre: 'Documento' },
+                numeroDocumento: cedula,
+                expedidoEn: null,
+              },
+            ]
+          : []),
       ],
       direcciones: cliente.direccion
         ? [
@@ -5089,6 +7119,14 @@ export class CobrosService {
               departamento: '',
               pais: 'Colombia',
               referencia: null,
+              latitud:
+                cliente.latitud === null
+                  ? null
+                  : this.decimalANumero(cliente.latitud),
+              longitud:
+                cliente.longitud === null
+                  ? null
+                  : this.decimalANumero(cliente.longitud),
               esPrincipal: true,
             },
           ]
@@ -5096,6 +7134,14 @@ export class CobrosService {
       creadoEn: cliente.creado_en.toISOString(),
       actualizadoEn: cliente.actualizado_en.toISOString(),
     };
+  }
+
+  private generarDocumentoClienteTbl() {
+    return `AUTO-CLIENTE-${randomUUID()}`;
+  }
+
+  private esDocumentoClienteGeneradoTbl(value: string | null) {
+    return value?.startsWith('AUTO-CLIENTE-') ?? false;
   }
 
   private formatearUsuarioTbl(usuario: UsuarioTblRow) {
@@ -5225,6 +7271,15 @@ export class CobrosService {
     return new Date().toISOString().replace(/[:.]/g, '-');
   }
 
+  private asegurarTamanoExportacion(rowCount: number) {
+    if (rowCount > maxExportRows) {
+      throw DomainError.validation(
+        `La exportacion supera el maximo de ${maxExportRows} filas; aplica filtros mas especificos`,
+        'EXPORTACION_DEMASIADO_GRANDE',
+      );
+    }
+  }
+
   private async crearContactoCliente(
     tx: Prisma.TransactionClient,
     clienteId: string,
@@ -5244,6 +7299,41 @@ export class CobrosService {
         `No existe el tipo de contacto ${codigoTipo}`,
         'TIPO_CONTACTO_NO_EXISTE',
       );
+    }
+
+    await tx.clienteContacto.create({
+      data: {
+        clienteId,
+        tipoContactoId: tipo.tipoContactoId,
+        valor,
+        esPrincipal: true,
+      },
+    });
+  }
+
+  private async reemplazarContactoCliente(
+    tx: Prisma.TransactionClient,
+    clienteId: string,
+    codigoTipo: string,
+    valor: string | null,
+  ) {
+    const tipo = await tx.tipoContacto.findUnique({
+      where: { codigo: codigoTipo },
+    });
+
+    if (!tipo) {
+      throw DomainError.notFound(
+        `No existe el tipo de contacto ${codigoTipo}`,
+        'TIPO_CONTACTO_NO_EXISTE',
+      );
+    }
+
+    await tx.clienteContacto.deleteMany({
+      where: { clienteId, tipoContactoId: tipo.tipoContactoId },
+    });
+
+    if (!valor) {
+      return;
     }
 
     await tx.clienteContacto.create({
@@ -5301,10 +7391,64 @@ export class CobrosService {
     });
   }
 
+  private async reemplazarDocumentoCliente(
+    tx: Prisma.TransactionClient,
+    clienteId: string,
+    codigoTipo: string,
+    numeroDocumento: string | null,
+  ) {
+    const tipo = await tx.tipoDocumento.findUnique({
+      where: { codigo: codigoTipo },
+    });
+
+    if (!tipo) {
+      throw DomainError.notFound(
+        `No existe el tipo de documento ${codigoTipo}`,
+        'TIPO_DOCUMENTO_NO_EXISTE',
+      );
+    }
+
+    if (numeroDocumento) {
+      const existente = await tx.clienteDocumento.findFirst({
+        where: {
+          tipoDocumentoId: tipo.tipoDocumentoId,
+          numeroDocumento,
+          NOT: { clienteId },
+        },
+        select: { clienteId: true },
+      });
+
+      if (existente) {
+        throw DomainError.conflict(
+          'Ya existe un cliente con esta cedula',
+          'CEDULA_YA_REGISTRADA',
+        );
+      }
+    }
+
+    await tx.clienteDocumento.deleteMany({
+      where: { clienteId, tipoDocumentoId: tipo.tipoDocumentoId },
+    });
+
+    if (!numeroDocumento) {
+      return;
+    }
+
+    await tx.clienteDocumento.create({
+      data: {
+        clienteId,
+        tipoDocumentoId: tipo.tipoDocumentoId,
+        numeroDocumento,
+      },
+    });
+  }
+
   private async crearDireccionCliente(
     tx: Prisma.TransactionClient,
     clienteId: string,
     direccion: string | null,
+    latitud?: number,
+    longitud?: number,
   ) {
     if (!direccion) {
       return;
@@ -5328,9 +7472,64 @@ export class CobrosService {
         direccion,
         municipio: 'No especificado',
         departamento: 'No especificado',
+        latitud,
+        longitud,
         esPrincipal: true,
       },
     });
+  }
+
+  private async reemplazarDireccionCliente(
+    tx: Prisma.TransactionClient,
+    clienteId: string,
+    direccion: string | null,
+    latitud?: number | null,
+    longitud?: number | null,
+  ) {
+    const tipo = await tx.tipoDireccion.findUnique({
+      where: { codigo: 'CASA' },
+    });
+
+    if (!tipo) {
+      throw DomainError.notFound(
+        'No existe el tipo de direccion CASA',
+        'TIPO_DIRECCION_NO_EXISTE',
+      );
+    }
+
+    await tx.clienteDireccion.deleteMany({
+      where: { clienteId, tipoDireccionId: tipo.tipoDireccionId },
+    });
+
+    if (!direccion) {
+      return;
+    }
+
+    await tx.clienteDireccion.create({
+      data: {
+        clienteId,
+        tipoDireccionId: tipo.tipoDireccionId,
+        direccion,
+        municipio: 'No especificado',
+        departamento: 'No especificado',
+        latitud: latitud ?? undefined,
+        longitud: longitud ?? undefined,
+        esPrincipal: true,
+      },
+    });
+  }
+
+  private dividirNombrePersonaTbl(nombreCompleto: string) {
+    const partes = nombreCompleto.split(/\s+/).filter(Boolean);
+
+    if (partes.length <= 1) {
+      return { nombres: nombreCompleto, apellidos: '-' };
+    }
+
+    return {
+      nombres: partes.slice(0, -1).join(' '),
+      apellidos: partes[partes.length - 1],
+    };
   }
 
   private async obtenerOCrearRutaCredito(
@@ -6026,7 +8225,7 @@ export class CobrosService {
     },
     usuario: AuthenticatedUser,
   ) {
-    if (this.esAdministrador(usuario)) {
+    if (this.puedeVerDatosOrganizacion(usuario)) {
       return;
     }
 
@@ -6057,7 +8256,7 @@ export class CobrosService {
     usuario: AuthenticatedUser,
   ) {
     if (
-      this.esAdministrador(usuario) ||
+      this.puedeVerDatosOrganizacion(usuario) ||
       responsableUsuarioId === usuario.usuarioId
     ) {
       return;
@@ -6073,6 +8272,29 @@ export class CobrosService {
 
     throw new ForbiddenException(
       'Solo el administrador puede hacer esta accion',
+    );
+  }
+
+  private asegurarPermiso(
+    usuario: AuthenticatedUser,
+    permiso: PermisoEmpleadoCodigo,
+  ) {
+    if (this.esAdministrador(usuario) || usuario.permisos.includes(permiso)) {
+      return;
+    }
+
+    const nombrePermiso =
+      permisosEmpleadoPorCodigo.get(permiso)?.nombre ?? 'esta accion';
+    throw new ForbiddenException(
+      `No tienes permiso para ${nombrePermiso.toLowerCase()}`,
+    );
+  }
+
+  private puedeVerDatosOrganizacion(usuario: AuthenticatedUser) {
+    return (
+      this.esAdministrador(usuario) ||
+      usuario.roles.includes('COBRADOR') ||
+      usuario.roles.includes('AUDITOR')
     );
   }
 
@@ -6126,7 +8348,10 @@ export class CobrosService {
         });
 
         if (!pago) {
-          throw DomainError.notFound('Pago no encontrado', 'PAGO_NO_ENCONTRADO');
+          throw DomainError.notFound(
+            'Pago no encontrado',
+            'PAGO_NO_ENCONTRADO',
+          );
         }
 
         const caja = await tx.cajaMenor.findUnique({
@@ -6248,7 +8473,10 @@ export class CobrosService {
         });
 
         if (!pago) {
-          throw DomainError.notFound('Pago no encontrado', 'PAGO_NO_ENCONTRADO');
+          throw DomainError.notFound(
+            'Pago no encontrado',
+            'PAGO_NO_ENCONTRADO',
+          );
         }
 
         const creditoIds = [
@@ -6343,7 +8571,7 @@ export class CobrosService {
     );
     const monto = this.decimalANumero(pago.totalPagado);
 
-    if (!this.esAdministrador(usuario)) {
+    if (!this.puedeVerDatosOrganizacion(usuario)) {
       this.asegurarResponsableRuta(pago.ruta.responsableUsuarioId, usuario);
     }
 
@@ -6363,7 +8591,8 @@ export class CobrosService {
       fechaMovimiento: pago.fechaPago.toISOString(),
       monto,
       montoConNaturaleza: monto,
-      motivo: pago.observacion ?? `Pago del usuario ${pago.cliente.nombreCompleto}`,
+      motivo:
+        pago.observacion ?? `Pago del usuario ${pago.cliente.nombreCompleto}`,
       referenciaTabla: 'pago',
       referenciaId: pago.pagoId,
       creadoEn: pago.creadoEn.toISOString(),
@@ -6486,13 +8715,17 @@ export class CobrosService {
       return;
     }
 
-    const [estadoCuotaPendiente, estadoCuotaPagada, estadoCreditoActivo, estadoCreditoPagado] =
-      await Promise.all([
-        tx.estadoCuota.findUnique({ where: { codigo: 'PENDIENTE' } }),
-        tx.estadoCuota.findUnique({ where: { codigo: 'PAGADA' } }),
-        tx.estadoCredito.findUnique({ where: { codigo: 'ACTIVO' } }),
-        tx.estadoCredito.findUnique({ where: { codigo: 'PAGADO' } }),
-      ]);
+    const [
+      estadoCuotaPendiente,
+      estadoCuotaPagada,
+      estadoCreditoActivo,
+      estadoCreditoPagado,
+    ] = await Promise.all([
+      tx.estadoCuota.findUnique({ where: { codigo: 'PENDIENTE' } }),
+      tx.estadoCuota.findUnique({ where: { codigo: 'PAGADA' } }),
+      tx.estadoCredito.findUnique({ where: { codigo: 'ACTIVO' } }),
+      tx.estadoCredito.findUnique({ where: { codigo: 'PAGADO' } }),
+    ]);
 
     if (
       !estadoCuotaPendiente ||
@@ -6615,7 +8848,9 @@ export class CobrosService {
 
   private async sincronizarCreditoDesdeMovimientoDesembolso(
     tx: Prisma.TransactionClient,
-    credito: Awaited<ReturnType<CobrosService['obtenerCreditoEditableDesdeDesembolso']>>,
+    credito: Awaited<
+      ReturnType<CobrosService['obtenerCreditoEditableDesdeDesembolso']>
+    >,
     creditoDesembolsoId: string,
     movimiento: MovimientoCajaConRelaciones,
   ) {
@@ -6839,9 +9074,7 @@ export class CobrosService {
         WHERE caja_menor_id = ${cajaMenorId}::uuid
       `,
     );
-    const presupuesto = this.decimalANumero(
-      presupuestoRows[0]?.presupuesto,
-    );
+    const presupuesto = this.decimalANumero(presupuestoRows[0]?.presupuesto);
 
     if (presupuesto - montoActual + montoSiguiente < -0.004) {
       throw DomainError.conflict(
@@ -6855,7 +9088,10 @@ export class CobrosService {
     return naturaleza === 'S' ? -monto : monto;
   }
 
-  private naturalezaMovimientoCaja(tipo: { codigo: string; naturaleza: string }) {
+  private naturalezaMovimientoCaja(tipo: {
+    codigo: string;
+    naturaleza: string;
+  }) {
     if (
       ['GASTO', 'DESEMBOLSO_CREDITO', 'AJUSTE_SALIDA'].includes(tipo.codigo)
     ) {
@@ -6919,10 +9155,12 @@ export class CobrosService {
     ];
 
     if (query.cajaMenorId) {
-      condiciones.push(Prisma.sql`cm.caja_menor_id = ${query.cajaMenorId}::uuid`);
+      condiciones.push(
+        Prisma.sql`cm.caja_menor_id = ${query.cajaMenorId}::uuid`,
+      );
     }
 
-    if (!this.esAdministrador(usuario)) {
+    if (!this.puedeVerDatosOrganizacion(usuario)) {
       condiciones.push(
         Prisma.sql`cm.responsable_usuario_id = ${usuario.usuarioId}::uuid`,
       );
@@ -6994,10 +9232,7 @@ export class CobrosService {
     },
   ) {
     if (
-      !(await this.tablaExiste(
-        tx,
-        'public.caja_menor_movimiento_auditoria',
-      ))
+      !(await this.tablaExiste(tx, 'public.caja_menor_movimiento_auditoria'))
     ) {
       return;
     }
@@ -7073,11 +9308,18 @@ export class CobrosService {
   }
 
   private async tablaExiste(client: PrismaExecutor, nombre: string) {
+    const enCache = this.tablaExisteCache.get(nombre);
+    if (enCache !== undefined) {
+      return enCache;
+    }
+
     const resultado = await client.$queryRaw<Array<{ nombre: string | null }>>(
       Prisma.sql`SELECT to_regclass(${nombre})::text AS nombre`,
     );
 
-    return resultado[0]?.nombre !== null;
+    const existe = resultado[0]?.nombre !== null;
+    this.tablaExisteCache.set(nombre, existe);
+    return existe;
   }
 
   private formatearMovimientoCaja(movimiento: MovimientoCajaConRelaciones) {
@@ -7217,6 +9459,14 @@ export class CobrosService {
         departamento: direccion.departamento,
         pais: direccion.pais,
         referencia: direccion.referencia,
+        latitud:
+          direccion.latitud === null
+            ? null
+            : this.decimalANumero(direccion.latitud),
+        longitud:
+          direccion.longitud === null
+            ? null
+            : this.decimalANumero(direccion.longitud),
         esPrincipal: direccion.esPrincipal,
       })),
       creadoEn: cliente.creadoEn.toISOString(),

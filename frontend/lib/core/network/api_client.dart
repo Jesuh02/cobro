@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -14,8 +15,18 @@ class ApiClient {
   final String _baseUrl;
   final http.Client _client;
   String? _authToken;
+  static const Duration _requestTimeout = Duration(seconds: 25);
 
   void setAuthToken(String? token) {
+    if (token != null &&
+        (token.length > 2048 ||
+            !RegExp(r'^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$')
+                .hasMatch(token))) {
+      throw const ApiException(
+        statusCode: 401,
+        message: 'El servidor entrego una sesion invalida',
+      );
+    }
     _authToken = token;
   }
 
@@ -23,7 +34,9 @@ class ApiClient {
     String path, {
     Map<String, String?> query = const <String, String?>{},
   }) async {
-    final response = await _client.get(_uri(path, query), headers: _headers);
+    final response = await _client
+        .get(_uri(path, query), headers: _headers)
+        .timeout(_requestTimeout);
     final body = _decode(response);
 
     if (body is! List<dynamic>) {
@@ -40,7 +53,9 @@ class ApiClient {
     String path, {
     Map<String, String?> query = const <String, String?>{},
   }) async {
-    final response = await _client.get(_uri(path, query), headers: _headers);
+    final response = await _client
+        .get(_uri(path, query), headers: _headers)
+        .timeout(_requestTimeout);
     return _decodeObject(response);
   }
 
@@ -48,11 +63,13 @@ class ApiClient {
     String path,
     Map<String, dynamic> body,
   ) async {
-    final response = await _client.post(
-      _uri(path),
-      headers: _headers,
-      body: jsonEncode(body),
-    );
+    final response = await _client
+        .post(
+          _uri(path),
+          headers: _headers,
+          body: jsonEncode(body),
+        )
+        .timeout(_requestTimeout);
 
     return _decodeObject(response);
   }
@@ -61,16 +78,43 @@ class ApiClient {
     String path, [
     Map<String, dynamic>? body,
   ]) async {
-    final response = await _client.patch(
-      _uri(path),
-      headers: _headers,
-      body: body == null ? null : jsonEncode(body),
-    );
+    final response = await _client
+        .patch(
+          _uri(path),
+          headers: _headers,
+          body: body == null ? null : jsonEncode(body),
+        )
+        .timeout(_requestTimeout);
     return _decodeObject(response);
   }
 
+  Future<List<dynamic>> patchList(
+    String path, [
+    Map<String, dynamic>? body,
+  ]) async {
+    final response = await _client
+        .patch(
+          _uri(path),
+          headers: _headers,
+          body: body == null ? null : jsonEncode(body),
+        )
+        .timeout(_requestTimeout);
+    final decoded = _decode(response);
+
+    if (decoded is! List<dynamic>) {
+      throw ApiException(
+        statusCode: response.statusCode,
+        message: 'Expected a list response from the API',
+      );
+    }
+
+    return decoded;
+  }
+
   Future<Map<String, dynamic>> deleteObject(String path) async {
-    final response = await _client.delete(_uri(path), headers: _headers);
+    final response = await _client
+        .delete(_uri(path), headers: _headers)
+        .timeout(_requestTimeout);
     return _decodeObject(response);
   }
 
@@ -117,9 +161,17 @@ class ApiClient {
   }
 
   dynamic _decode(http.Response response) {
-    final rawBody = response.bodyBytes.isEmpty
-        ? null
-        : jsonDecode(utf8.decode(response.bodyBytes));
+    dynamic rawBody;
+    try {
+      rawBody = response.bodyBytes.isEmpty
+          ? null
+          : jsonDecode(utf8.decode(response.bodyBytes));
+    } on FormatException {
+      throw ApiException(
+        statusCode: response.statusCode,
+        message: 'El servidor entrego una respuesta invalida',
+      );
+    }
 
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return rawBody;

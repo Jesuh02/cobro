@@ -13,15 +13,19 @@ import {
 import { AuthenticatedUser } from '../auth/auth.types';
 import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { ResourceIdPipe } from '../../common/validation/resource-id';
 import { CobrosService } from './cobros.service';
 import {
   ActualizarCreditoDto,
+  ActualizarClienteDto,
+  ActualizarUbicacionClienteDto,
   ActualizarMovimientoCajaDto,
   CrearCajaMenorDto,
   CrearClienteDto,
   CrearCreditoDto,
   CrearMovimientoCajaDto,
   ExportarMovimientosCajaQueryDto,
+  EstimarTrayectosDto,
   ListarClientesQueryDto,
   ListarCobrosRutaQueryDto,
   ListarCreditosQueryDto,
@@ -29,12 +33,18 @@ import {
   ObtenerPresupuestoQueryDto,
   RegistrarPagoDto,
   RefinanciarCreditoDto,
+  TrazarRutaCompletaDto,
+  TrazarRutaDto,
 } from './dto';
+import { RoutingService } from './routing.service';
 
 @Controller()
 @UseGuards(AuthGuard)
 export class CobrosController {
-  constructor(private readonly cobros: CobrosService) {}
+  constructor(
+    private readonly cobros: CobrosService,
+    private readonly routing: RoutingService,
+  ) {}
 
   @Get('catalogos')
   obtenerCatalogos(@CurrentUser() usuario: AuthenticatedUser) {
@@ -57,6 +67,32 @@ export class CobrosController {
     return this.cobros.crearCliente(body, usuario);
   }
 
+  @Patch('clientes/:id')
+  actualizarCliente(
+    @CurrentUser() usuario: AuthenticatedUser,
+    @Param('id', new ResourceIdPipe()) id: string,
+    @Body() body: ActualizarClienteDto,
+  ) {
+    return this.cobros.actualizarCliente(id, body, usuario);
+  }
+
+  @Delete('clientes/:id')
+  eliminarCliente(
+    @CurrentUser() usuario: AuthenticatedUser,
+    @Param('id', new ResourceIdPipe()) id: string,
+  ) {
+    return this.cobros.eliminarCliente(id, usuario);
+  }
+
+  @Patch('clientes/:id/ubicacion')
+  actualizarUbicacionCliente(
+    @CurrentUser() usuario: AuthenticatedUser,
+    @Param('id', new ResourceIdPipe()) id: string,
+    @Body() body: ActualizarUbicacionClienteDto,
+  ) {
+    return this.cobros.actualizarUbicacionCliente(id, body, usuario);
+  }
+
   @Get('rutas')
   listarRutas(@CurrentUser() usuario: AuthenticatedUser) {
     return this.cobros.listarRutas(usuario);
@@ -68,6 +104,21 @@ export class CobrosController {
     @Query() query: ListarCobrosRutaQueryDto,
   ) {
     return this.cobros.listarCobrosRuta(query, usuario);
+  }
+
+  @Post('routing/estimates')
+  estimarTrayectos(@Body() body: EstimarTrayectosDto) {
+    return this.routing.estimateTrips(body);
+  }
+
+  @Post('routing/route')
+  trazarRuta(@Body() body: TrazarRutaDto) {
+    return this.routing.traceRoute(body);
+  }
+
+  @Post('routing/route-through')
+  trazarRutaCompleta(@Body() body: TrazarRutaCompletaDto) {
+    return this.routing.traceRouteThrough(body);
   }
 
   @Get('exportaciones/cobros-ruta')
@@ -94,6 +145,14 @@ export class CobrosController {
     return this.cobros.listarCreditos(query, usuario);
   }
 
+  @Get('creditos/resumen')
+  resumenCreditos(
+    @CurrentUser() usuario: AuthenticatedUser,
+    @Query() query: ListarCreditosQueryDto,
+  ) {
+    return this.cobros.resumenCreditos(query, usuario);
+  }
+
   @Get('exportaciones/creditos')
   exportarCreditos(
     @CurrentUser() usuario: AuthenticatedUser,
@@ -105,7 +164,7 @@ export class CobrosController {
   @Patch('creditos/:id/refinanciar')
   refinanciarCredito(
     @CurrentUser() usuario: AuthenticatedUser,
-    @Param('id') id: string,
+    @Param('id', new ResourceIdPipe()) id: string,
     @Body() body: RefinanciarCreditoDto,
   ) {
     return this.cobros.refinanciarCredito(id, body, usuario);
@@ -114,7 +173,7 @@ export class CobrosController {
   @Patch('creditos/:id')
   actualizarCredito(
     @CurrentUser() usuario: AuthenticatedUser,
-    @Param('id') id: string,
+    @Param('id', new ResourceIdPipe()) id: string,
     @Body() body: ActualizarCreditoDto,
   ) {
     return this.cobros.actualizarCredito(id, body, usuario);
@@ -123,7 +182,7 @@ export class CobrosController {
   @Delete('creditos/:id')
   eliminarCredito(
     @CurrentUser() usuario: AuthenticatedUser,
-    @Param('id') id: string,
+    @Param('id', new ResourceIdPipe()) id: string,
   ) {
     return this.cobros.eliminarCredito(id, usuario);
   }
@@ -131,7 +190,7 @@ export class CobrosController {
   @Get('creditos/:id')
   obtenerCredito(
     @CurrentUser() usuario: AuthenticatedUser,
-    @Param('id') id: string,
+    @Param('id', new ResourceIdPipe()) id: string,
   ) {
     return this.cobros.obtenerCredito(id, usuario);
   }
@@ -139,7 +198,7 @@ export class CobrosController {
   @Get('creditos/:id/cuotas')
   listarCuotasCredito(
     @CurrentUser() usuario: AuthenticatedUser,
-    @Param('id') id: string,
+    @Param('id', new ResourceIdPipe()) id: string,
   ) {
     return this.cobros.listarCuotasCredito(id, usuario);
   }
@@ -179,7 +238,7 @@ export class CobrosController {
   @Patch('caja-menor/movimientos/:id')
   actualizarMovimientoCaja(
     @CurrentUser() usuario: AuthenticatedUser,
-    @Param('id') id: string,
+    @Param('id', new ResourceIdPipe(true)) id: string,
     @Body() body: ActualizarMovimientoCajaDto,
   ) {
     return this.cobros.actualizarMovimientoCaja(id, body, usuario);
@@ -188,7 +247,7 @@ export class CobrosController {
   @Delete('caja-menor/movimientos/:id')
   eliminarMovimientoCaja(
     @CurrentUser() usuario: AuthenticatedUser,
-    @Param('id') id: string,
+    @Param('id', new ResourceIdPipe(true)) id: string,
   ) {
     return this.cobros.eliminarMovimientoCaja(id, usuario);
   }

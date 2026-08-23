@@ -147,6 +147,8 @@ export class EmailNotificationService {
       connectionTimeout: 10_000,
       greetingTimeout: 10_000,
       socketTimeout: 15_000,
+      disableFileAccess: true,
+      disableUrlAccess: true,
     });
 
     return this.transporter;

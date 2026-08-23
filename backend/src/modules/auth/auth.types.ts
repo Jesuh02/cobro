@@ -2,6 +2,7 @@ export type AuthenticatedUser = {
   usuarioId: string;
   usuario: string;
   roles: string[];
+  permisos: string[];
 };
 
 export type AuthUserResponse = {
@@ -11,6 +12,12 @@ export type AuthUserResponse = {
   correo: string;
   roles: string[];
   esAdministrador: boolean;
+  activo: boolean;
+  estado: {
+    codigo: string;
+    nombre: string;
+  };
+  permisos: string[];
 };
 
 export type AuthSessionResponse = {

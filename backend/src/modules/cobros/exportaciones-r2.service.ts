@@ -1,6 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import {
+  GetObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { Buffer } from 'node:buffer';
 
 import { DomainError } from '../../common/domain/domain-error';
@@ -9,9 +14,11 @@ type R2Config = {
   accessKeyId: string;
   accountId: string;
   bucketName: string;
-  publicUrl: string;
   secretAccessKey: string;
+  signedUrlTtlSeconds: number;
 };
+
+const maxExportBytes = 25 * 1024 * 1024;
 
 @Injectable()
 export class ExportacionesR2Service {
@@ -25,6 +32,18 @@ export class ExportacionesR2Service {
     contenido: Buffer;
   }) {
     const config = this.obtenerConfig();
+    if (
+      !/^[a-z0-9-]{1,40}$/.test(input.carpeta) ||
+      !/^[a-z0-9][a-z0-9._-]{0,119}\.xlsx$/i.test(input.nombreArchivo) ||
+      input.contenido.length === 0 ||
+      input.contenido.length > maxExportBytes
+    ) {
+      throw DomainError.validation(
+        'La exportacion contiene un nombre o tamano no permitido',
+        'R2_EXPORTACION_INVALIDA',
+      );
+    }
+
     const key = [
       'exportaciones',
       input.carpeta,
@@ -50,10 +69,23 @@ export class ExportacionesR2Service {
       );
     }
 
+    const url = await getSignedUrl(
+      this.obtenerCliente(config),
+      new GetObjectCommand({
+        Bucket: config.bucketName,
+        Key: key,
+        ResponseContentDisposition: `attachment; filename="${input.nombreArchivo}"`,
+        ResponseContentType:
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      }),
+      { expiresIn: config.signedUrlTtlSeconds },
+    );
+
     return {
       archivo: input.nombreArchivo,
       key,
-      url: `${config.publicUrl}/${this.codificarKey(key)}`,
+      url,
+      urlExpiraEnSegundos: config.signedUrlTtlSeconds,
     };
   }
 
@@ -75,15 +107,30 @@ export class ExportacionesR2Service {
     const accessKeyId = this.requerirVariable('R2_ACCESS_KEY_ID');
     const accountId = this.requerirVariable('R2_ACCOUNT_ID');
     const bucketName = this.requerirVariable('R2_BUCKET_NAME');
-    const publicUrl = this.requerirVariable('R2_PUBLIC_URL').replace(/\/$/, '');
     const secretAccessKey = this.requerirVariable('R2_SECRET_ACCESS_KEY');
+
+    if (!/^[a-f0-9]{32}$/i.test(accountId)) {
+      throw DomainError.validation(
+        'R2_ACCOUNT_ID no tiene un formato valido',
+        'R2_CONFIG_INVALIDA',
+      );
+    }
+    if (!/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(bucketName)) {
+      throw DomainError.validation(
+        'R2_BUCKET_NAME no tiene un formato valido',
+        'R2_CONFIG_INVALIDA',
+      );
+    }
 
     return {
       accessKeyId,
       accountId,
       bucketName,
-      publicUrl,
       secretAccessKey,
+      signedUrlTtlSeconds: this.config.get<number>(
+        'R2_SIGNED_URL_TTL_SECONDS',
+        300,
+      ),
     };
   }
 
@@ -98,9 +145,5 @@ export class ExportacionesR2Service {
     }
 
     return value;
-  }
-
-  private codificarKey(key: string) {
-    return key.split('/').map(encodeURIComponent).join('/');
   }
 }

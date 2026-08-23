@@ -15,8 +15,22 @@ export default tseslint.config(
     },
     rules: {
       "@typescript-eslint/no-explicit-any": "error",
-      "@typescript-eslint/no-floating-promises": "error"
+      "@typescript-eslint/no-floating-promises": "error",
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "MemberExpression[property.name='$queryRawUnsafe']",
+          message: "Unsafe raw SQL is forbidden; use Prisma.sql parameters."
+        },
+        {
+          selector: "MemberExpression[property.name='$executeRawUnsafe']",
+          message: "Unsafe raw SQL is forbidden; use Prisma.sql parameters."
+        },
+        {
+          selector: "CallExpression[callee.object.name='Prisma'][callee.property.name='raw']",
+          message: "Prisma.raw is forbidden for application queries."
+        }
+      ]
     }
   }
 );
-

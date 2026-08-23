@@ -1,57 +1,11 @@
 # Cobro
 
-Monorepo para una app de cobros conectada a PostgreSQL/Supabase.
+Monorepo de una aplicación de cobros conectada a PostgreSQL/Supabase.
 
 - Backend: TypeScript, NestJS, Prisma y PostgreSQL.
-- Frontend: Flutter + Dart para Web, Android, iOS y escritorio.
+- Frontend: Flutter para Web, Android, iOS y escritorio.
 
-## Estructura
-
-```text
-backend/
-  src/
-    modules/
-      cobros/
-    common/
-    config/
-  prisma/
-  database/
-
-frontend/
-  lib/
-    app/
-    core/
-    features/
-```
-
-## Base De Datos
-
-La aplicacion usa exclusivamente PostgreSQL en Supabase. No hay base de datos
-local soportada por el proyecto.
-
-El modelo principal vive en el esquema `public` y usa nombres en espanol:
-clientes, rutas, creditos, planes de pago, cuotas, pagos, caja menor, gastos y
-presupuesto.
-
-El DDL 4FN esta en:
-
-```text
-backend/database/ddl_cobros_4fn.sql
-```
-
-La migracion inicial usa ese mismo DDL:
-
-```text
-backend/prisma/migrations/20260817000000_init/migration.sql
-```
-
-La vista `cobros.vista_presupuesto_actual` calcula:
-
-```text
-PRESUPUESTO = CAJA MENOR + RECAUDADO - CREDITOS - GASTOS
-```
-
-## Backend
+## Desarrollo local
 
 ```bash
 cd backend
@@ -63,78 +17,114 @@ npm run seed
 npm run start:dev
 ```
 
-Antes de iniciar, configura `DATABASE_URL` con el connection string de Supabase:
+El seed es el único mecanismo para crear el primer administrador. Configura
+`ADMIN_USERNAME`, `ADMIN_PASSWORD`, `ADMIN_EMAIL` y `ADMIN_FULL_NAME` antes de
+ejecutarlo. No existe un endpoint público para crear administradores.
 
-```text
-postgresql://postgres:<DB_PASSWORD>@db.<PROJECT_REF>.supabase.co:5432/postgres?schema=public
-```
+La API local queda en `http://127.0.0.1:3000/api/v1`. Todos los endpoints de
+negocio requieren `Authorization: Bearer <token>`; el acceso inicial se obtiene
+con `POST /api/v1/auth/login`.
 
-API base:
-
-```text
-http://localhost:3000/api/v1
-```
-
-Autenticacion:
-
-- `POST /api/v1/auth/login`
-- `POST /api/v1/auth/bootstrap-admin` solo crea un administrador si no existe uno con contrasena valida.
-- `POST /api/v1/usuarios` crea empleados y requiere usuario administrador.
-
-El seed crea un administrador inicial si no existe. Puedes cambiarlo con
-`ADMIN_USERNAME`, `ADMIN_PASSWORD`, `ADMIN_EMAIL` y `ADMIN_FULL_NAME`.
-Los endpoints de negocio requieren `Authorization: Bearer <token>`.
-
-Endpoints principales:
-
-- `GET /api/v1/catalogos`
-- `GET|POST /api/v1/clientes`
-- `GET /api/v1/rutas`
-- `GET /api/v1/cobros/ruta`
-- `POST /api/v1/creditos`
-- `GET /api/v1/creditos/:id/cuotas`
-- `POST /api/v1/pagos`
-- `GET|POST /api/v1/caja-menor/movimientos`
-- `GET /api/v1/presupuesto`
-
-## Notificaciones al cliente
-
-El backend envia notificaciones transaccionales despues de confirmar en base de
-datos estos eventos:
-
-- credito aprobado;
-- cada pago o abono registrado, con saldo, cuotas restantes y proxima fecha;
-- credito finalizado.
-
-El correo usa Resend como proveedor principal y Brevo SMTP como respaldo. Los
-mensajes de WhatsApp se envian con YCloud. Activa y configura las variables del
-bloque `Notificaciones transaccionales` de `backend/.env.example` en tu archivo
-local `backend/.env`.
-
-Para mensajes de WhatsApp iniciados por la empresa se recomienda crear tres
-plantillas de categoria `Utility`, idioma `es_CO`, y registrar sus nombres en:
-
-- `YCLOUD_TEMPLATE_CREDIT_APPROVED`: 6 variables en este orden: nombre, monto
-  aprobado, total, numero de cuotas, valor de cuota y fecha de primera cuota.
-- `YCLOUD_TEMPLATE_PAYMENT_RECEIVED`: 6 variables: nombre, monto pagado, cuotas
-  restantes, saldo, valor de proxima cuota y fecha de proxima cuota.
-- `YCLOUD_TEMPLATE_CREDIT_COMPLETED`: 3 variables: nombre, monto del credito y
-  nombre de la empresa.
-
-Si la cuenta YCloud tiene habilitado Direct Send, se puede usar el texto
-completo sin plantillas estableciendo `YCLOUD_USE_DIRECT_SEND=true`.
-
-## Frontend
+Para el frontend:
 
 ```bash
 cd frontend
-flutter create . --platforms=web,android,ios
 flutter pub get
-flutter run -d chrome --dart-define=API_BASE_URL=http://localhost:3000/api/v1
+flutter run -d chrome --dart-define=API_BASE_URL=http://127.0.0.1:3000/api/v1
 ```
 
-En Android emulator usa:
+En el emulador de Android puede usarse
+`http://10.0.2.2:3000/api/v1`. Una compilación release rechaza HTTP salvo para
+direcciones de loopback.
+
+## Controles de seguridad incluidos
+
+- Consultas SQL parametrizadas con Prisma y reglas de lint que prohíben las API
+  SQL inseguras. Los identificadores de ruta también tienen formato y longitud
+  limitados.
+- Autenticación con tokens firmados de corta duración, algoritmo y claims
+  estrictos, revalidación del usuario en cada solicitud y contraseñas con
+  `scrypt` endurecido. Los hashes anteriores se actualizan al iniciar sesión.
+- Autorización por rol y permiso en el backend. Ocultar un botón en Flutter no
+  se considera una barrera de seguridad.
+- Límite de intentos global y más estricto para login; límites de cuerpo,
+  tiempos de espera HTTP y tope de filas/tamaño en exportaciones.
+- CORS por lista explícita, cabeceras de Helmet, HTTPS forzado en producción,
+  errores públicos genéricos y registros sin cuerpos ni credenciales.
+- Webhooks de YCloud validados con HMAC, marca de tiempo, endpoint y protección
+  contra repetición.
+- Archivos R2 privados y descargas mediante URL firmada de expiración corta.
+- RLS habilitado y acceso de Supabase `anon`/`authenticated` revocado en las
+  tablas del backend.
+- CSP y otras cabeceras defensivas para el frontend web en `frontend/web/_headers`.
+
+Ejecuta estos controles antes de integrar o desplegar:
 
 ```bash
-flutter run --dart-define=API_BASE_URL=http://10.0.2.2:3000/api/v1
+cd backend
+npm run lint
+npm test -- --runInBand
+npm run build
+npm run security:audit
 ```
+
+## Despliegue seguro
+
+1. Crea secretos aleatorios nuevos; no copies los valores de desarrollo. En
+   producción `AUTH_TOKEN_SECRET` debe tener al menos 64 caracteres y
+   `ADMIN_PASSWORD` debe ser única y tener entre 12 y 128 caracteres.
+2. Aplica las migraciones como propietario con `npx prisma migrate deploy`.
+   Después ejecuta una vez `backend/database/runtime_role.sql.example`,
+   reemplazando la contraseña de ejemplo.
+3. Cambia `DATABASE_URL` para utilizar exclusivamente el usuario sin privilegios
+   `cobro_api`, con `sslmode=require` o `verify-full`. La aplicación rechaza al
+   superusuario `postgres` en producción.
+4. Define `NODE_ENV=production`, un `CORS_ORIGIN` HTTPS exacto,
+   `ENFORCE_HTTPS=true` y `TRUST_PROXY_HOPS` con el número real de proxies de
+   confianza. No expongas el puerto de NestJS directamente a Internet.
+5. Mantén R2 privado. Configura `R2_SIGNED_URL_TTL_SECONDS` entre 60 y 900
+   segundos y concede a su credencial solo acceso al bucket requerido.
+6. Si activas YCloud, configura `YCLOUD_WEBHOOK_SECRET` y
+   `YCLOUD_WEBHOOK_ENDPOINT_ID`, y registra en YCloud el endpoint HTTPS exacto.
+7. Sirve Flutter detrás de un proveedor que aplique `frontend/web/_headers`.
+   Verifica las cabeceras en la URL pública; algunos hosts ignoran ese archivo.
+8. Conserva los secretos en el gestor del proveedor, nunca en Git, imágenes
+   Docker, logs ni artefactos. Rota cualquier secreto que alguna vez haya sido
+   compartido o publicado.
+9. Ejecuta pruebas, auditoría de dependencias, copia de seguridad y restauración
+   ensayada antes de cada despliegue.
+
+El limitador incluido funciona por proceso. Si se ejecutan varias réplicas,
+configura un almacenamiento compartido (por ejemplo Redis en el adaptador de
+throttling) y aplica límites adicionales en el proxy, WAF o CDN. También deben
+existir alertas de autenticación fallida, errores 5xx y consumo anormal.
+
+## Base de datos
+
+El modelo principal está en el esquema `public`. El DDL inicial y las
+migraciones se encuentran en:
+
+```text
+backend/database/ddl_cobros_4fn.sql
+backend/prisma/migrations/
+```
+
+La vista de presupuesto calcula:
+
+```text
+PRESUPUESTO = CAJA MENOR + RECAUDADO - CREDITOS - GASTOS
+```
+
+## Notificaciones
+
+El correo usa Resend y puede usar Brevo SMTP como respaldo. WhatsApp usa YCloud.
+Las variables y sus valores seguros de ejemplo están documentados en
+`backend/.env.example`. Para mensajes iniciados por la empresa deben emplearse
+plantillas `Utility` aprobadas:
+
+- `YCLOUD_TEMPLATE_CREDIT_APPROVED`
+- `YCLOUD_TEMPLATE_PAYMENT_RECEIVED`
+- `YCLOUD_TEMPLATE_CREDIT_COMPLETED`
+
+`YCLOUD_USE_DIRECT_SEND` debe permanecer desactivado salvo que la cuenta y el
+caso de uso lo requieran expresamente.

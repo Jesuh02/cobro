@@ -12,21 +12,28 @@ import { RequestWithUser } from './current-user.decorator';
 export class AuthGuard implements CanActivate {
   constructor(private readonly auth: AuthService) {}
 
-  canActivate(context: ExecutionContext) {
+  async canActivate(context: ExecutionContext) {
     const request = context.switchToHttp().getRequest<RequestWithUser>();
     const authorization = request.headers.authorization;
 
-    if (!authorization?.startsWith('Bearer ')) {
+    if (!authorization || authorization.length > 2_100) {
       throw new UnauthorizedException('Debes iniciar sesion');
     }
 
-    const token = authorization.slice('Bearer '.length).trim();
+    const match =
+      /^Bearer ([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$/i.exec(
+        authorization,
+      );
+    const token = match?.[1];
 
     if (!token) {
       throw new UnauthorizedException('Debes iniciar sesion');
     }
 
-    request.user = this.auth.verificarToken(token);
+    const tokenUser = this.auth.verificarToken(token);
+    request.user = await this.auth.validarUsuarioAutenticado(
+      tokenUser.usuarioId,
+    );
     return true;
   }
 }

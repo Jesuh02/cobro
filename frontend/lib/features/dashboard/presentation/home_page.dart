@@ -4,14 +4,92 @@ import 'dart:math' as math;
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:mapcn_flutter/mapcn_flutter.dart';
 
 import '../../../app/app_theme.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/network/api_exception.dart';
 import '../../../core/platform/export_download.dart';
 import '../../../core/ui/clay.dart';
+import '../../routes/data/api_road_router.dart';
+import '../../routes/data/device_location_service.dart';
+import '../../routes/presentation/desktop_collection_route.dart';
 
 part 'dashboard_charts.dart';
+
+const String _permisoVerEmpleados = 'VER_EMPLEADOS';
+const String _permisoCrearCajaMenor = 'CREAR_CAJA_MENOR';
+const String _permisoRegistrarFlujoCaja = 'REGISTRAR_FLUJO_CAJA';
+const String _permisoCrearCreditos = 'CREAR_CREDITOS';
+const String _permisoRefinanciarCreditos = 'REFINANCIAR_CREDITOS';
+const String _permisoModificarCreditos = 'MODIFICAR_CREDITOS';
+const String _permisoEliminarCreditos = 'ELIMINAR_CREDITOS';
+const String _permisoAgregarCuota = 'AGREGAR_CUOTA';
+const String _permisoModificarMovimientos = 'MODIFICAR_MOVIMIENTOS';
+const String _permisoEliminarMovimientos = 'ELIMINAR_MOVIMIENTOS';
+
+const String _direccionCasaHint = 'Ej: cr14 #28-26';
+const String _mensajeDireccionCasa =
+    'Escribe la direccion de la casa asociada a esta ubicacion';
+const String _mensajeUbicacionCasa =
+    'Ubicacion marcada. Escribe la direccion de la casa, ej: cr14 #28-26';
+
+const List<_PermisoEmpleadoDef> _permisosEmpleado = <_PermisoEmpleadoDef>[
+  _PermisoEmpleadoDef(
+    codigo: _permisoVerEmpleados,
+    nombre: 'Ver empleados',
+  ),
+  _PermisoEmpleadoDef(
+    codigo: _permisoCrearCajaMenor,
+    nombre: 'Crear caja menor',
+  ),
+  _PermisoEmpleadoDef(
+    codigo: _permisoRegistrarFlujoCaja,
+    nombre: 'Registrar flujo en caja menor',
+  ),
+  _PermisoEmpleadoDef(
+    codigo: _permisoCrearCreditos,
+    nombre: 'Crear creditos',
+  ),
+  _PermisoEmpleadoDef(
+    codigo: _permisoRefinanciarCreditos,
+    nombre: 'Refinanciar creditos',
+  ),
+  _PermisoEmpleadoDef(
+    codigo: _permisoModificarCreditos,
+    nombre: 'Modificar creditos',
+  ),
+  _PermisoEmpleadoDef(
+    codigo: _permisoEliminarCreditos,
+    nombre: 'Eliminar creditos',
+  ),
+  _PermisoEmpleadoDef(
+    codigo: _permisoAgregarCuota,
+    nombre: 'Agregar cuota',
+  ),
+  _PermisoEmpleadoDef(
+    codigo: _permisoModificarMovimientos,
+    nombre: 'Modificar movimientos',
+  ),
+  _PermisoEmpleadoDef(
+    codigo: _permisoEliminarMovimientos,
+    nombre: 'Eliminar movimientos',
+  ),
+];
+
+const List<String> _permisosEmpleadoCodigos = <String>[
+  _permisoVerEmpleados,
+  _permisoCrearCajaMenor,
+  _permisoRegistrarFlujoCaja,
+  _permisoCrearCreditos,
+  _permisoRefinanciarCreditos,
+  _permisoModificarCreditos,
+  _permisoEliminarCreditos,
+  _permisoAgregarCuota,
+  _permisoModificarMovimientos,
+  _permisoEliminarMovimientos,
+];
 
 class HomePage extends StatefulWidget {
   const HomePage({
@@ -33,13 +111,17 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   late final ApiClient _apiClient;
+  late final ApiRoadRouter _roadRouter;
   late final bool _cerrarApiClientAlSalir;
   static const double _mobileBreakpoint = 760;
+  static const double _desktopRouteMapBreakpoint = 1050;
   static const int _pageSize = 40;
   static const String _interesCreditoPredeterminado = '20';
   static const String _plazoCreditoPredeterminado = '30';
   static const String _todasLasCajasFiltro = '__todas_las_cajas__';
-  static const List<_DestinoMenu> _destinosMenu = <_DestinoMenu>[
+  static const int _indiceCredito = 2;
+  static const int _indiceGestionEmpleados = 5;
+  static const List<_DestinoMenu> _destinosMenuBase = <_DestinoMenu>[
     _DestinoMenu(
       icono: Icons.home_outlined,
       iconoSeleccionado: Icons.home_rounded,
@@ -66,6 +148,11 @@ class _HomePageState extends State<HomePage> {
       etiqueta: 'Cliente',
     ),
   ];
+  static const _DestinoMenu _destinoGestionEmpleados = _DestinoMenu(
+    icono: Icons.manage_accounts_outlined,
+    iconoSeleccionado: Icons.manage_accounts_rounded,
+    etiqueta: 'Empleado',
+  );
 
   final TextEditingController _buscarRutaController = TextEditingController();
   final TextEditingController _buscarCajaInicioController =
@@ -87,11 +174,16 @@ class _HomePageState extends State<HomePage> {
   final TextEditingController _loginUsuarioController = TextEditingController();
   final TextEditingController _loginContrasenaController =
       TextEditingController();
+  final TextEditingController _registroInstitucionController =
+      TextEditingController();
+  final TextEditingController _registroNombreController =
+      TextEditingController();
+  final TextEditingController _registroCorreoController =
+      TextEditingController();
 
   SesionUsuario? _usuarioSesion;
   Catalogos? _catalogos;
   Presupuesto? _presupuesto;
-  Presupuesto? _presupuestoTodosLosDias;
   List<Cliente> _clientes = const <Cliente>[];
   List<CobroRuta> _cobrosRuta = const <CobroRuta>[];
   List<CreditoRegistro> _creditos = const <CreditoRegistro>[];
@@ -112,11 +204,13 @@ class _HomePageState extends State<HomePage> {
   bool _guardando = false;
   bool _exportando = false;
   bool _mostrarContrasenaLogin = false;
+  bool _registrandoInstitucion = false;
   bool _menuLateralExpandido = true;
   _FiltroEstadoRuta _filtroEstadoRuta = _FiltroEstadoRuta.todos;
   _FiltroEstadoCredito _filtroCredito = _FiltroEstadoCredito.todos;
   _FiltroMovimientoCaja _filtroMovimientoCaja = _FiltroMovimientoCaja.todos;
   final Set<String> _cuotasEnPago = <String>{};
+  final Set<String> _cobrosConPagoInstantaneo = <String>{};
   String? _error;
   OverlayEntry? _mensajeOverlay;
   Timer? _mensajeTimer;
@@ -134,6 +228,9 @@ class _HomePageState extends State<HomePage> {
 
   String? _rutaFiltroId;
   String? _clienteCreditoId;
+  final Set<String> _clientesCreditoIds = <String>{};
+  final Map<String, TextEditingController> _valorCreditoPorClienteControllers =
+      <String, TextEditingController>{};
   String? _rutaCreditoId;
   String? _monedaCreditoCodigo;
   int? _frecuenciaPagoId;
@@ -145,6 +242,7 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     _apiClient = widget.apiClient ?? ApiClient(baseUrl: widget.apiBaseUrl);
+    _roadRouter = ApiRoadRouter(_apiClient);
     _cerrarApiClientAlSalir = widget.apiClient == null;
     _aplicarFechaInicioHoy();
     _buscarRutaController.addListener(_refrescar);
@@ -152,6 +250,13 @@ class _HomePageState extends State<HomePage> {
     _buscarCreditoController.addListener(_programarRecargaListasPesadas);
     _buscarCajaController.addListener(_programarRecargaListasPesadas);
     _buscarClienteController.addListener(_refrescar);
+  }
+
+  List<_DestinoMenu> get _destinosMenuActual {
+    return <_DestinoMenu>[
+      ..._destinosMenuBase,
+      if (_puedeVerEmpleados) _destinoGestionEmpleados,
+    ];
   }
 
   @override
@@ -169,11 +274,18 @@ class _HomePageState extends State<HomePage> {
     _buscarCajaController.dispose();
     _buscarClienteController.dispose();
     _valorCreditoController.dispose();
+    for (final TextEditingController controller
+        in _valorCreditoPorClienteControllers.values) {
+      controller.dispose();
+    }
     _interesController.dispose();
     _plazoController.dispose();
     _observacionCreditoController.dispose();
     _loginUsuarioController.dispose();
     _loginContrasenaController.dispose();
+    _registroInstitucionController.dispose();
+    _registroNombreController.dispose();
+    _registroCorreoController.dispose();
     super.dispose();
   }
 
@@ -185,29 +297,6 @@ class _HomePageState extends State<HomePage> {
     if (usuarioSesion == null) {
       return _construirLogin(context);
     }
-
-    final List<Widget> vistas = <Widget>[
-      KeyedSubtree(
-        key: const ValueKey<String>('inicio'),
-        child: _construirPresupuesto(context),
-      ),
-      KeyedSubtree(
-        key: const ValueKey<String>('ruta'),
-        child: _construirRutaActiva(context),
-      ),
-      KeyedSubtree(
-        key: const ValueKey<String>('credito'),
-        child: _construirNuevoCredito(context),
-      ),
-      KeyedSubtree(
-        key: const ValueKey<String>('caja-menor'),
-        child: _construirCajaMenor(context),
-      ),
-      KeyedSubtree(
-        key: const ValueKey<String>('clientes'),
-        child: _construirClientes(context),
-      ),
-    ];
 
     return Scaffold(
       appBar: AppBar(
@@ -270,8 +359,8 @@ class _HomePageState extends State<HomePage> {
                           ? ThemeMode.light
                           : ThemeMode.dark,
                     );
-                  case _AccionSesion.crearEmpleado:
-                    _abrirCrearEmpleado();
+                  case _AccionSesion.gestionEmpleados:
+                    _abrirGestionEmpleados();
                   case _AccionSesion.cerrarSesion:
                     _cerrarSesion();
                 }
@@ -306,14 +395,14 @@ class _HomePageState extends State<HomePage> {
                       ],
                     ),
                   ),
-                  if (usuarioSesion.esAdministrador)
+                  if (usuarioSesion.puede(_permisoVerEmpleados))
                     const PopupMenuItem<_AccionSesion>(
-                      value: _AccionSesion.crearEmpleado,
+                      value: _AccionSesion.gestionEmpleados,
                       child: Row(
                         children: <Widget>[
-                          Icon(Icons.person_add_alt_1_rounded),
+                          Icon(Icons.manage_accounts_rounded),
                           SizedBox(width: 12),
-                          Text('Crear empleado'),
+                          Text('Gestion de empleado'),
                         ],
                       ),
                     ),
@@ -353,28 +442,7 @@ class _HomePageState extends State<HomePage> {
               Expanded(
                 child: _cargando && _catalogos == null
                     ? const Center(child: CircularProgressIndicator())
-                    : AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 360),
-                        switchInCurve: Curves.easeOutCubic,
-                        switchOutCurve: Curves.easeInCubic,
-                        transitionBuilder: (
-                          Widget child,
-                          Animation<double> animation,
-                        ) {
-                          final Animation<Offset> slide = Tween<Offset>(
-                            begin: const Offset(0.025, 0),
-                            end: Offset.zero,
-                          ).animate(animation);
-                          return FadeTransition(
-                            opacity: animation,
-                            child: SlideTransition(
-                              position: slide,
-                              child: child,
-                            ),
-                          );
-                        },
-                        child: vistas[_seccionActual],
-                      ),
+                    : _construirVistaActual(context),
               ),
             ],
           ),
@@ -408,12 +476,18 @@ class _HomePageState extends State<HomePage> {
                             backgroundColor:
                                 CobroAppTheme.primary.withValues(alpha: 0.12),
                             foregroundColor: CobroAppTheme.primary,
-                            child: const Icon(Icons.lock_rounded),
+                            child: Icon(
+                              _registrandoInstitucion
+                                  ? Icons.apartment_rounded
+                                  : Icons.lock_rounded,
+                            ),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
                             child: Text(
-                              'Iniciar sesion',
+                              _registrandoInstitucion
+                                  ? 'Registrar institucion'
+                                  : 'Iniciar sesion',
                               style: Theme.of(context)
                                   .textTheme
                                   .titleLarge
@@ -440,6 +514,39 @@ class _HomePageState extends State<HomePage> {
                         ],
                       ),
                       const SizedBox(height: 18),
+                      if (_registrandoInstitucion) ...<Widget>[
+                        TextField(
+                          controller: _registroInstitucionController,
+                          enabled: !_guardando,
+                          textInputAction: TextInputAction.next,
+                          decoration: const InputDecoration(
+                            labelText: 'Institucion',
+                            prefixIcon: Icon(Icons.business_rounded),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: _registroNombreController,
+                          enabled: !_guardando,
+                          textInputAction: TextInputAction.next,
+                          decoration: const InputDecoration(
+                            labelText: 'Tu nombre completo',
+                            prefixIcon: Icon(Icons.badge_rounded),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: _registroCorreoController,
+                          enabled: !_guardando,
+                          keyboardType: TextInputType.emailAddress,
+                          textInputAction: TextInputAction.next,
+                          decoration: const InputDecoration(
+                            labelText: 'Correo',
+                            prefixIcon: Icon(Icons.mail_rounded),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
                       TextField(
                         controller: _loginUsuarioController,
                         enabled: !_guardando,
@@ -454,9 +561,14 @@ class _HomePageState extends State<HomePage> {
                         controller: _loginContrasenaController,
                         enabled: !_guardando,
                         obscureText: !_mostrarContrasenaLogin,
-                        onSubmitted: (_) => _iniciarSesion(),
+                        onSubmitted: (_) => _registrandoInstitucion
+                            ? _registrarInstitucion()
+                            : _iniciarSesion(),
                         decoration: InputDecoration(
                           labelText: 'Contrasena',
+                          helperText: _registrandoInstitucion
+                              ? 'Minimo 12 caracteres'
+                              : null,
                           prefixIcon: const Icon(Icons.key_rounded),
                           suffixIcon: IconButton(
                             onPressed: () {
@@ -486,7 +598,11 @@ class _HomePageState extends State<HomePage> {
                       ],
                       const SizedBox(height: 18),
                       FilledButton.icon(
-                        onPressed: _guardando ? null : _iniciarSesion,
+                        onPressed: _guardando
+                            ? null
+                            : _registrandoInstitucion
+                                ? _registrarInstitucion
+                                : _iniciarSesion,
                         icon: _guardando
                             ? const SizedBox(
                                 width: 18,
@@ -494,15 +610,33 @@ class _HomePageState extends State<HomePage> {
                                 child:
                                     CircularProgressIndicator(strokeWidth: 2),
                               )
-                            : const Icon(Icons.login_rounded),
-                        label: const Text('Entrar'),
+                            : Icon(
+                                _registrandoInstitucion
+                                    ? Icons.app_registration_rounded
+                                    : Icons.login_rounded,
+                              ),
+                        label: Text(
+                          _registrandoInstitucion
+                              ? 'Registrar y entrar'
+                              : 'Entrar',
+                        ),
                       ),
-                      const SizedBox(height: 8),
-                      TextButton.icon(
-                        onPressed:
-                            _guardando ? null : _abrirCrearAdministradorInicial,
-                        icon: const Icon(Icons.admin_panel_settings_rounded),
-                        label: const Text('Crear administrador inicial'),
+                      const SizedBox(height: 10),
+                      TextButton(
+                        onPressed: _guardando
+                            ? null
+                            : () {
+                                setState(() {
+                                  _registrandoInstitucion =
+                                      !_registrandoInstitucion;
+                                  _error = null;
+                                });
+                              },
+                        child: Text(
+                          _registrandoInstitucion
+                              ? 'Ya tengo usuario'
+                              : 'No tengo usuario',
+                        ),
                       ),
                     ],
                   ),
@@ -574,7 +708,7 @@ class _HomePageState extends State<HomePage> {
                         ],
                       ),
                       const SizedBox(height: 8),
-                      ..._destinosMenu.asMap().entries.map(
+                      ..._destinosMenuActual.asMap().entries.map(
                         (MapEntry<int, _DestinoMenu> entry) {
                           final int index = entry.key;
                           final _DestinoMenu destino = entry.value;
@@ -603,14 +737,6 @@ class _HomePageState extends State<HomePage> {
                         },
                       ),
                       const Spacer(),
-                      if (_usuarioSesion?.esAdministrador ?? false) ...<Widget>[
-                        OutlinedButton.icon(
-                          onPressed: _guardando ? null : _abrirCrearEmpleado,
-                          icon: const Icon(Icons.person_add_alt_1_rounded),
-                          label: const Text('Crear empleado'),
-                        ),
-                        const SizedBox(height: 8),
-                      ],
                       TextButton.icon(
                         onPressed: _cerrarSesion,
                         icon: const Icon(Icons.logout_rounded),
@@ -642,7 +768,7 @@ class _HomePageState extends State<HomePage> {
                         groupAlignment: -1,
                         minWidth: 72,
                         scrollable: true,
-                        destinations: _destinosMenu
+                        destinations: _destinosMenuActual
                             .map(
                               (_DestinoMenu destino) =>
                                   NavigationRailDestination(
@@ -660,14 +786,6 @@ class _HomePageState extends State<HomePage> {
                             .toList(growable: false),
                       ),
                     ),
-                    if (_usuarioSesion?.esAdministrador ?? false)
-                      Tooltip(
-                        message: 'Crear empleado',
-                        child: IconButton(
-                          onPressed: _guardando ? null : _abrirCrearEmpleado,
-                          icon: const Icon(Icons.person_add_alt_1_rounded),
-                        ),
-                      ),
                     Tooltip(
                       message: 'Cerrar sesion',
                       child: IconButton(
@@ -684,6 +802,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _construirNavegacionInferior(BuildContext context) {
+    const List<_DestinoMenu> destinosMovil = _destinosMenuBase;
     return ColoredBox(
       color: context.clay.background,
       child: SafeArea(
@@ -695,7 +814,7 @@ class _HomePageState extends State<HomePage> {
           padding: const EdgeInsets.all(5),
           color: context.clay.surface,
           child: Row(
-            children: _destinosMenu.asMap().entries.map(
+            children: destinosMovil.asMap().entries.map(
               (MapEntry<int, _DestinoMenu> entry) {
                 return Expanded(
                   child: _BotonNavegacionInferior(
@@ -712,14 +831,139 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  Widget _construirVistaActual(BuildContext context) {
+    switch (_seccionActual) {
+      case 0:
+        return KeyedSubtree(
+          key: const ValueKey<String>('inicio'),
+          child: _construirPresupuesto(context),
+        );
+      case 1:
+        return KeyedSubtree(
+          key: const ValueKey<String>('ruta'),
+          child: _construirRutaActiva(context),
+        );
+      case 2:
+        return KeyedSubtree(
+          key: const ValueKey<String>('credito'),
+          child: _construirNuevoCredito(context),
+        );
+      case 3:
+        return KeyedSubtree(
+          key: const ValueKey<String>('caja-menor'),
+          child: _construirCajaMenor(context),
+        );
+      case 4:
+        return KeyedSubtree(
+          key: const ValueKey<String>('clientes'),
+          child: _construirClientes(context),
+        );
+      case _indiceGestionEmpleados:
+        return KeyedSubtree(
+          key: const ValueKey<String>('gestion-empleados'),
+          child: _construirGestionEmpleados(context),
+        );
+      default:
+        return KeyedSubtree(
+          key: const ValueKey<String>('inicio'),
+          child: _construirPresupuesto(context),
+        );
+    }
+  }
+
   void _seleccionarSeccion(int index) {
-    if (index == 2) {
-      setState(() => _seccionActual = index);
-      _abrirCrearCreditoModal();
+    if (index == _indiceCredito) {
+      if (_seccionActual != index) {
+        setState(() => _seccionActual = index);
+      }
+      if (_puedeCrearCreditos) {
+        _abrirCrearCreditoModal();
+      } else {
+        _mostrarMensaje('No tienes permiso para crear creditos');
+      }
+      return;
+    }
+
+    if (index == _indiceGestionEmpleados && !_puedeVerEmpleados) {
+      _mostrarMensaje('No tienes permiso para ver empleados');
+      return;
+    }
+
+    if (_seccionActual == index) {
       return;
     }
 
     setState(() => _seccionActual = index);
+  }
+
+  Widget _construirGestionEmpleados(BuildContext context) {
+    if (!_puedeVerEmpleados) {
+      return Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(18),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 460),
+            child: _EstadoVacio(
+              icono: Icons.lock_outline_rounded,
+              titulo: 'Acceso restringido',
+              mensaje: 'No tienes permiso para ver empleados.',
+            ),
+          ),
+        ),
+      );
+    }
+
+    return _GestionEmpleadosPage(
+      embebida: true,
+      apiClient: _apiClient,
+      cargarEmpleados: _obtenerEmpleadosGestion,
+      cargarActividadEmpleados: _obtenerActividadEmpleadosGestion,
+      crearEmpleado: _abrirCrearEmpleado,
+      modificarEmpleado: _modificarEmpleadoGestion,
+      puedeGestionar: _usuarioSesion?.esAdministrador ?? false,
+      mensajeError: _mensajeError,
+      mostrarMensaje: _mostrarMensaje,
+    );
+  }
+
+  bool get _puedeVerEmpleados {
+    return _usuarioSesion?.puede(_permisoVerEmpleados) ?? false;
+  }
+
+  bool get _puedeCrearCajaMenor {
+    return _usuarioSesion?.puede(_permisoCrearCajaMenor) ?? false;
+  }
+
+  bool get _puedeRegistrarFlujoCaja {
+    return _usuarioSesion?.puede(_permisoRegistrarFlujoCaja) ?? false;
+  }
+
+  bool get _puedeCrearCreditos {
+    return _usuarioSesion?.puede(_permisoCrearCreditos) ?? false;
+  }
+
+  bool get _puedeRefinanciarCreditos {
+    return _usuarioSesion?.puede(_permisoRefinanciarCreditos) ?? false;
+  }
+
+  bool get _puedeModificarCreditos {
+    return _usuarioSesion?.puede(_permisoModificarCreditos) ?? false;
+  }
+
+  bool get _puedeEliminarCreditos {
+    return _usuarioSesion?.puede(_permisoEliminarCreditos) ?? false;
+  }
+
+  bool get _puedeAgregarCuota {
+    return _usuarioSesion?.puede(_permisoAgregarCuota) ?? false;
+  }
+
+  bool get _puedeModificarMovimientos {
+    return _usuarioSesion?.puede(_permisoModificarMovimientos) ?? false;
+  }
+
+  bool get _puedeEliminarMovimientos {
+    return _usuarioSesion?.puede(_permisoEliminarMovimientos) ?? false;
   }
 
   Widget _construirPresupuesto(BuildContext context) {
@@ -730,15 +974,7 @@ class _HomePageState extends State<HomePage> {
     final List<PresupuestoItem> itemsInicio = cajasInicio.isEmpty
         ? const <PresupuestoItem>[]
         : _filtrarItemsPresupuestoInicio(cajaInicioSeleccionada);
-    final List<PresupuestoItem> itemsCreditosTodosLosDias = cajasInicio.isEmpty
-        ? const <PresupuestoItem>[]
-        : _filtrarItemsPresupuestoInicio(
-            cajaInicioSeleccionada,
-            presupuesto: _presupuestoTodosLosDias,
-          );
     final PresupuestoTotales totales = _totalesPresupuesto(itemsInicio);
-    final PresupuestoTotales totalesTodosLosDias =
-        _totalesPresupuesto(itemsCreditosTodosLosDias);
     final int clientesActivos = _clientes.length;
     final double cartera = _cobrosRuta.fold<double>(
       0,
@@ -759,7 +995,6 @@ class _HomePageState extends State<HomePage> {
 
     return _PaginaInicioPresupuesto(
       totales: totales,
-      creditosTodosLosDias: totalesTodosLosDias.creditos,
       clientesActivos: clientesActivos,
       cartera: cartera,
       conteoCreditos: _conteoCreditosInicio,
@@ -872,6 +1107,8 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _construirRutaActiva(BuildContext context) {
+    final bool mostrarMapaDesktop =
+        MediaQuery.sizeOf(context).width >= _desktopRouteMapBreakpoint;
     final List<CobroRuta> cobrosBase = _filtrarCobros(incluirEstado: false);
     final List<CobroRuta> cobros = _filtrarCobros();
     final int atrasados = cobrosBase
@@ -883,6 +1120,107 @@ class _HomePageState extends State<HomePage> {
     final int alDia = cobrosBase
         .where((CobroRuta cobro) => cobro.estadoCobro == EstadoCobro.alDia)
         .length;
+    final int pagados = cobrosBase
+        .where((CobroRuta cobro) => cobro.estadoCobro == EstadoCobro.pagado)
+        .length;
+
+    final Widget filtros = _FiltrosRuta(
+      buscarController: _buscarRutaController,
+      rutas: _catalogos?.rutas ?? const <RutaCatalogo>[],
+      rutaSeleccionadaId: _rutaFiltroId,
+      exportando: _exportando,
+      vistaMapaDesktop: mostrarMapaDesktop,
+      mostrarLimpiarFiltros: _hayFiltrosRuta,
+      onRutaChanged: (String? rutaId) {
+        setState(() => _rutaFiltroId = rutaId);
+      },
+      onExportar: _exportarCobrosRuta,
+      onLimpiarFiltros: _limpiarFiltrosRuta,
+    );
+    final Widget resumen = _ResumenEstados(
+      alDia: alDia,
+      pendientes: pendientes,
+      atrasados: atrasados,
+      pagados: pagados,
+      filtro: _filtroEstadoRuta,
+      onFiltroChanged: (_FiltroEstadoRuta filtro) {
+        setState(() {
+          _filtroEstadoRuta =
+              _filtroEstadoRuta == filtro ? _FiltroEstadoRuta.todos : filtro;
+        });
+      },
+    );
+
+    if (mostrarMapaDesktop) {
+      final List<CollectionMapCustomer> mapCustomers =
+          cobros.map(_mapCustomerFromCobro).toList(growable: false);
+      final Map<String, CobroRuta> cobroById = <String, CobroRuta>{
+        for (final CobroRuta cobro in cobros) cobro.id: cobro,
+      };
+
+      return DesktopCollectionRoute(
+        header: const _Encabezado(
+          titulo: 'Ruta activa',
+          subtitulo: 'Cobros geolocalizados y recorrido más rápido',
+          acciones: <Widget>[],
+        ),
+        filters: filtros,
+        summary: resumen,
+        customers: mapCustomers,
+        roadRouter: _roadRouter,
+        onRefresh: _cargar,
+        error: _error == null ? null : _ErrorBanner(message: _error!),
+        onCollect: (CollectionMapCustomer customer) {
+          final CobroRuta? cobro = cobroById[customer.creditId];
+          if (cobro != null && _puedeRegistrarPagoRuta(cobro)) {
+            _abrirRegistrarPago(cobro);
+          }
+        },
+        cardBuilder: (
+          BuildContext context,
+          CollectionMapCustomer customer,
+          bool selected,
+          VoidCallback onSelected,
+        ) {
+          final CobroRuta cobro = cobroById[customer.creditId]!;
+          return MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onSelected,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+                padding: EdgeInsets.all(selected ? 2 : 0),
+                decoration: BoxDecoration(
+                  color: selected
+                      ? CobroAppTheme.primary.withValues(alpha: 0.12)
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(17),
+                  border: Border.all(
+                    color: selected
+                        ? CobroAppTheme.primary.withValues(alpha: 0.6)
+                        : Colors.transparent,
+                  ),
+                ),
+                child: _TarjetaCobroRuta(
+                  cobro: cobro,
+                  pagoEnProceso: cobro.proximaCuotaId != null &&
+                      _cuotasEnPago.contains(cobro.proximaCuotaId),
+                  pagoAplicadoInstantaneo:
+                      _cobrosConPagoInstantaneo.contains(cobro.id),
+                  onGuardarUbicacion:
+                      _guardando ? null : () => _guardarUbicacionCliente(cobro),
+                  onRegistrarPago: _puedeRegistrarPagoRuta(cobro)
+                      ? () => _abrirRegistrarPago(cobro)
+                      : null,
+                ),
+              ),
+            ),
+          );
+        },
+      );
+    }
 
     return _Pagina(
       titulo: 'Ruta activa',
@@ -890,32 +1228,9 @@ class _HomePageState extends State<HomePage> {
       error: _error,
       onRefresh: _cargar,
       children: <Widget>[
-        _FiltrosRuta(
-          buscarController: _buscarRutaController,
-          rutas: _catalogos?.rutas ?? const <RutaCatalogo>[],
-          rutaSeleccionadaId: _rutaFiltroId,
-          exportando: _exportando,
-          mostrarLimpiarFiltros: _hayFiltrosRuta,
-          onRutaChanged: (String? rutaId) {
-            setState(() => _rutaFiltroId = rutaId);
-          },
-          onExportar: _exportarCobrosRuta,
-          onLimpiarFiltros: _limpiarFiltrosRuta,
-        ),
+        filtros,
         const SizedBox(height: 14),
-        _ResumenEstados(
-          alDia: alDia,
-          pendientes: pendientes,
-          atrasados: atrasados,
-          filtro: _filtroEstadoRuta,
-          onFiltroChanged: (_FiltroEstadoRuta filtro) {
-            setState(() {
-              _filtroEstadoRuta = _filtroEstadoRuta == filtro
-                  ? _FiltroEstadoRuta.todos
-                  : filtro;
-            });
-          },
-        ),
+        resumen,
         const SizedBox(height: 16),
         if (cobros.isEmpty)
           _EstadoVacio(
@@ -923,7 +1238,9 @@ class _HomePageState extends State<HomePage> {
             titulo: 'Sin cuotas por cobrar',
             mensaje: 'No hay créditos activos con saldo para el filtro actual.',
             accion: FilledButton.icon(
-              onPressed: _guardando ? null : _abrirCrearCreditoModal,
+              onPressed: _guardando || !_puedeCrearCreditos
+                  ? null
+                  : _abrirCrearCreditoModal,
               icon: const Icon(Icons.add_business_rounded),
               label: const Text('Crear credito'),
             ),
@@ -936,9 +1253,15 @@ class _HomePageState extends State<HomePage> {
                 cobro: cobro,
                 pagoEnProceso: cobro.proximaCuotaId != null &&
                     _cuotasEnPago.contains(cobro.proximaCuotaId),
+                pagoAplicadoInstantaneo:
+                    _cobrosConPagoInstantaneo.contains(cobro.id),
+                onGuardarUbicacion:
+                    _guardando ? null : () => _guardarUbicacionCliente(cobro),
                 onRegistrarPago: _guardando ||
                         cobro.proximaCuotaId == null ||
-                        _cuotasEnPago.contains(cobro.proximaCuotaId)
+                        _cuotasEnPago.contains(cobro.proximaCuotaId) ||
+                        _cobrosConPagoInstantaneo.contains(cobro.id) ||
+                        !_puedeAgregarCuota
                     ? null
                     : () => _abrirRegistrarPago(cobro),
               ),
@@ -974,14 +1297,17 @@ class _HomePageState extends State<HomePage> {
       onNearEnd: _cargarMasCreditosSiHaceFalta,
       acciones: <Widget>[
         OutlinedButton.icon(
-          onPressed: _guardando || !hayCreditoActivo
-              ? null
-              : _abrirSeleccionRefinanciacion,
+          onPressed:
+              _guardando || !hayCreditoActivo || !_puedeRefinanciarCreditos
+                  ? null
+                  : _abrirSeleccionRefinanciacion,
           icon: const Icon(Icons.currency_exchange_rounded),
           label: const Text('Refinanciar'),
         ),
         FilledButton.icon(
-          onPressed: _guardando ? null : _abrirCrearCreditoModal,
+          onPressed: _guardando || !_puedeCrearCreditos
+              ? null
+              : _abrirCrearCreditoModal,
           icon: const Icon(Icons.add_business_rounded),
           label: const Text('Crear credito'),
         ),
@@ -995,7 +1321,9 @@ class _HomePageState extends State<HomePage> {
                 ? 'Crea un cliente y registra su credito en el mismo formulario.'
                 : 'Necesitas clientes, monedas, frecuencias y caja menor activa.',
             accion: FilledButton.icon(
-              onPressed: _guardando ? null : _abrirCrearCreditoModal,
+              onPressed: _guardando || !_puedeCrearCreditos
+                  ? null
+                  : _abrirCrearCreditoModal,
               icon: const Icon(Icons.add_business_rounded),
               label: const Text('Añadir crédito'),
             ),
@@ -1018,7 +1346,9 @@ class _HomePageState extends State<HomePage> {
             titulo: 'No hay nada',
             mensaje: 'No hay creditos para mostrar con el filtro actual.',
             accion: FilledButton.icon(
-              onPressed: _guardando ? null : _abrirCrearCreditoModal,
+              onPressed: _guardando || !_puedeCrearCreditos
+                  ? null
+                  : _abrirCrearCreditoModal,
               icon: const Icon(Icons.add_business_rounded),
               label: const Text('Crear credito'),
             ),
@@ -1029,12 +1359,14 @@ class _HomePageState extends State<HomePage> {
               padding: const EdgeInsets.only(bottom: 10),
               child: _TarjetaCreditoRegistro(
                 credito: credito,
-                esAdministrador: _usuarioSesion?.esAdministrador ?? false,
+                puedeModificar: _puedeModificarCreditos,
+                puedeEliminar: _puedeEliminarCreditos,
                 onModificar: () => _abrirModificarCredito(credito),
                 onEliminar: () => _confirmarEliminarCredito(credito),
-                onRefinanciar: credito.activo && !_guardando
-                    ? () => _abrirRefinanciarCredito(credito)
-                    : null,
+                onRefinanciar:
+                    credito.activo && !_guardando && _puedeRefinanciarCreditos
+                        ? () => _abrirRefinanciarCredito(credito)
+                        : null,
               ),
             ),
           ),
@@ -1132,7 +1464,9 @@ class _HomePageState extends State<HomePage> {
       acciones: <Widget>[
         if (hayCajaMenor)
           OutlinedButton.icon(
-            onPressed: _guardando ? null : _abrirCrearCajaMenor,
+            onPressed: _guardando || !_puedeCrearCajaMenor
+                ? null
+                : _abrirCrearCajaMenor,
             icon: const Icon(Icons.account_balance_wallet_outlined),
             label: const Text('Nueva caja menor'),
           ),
@@ -1140,8 +1474,12 @@ class _HomePageState extends State<HomePage> {
           onPressed: _guardando
               ? null
               : hayCajaMenor
-                  ? _abrirMovimientoCaja
-                  : _abrirCrearCajaMenor,
+                  ? _puedeRegistrarFlujoCaja
+                      ? _abrirMovimientoCaja
+                      : null
+                  : _puedeCrearCajaMenor
+                      ? _abrirCrearCajaMenor
+                      : null,
           icon: const Icon(Icons.add_rounded),
           label: Text(
             hayCajaMenor ? 'Registrar movimiento' : 'Crear caja menor',
@@ -1172,8 +1510,12 @@ class _HomePageState extends State<HomePage> {
               onPressed: _guardando
                   ? null
                   : hayCajaMenor
-                      ? _abrirMovimientoCaja
-                      : _abrirCrearCajaMenor,
+                      ? _puedeRegistrarFlujoCaja
+                          ? _abrirMovimientoCaja
+                          : null
+                      : _puedeCrearCajaMenor
+                          ? _abrirCrearCajaMenor
+                          : null,
               icon: const Icon(Icons.add_rounded),
               label: Text(
                 hayCajaMenor ? 'Registrar movimiento' : 'Crear caja menor',
@@ -1182,15 +1524,23 @@ class _HomePageState extends State<HomePage> {
           )
         else
           ...movimientos.map(
-            (MovimientoCaja movimiento) => Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: _MovimientoCajaItem(
-                movimiento: movimiento,
-                esAdministrador: _usuarioSesion?.esAdministrador ?? false,
-                onModificar: () => _abrirEditarMovimientoCaja(movimiento),
-                onEliminar: () => _confirmarEliminarMovimientoCaja(movimiento),
-              ),
-            ),
+            (MovimientoCaja movimiento) {
+              final bool esDesembolsoCredito =
+                  movimiento.referenciaTabla == 'credito_desembolso';
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _MovimientoCajaItem(
+                  movimiento: movimiento,
+                  puedeModificar: _puedeModificarMovimientos &&
+                      (!esDesembolsoCredito || _puedeModificarCreditos),
+                  puedeEliminar: _puedeEliminarMovimientos &&
+                      (!esDesembolsoCredito || _puedeEliminarCreditos),
+                  onModificar: () => _abrirEditarMovimientoCaja(movimiento),
+                  onEliminar: () =>
+                      _confirmarEliminarMovimientoCaja(movimiento),
+                ),
+              );
+            },
           ),
         if (_cargandoMasMovimientosCaja)
           const Padding(
@@ -1354,7 +1704,194 @@ class _HomePageState extends State<HomePage> {
 
   void _cambiarCajaInicio(String? value) {
     setState(() => _cajaInicioFiltroId = value);
-    _recargarDatos(presupuesto: true);
+    _recargarDatos(presupuesto: true, creditos: true);
+  }
+
+  bool _puedeRegistrarPagoRuta(CobroRuta cobro) {
+    return !_guardando &&
+        _puedeAgregarCuota &&
+        cobro.proximaCuotaId != null &&
+        !_cuotasEnPago.contains(cobro.proximaCuotaId) &&
+        !_cobrosConPagoInstantaneo.contains(cobro.id) &&
+        cobro.saldo > 0.009;
+  }
+
+  bool _cobroActivoParaRuta(CobroRuta cobro) {
+    return cobro.proximaCuotaId != null &&
+        !_cobrosConPagoInstantaneo.contains(cobro.id) &&
+        cobro.saldo > 0.009 &&
+        cobro.estadoCobro != EstadoCobro.pagado;
+  }
+
+  Future<void> _guardarUbicacionCliente(CobroRuta cobro) async {
+    if (_guardando) {
+      return;
+    }
+
+    final String? direccion = (cobro.direccion ?? '').trim().isNotEmpty
+        ? cobro.direccion!.trim()
+        : await _solicitarDireccionParaMapa(cobro);
+    if (direccion == null || !mounted) {
+      return;
+    }
+    final bool? confirmarCaptura = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: Text(
+            cobro.tieneUbicacion
+                ? 'Actualizar punto del cliente'
+                : 'Guardar punto del cliente',
+          ),
+          content: SizedBox(
+            width: 430,
+            child: Text(
+              'Confirma que estás físicamente en la dirección de ${cobro.cliente}. '
+              'Se guardará la ubicación actual de este dispositivo para "$direccion".',
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              icon: const Icon(Icons.my_location_rounded),
+              label: const Text('Estoy aquí, guardar'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmarCaptura != true || !mounted) {
+      return;
+    }
+
+    final bool guardada = await _ejecutarAccion(() async {
+      _mostrarMensaje('Obteniendo ubicación precisa del cliente…');
+      final LatLng position =
+          await const DeviceRouteLocationService().currentPosition();
+      await _apiClient.patchObject(
+        '/clientes/${cobro.clienteId}/ubicacion',
+        <String, dynamic>{
+          'direccion': direccion,
+          'latitud': position.latitude,
+          'longitud': position.longitude,
+        },
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _cobrosRuta = _cobrosRuta
+            .map(
+              (CobroRuta item) => item.clienteId == cobro.clienteId
+                  ? item.copyWith(
+                      direccion: direccion,
+                      latitude: position.latitude,
+                      longitude: position.longitude,
+                    )
+                  : item,
+            )
+            .toList(growable: false);
+      });
+    });
+
+    if (guardada) {
+      _mostrarMensaje('Ubicación del cliente guardada en el mapa');
+      _recargarEnSegundoPlano(
+        clientes: true,
+        cobrosRuta: true,
+      );
+    }
+  }
+
+  Future<String?> _solicitarDireccionParaMapa(CobroRuta cobro) async {
+    final TextEditingController controller = TextEditingController();
+    try {
+      return await showDialog<String>(
+        context: context,
+        builder: (BuildContext dialogContext) {
+          return AlertDialog(
+            title: const Text('Dirección del cliente'),
+            content: SizedBox(
+              width: 420,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    'Escribe la dirección de ${cobro.cliente} antes de guardar el punto GPS.',
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: controller,
+                    autofocus: true,
+                    textInputAction: TextInputAction.done,
+                    decoration: const InputDecoration(
+                      labelText: 'Dirección',
+                      prefixIcon: Icon(Icons.location_on_rounded),
+                    ),
+                    onSubmitted: (String value) {
+                      final String direccion = value.trim();
+                      if (direccion.isNotEmpty) {
+                        Navigator.of(dialogContext).pop(direccion);
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton.icon(
+                onPressed: () {
+                  final String direccion = controller.text.trim();
+                  if (direccion.isEmpty) {
+                    _mostrarMensaje('Escribe la dirección del cliente');
+                    return;
+                  }
+                  Navigator.of(dialogContext).pop(direccion);
+                },
+                icon: const Icon(Icons.my_location_rounded),
+                label: const Text('Continuar'),
+              ),
+            ],
+          );
+        },
+      );
+    } finally {
+      controller.dispose();
+    }
+  }
+
+  CollectionMapCustomer _mapCustomerFromCobro(CobroRuta cobro) {
+    return CollectionMapCustomer(
+      id: cobro.id,
+      customerId: cobro.clienteId,
+      creditId: cobro.id,
+      name: cobro.cliente,
+      identification: cobro.cedula,
+      business: cobro.negocio,
+      address: cobro.direccion,
+      routeName: cobro.ruta,
+      amountLabel: _dinero(cobro.proximoSaldoCuota),
+      installmentLabel: _dinero(cobro.valorCuota),
+      balanceLabel: _dinero(cobro.saldo),
+      dueDateLabel: _fechaEtiqueta(cobro.proximaFechaPago),
+      statusLabel: cobro.estadoCobro.etiqueta,
+      statusColor: cobro.estadoCobro.color,
+      canCollect: _puedeRegistrarPagoRuta(cobro),
+      canRoute: _cobroActivoParaRuta(cobro),
+      isDueNow: cobro.estadoCobro == EstadoCobro.atrasado ||
+          cobro.estadoCobro == EstadoCobro.pendiente,
+      latitude: cobro.latitude,
+      longitude: cobro.longitude,
+    );
   }
 
   void _aplicarFechaInicioHoy() {
@@ -1368,7 +1905,7 @@ class _HomePageState extends State<HomePage> {
       _aplicarFechaInicioHoy();
       _cajaInicioFiltroId = _cajaInicioFiltroIdValida(_filtrarCajasInicio());
     });
-    _recargarDatos(presupuesto: true);
+    _recargarDatos(presupuesto: true, creditos: true);
   }
 
   void _mostrarInicioTodosLosDias() {
@@ -1377,7 +1914,7 @@ class _HomePageState extends State<HomePage> {
       _fechaInicioHasta = null;
       _cajaInicioFiltroId = _cajaInicioFiltroIdValida(_filtrarCajasInicio());
     });
-    _recargarDatos(presupuesto: true);
+    _recargarDatos(presupuesto: true, creditos: true);
   }
 
   bool get _inicioMostrandoHoy {
@@ -1421,7 +1958,7 @@ class _HomePageState extends State<HomePage> {
       }
       _cajaInicioFiltroId = _cajaInicioFiltroIdValida(_filtrarCajasInicio());
     });
-    _recargarDatos(presupuesto: true);
+    _recargarDatos(presupuesto: true, creditos: true);
   }
 
   Future<void> _seleccionarFechaCredito({required bool esDesde}) async {
@@ -1515,7 +2052,7 @@ class _HomePageState extends State<HomePage> {
       _aplicarFechaInicioHoy();
       _cajaInicioFiltroId = _cajaActivaPredeterminadaId(_catalogos);
     });
-    _recargarDatos(presupuesto: true);
+    _recargarDatos(presupuesto: true, creditos: true);
   }
 
   bool get _hayFiltrosInicio =>
@@ -1545,8 +2082,8 @@ class _HomePageState extends State<HomePage> {
     setState(() {
       _seccionActual = 2;
       _filtroCredito = filtro;
-      _fechaCreditoDesde = null;
-      _fechaCreditoHasta = null;
+      _fechaCreditoDesde = _fechaInicioDesde;
+      _fechaCreditoHasta = _fechaInicioHasta;
     });
     _recargarDatos(creditos: true);
   }
@@ -1581,6 +2118,7 @@ class _HomePageState extends State<HomePage> {
 
   Widget _construirClientes(BuildContext context) {
     final List<Cliente> clientes = _filtrarClientes();
+    final bool esAdministrador = _usuarioSesion?.esAdministrador ?? false;
 
     return _Pagina(
       titulo: 'Clientes',
@@ -1620,7 +2158,12 @@ class _HomePageState extends State<HomePage> {
             ...clientes.map(
               (Cliente cliente) => Padding(
                 padding: const EdgeInsets.only(bottom: 10),
-                child: _ClienteItem(cliente: cliente),
+                child: _ClienteItem(
+                  cliente: cliente,
+                  esAdministrador: esAdministrador,
+                  onModificar: () => _abrirModificarCliente(cliente),
+                  onEliminar: () => _confirmarEliminarCliente(cliente),
+                ),
               ),
             ),
         ],
@@ -1663,7 +2206,6 @@ class _HomePageState extends State<HomePage> {
         _seccionActual = 0;
         _catalogos = null;
         _presupuesto = null;
-        _presupuestoTodosLosDias = null;
         _clientes = const <Cliente>[];
         _cobrosRuta = const <CobroRuta>[];
         _movimientosCaja = const <MovimientoCaja>[];
@@ -1683,13 +2225,32 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  Future<void> _abrirCrearAdministradorInicial() async {
-    final Map<String, String>? datos = await _pedirDatosUsuario(
-      titulo: 'Administrador inicial',
-      accion: 'Crear administrador',
-    );
+  Future<void> _registrarInstitucion() async {
+    final String institucion = _registroInstitucionController.text.trim();
+    final String nombre = _registroNombreController.text.trim();
+    final String correo = _registroCorreoController.text.trim().toLowerCase();
+    final String usuario = _loginUsuarioController.text.trim().toLowerCase();
+    final String contrasena = _loginContrasenaController.text;
 
-    if (datos == null) {
+    if (institucion.length < 3) {
+      setState(() => _error = 'Ingresa el nombre de tu institucion');
+      return;
+    }
+
+    if (nombre.length < 3) {
+      setState(() => _error = 'Ingresa tu nombre completo');
+      return;
+    }
+
+    if (!correo.contains('@')) {
+      setState(() => _error = 'Ingresa un correo valido');
+      return;
+    }
+
+    if (usuario.length < 3 || contrasena.length < 12) {
+      setState(() {
+        _error = 'El usuario debe tener 3 caracteres y la contrasena 12';
+      });
       return;
     }
 
@@ -1700,10 +2261,13 @@ class _HomePageState extends State<HomePage> {
 
     try {
       final Sesion sesion = Sesion.fromJson(
-        await _apiClient.postObject(
-          '/auth/bootstrap-admin',
-          <String, dynamic>{...datos},
-        ),
+        await _apiClient.postObject('/auth/register', <String, dynamic>{
+          'institucion': institucion,
+          'nombreCompleto': nombre,
+          'usuario': usuario,
+          'correo': correo,
+          'contrasena': contrasena,
+        }),
       );
 
       _apiClient.setAuthToken(sesion.token);
@@ -1714,16 +2278,21 @@ class _HomePageState extends State<HomePage> {
 
       setState(() {
         _usuarioSesion = sesion.usuario;
+        _registrandoInstitucion = false;
         _seccionActual = 0;
+        _catalogos = null;
+        _presupuesto = null;
+        _clientes = const <Cliente>[];
+        _cobrosRuta = const <CobroRuta>[];
+        _movimientosCaja = const <MovimientoCaja>[];
+        _cajaMenorFiltroId = null;
         _aplicarFechaInicioHoy();
       });
 
       await _cargar();
-      _mostrarMensaje('Administrador creado');
     } catch (error) {
       if (mounted) {
         setState(() => _error = _mensajeError(error));
-        _mostrarMensaje(_mensajeError(error));
       }
     } finally {
       if (mounted) {
@@ -1732,10 +2301,37 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  Future<void> _abrirCrearEmpleado() async {
+  Future<void> _abrirGestionEmpleados() async {
+    if (!_puedeVerEmpleados) {
+      _mostrarMensaje('No tienes permiso para ver empleados');
+      return;
+    }
+
+    _seleccionarSeccion(_indiceGestionEmpleados);
+  }
+
+  Future<List<EmpleadoGestion>> _obtenerEmpleadosGestion() async {
+    return (await _apiClient.getList('/usuarios'))
+        .map(
+          (dynamic item) =>
+              EmpleadoGestion.fromJson(item as Map<String, dynamic>),
+        )
+        .toList(growable: false);
+  }
+
+  Future<List<ActividadEmpleado>> _obtenerActividadEmpleadosGestion() async {
+    return (await _apiClient.getList('/usuarios/actividad'))
+        .map(
+          (dynamic item) =>
+              ActividadEmpleado.fromJson(item as Map<String, dynamic>),
+        )
+        .toList(growable: false);
+  }
+
+  Future<bool> _abrirCrearEmpleado() async {
     if (!(_usuarioSesion?.esAdministrador ?? false)) {
       _mostrarMensaje('Solo el administrador puede crear usuarios');
-      return;
+      return false;
     }
 
     final Map<String, String>? datos = await _pedirDatosUsuario(
@@ -1744,7 +2340,7 @@ class _HomePageState extends State<HomePage> {
     );
 
     if (datos == null) {
-      return;
+      return false;
     }
 
     final bool guardado = await _ejecutarAccion(() async {
@@ -1755,6 +2351,33 @@ class _HomePageState extends State<HomePage> {
     if (guardado) {
       _mostrarMensaje('Empleado creado');
     }
+
+    return guardado;
+  }
+
+  Future<EmpleadoGestion?> _modificarEmpleadoGestion(
+    EmpleadoGestion empleado,
+  ) async {
+    if (!(_usuarioSesion?.esAdministrador ?? false)) {
+      _mostrarMensaje('Solo el administrador puede modificar empleados');
+      return null;
+    }
+
+    final Map<String, String>? datos = await _pedirDatosEmpleado(
+      titulo: 'Modificar empleado',
+      accion: 'Guardar',
+      empleado: empleado,
+    );
+
+    if (datos == null) {
+      return null;
+    }
+
+    final Map<String, dynamic> respuesta = await _apiClient.patchObject(
+      '/usuarios/${empleado.id}',
+      <String, dynamic>{...datos},
+    );
+    return EmpleadoGestion.fromJson(respuesta);
   }
 
   Future<Map<String, String>?> _pedirDatosUsuario({
@@ -1812,7 +2435,7 @@ class _HomePageState extends State<HomePage> {
                       obscureText: !mostrarContrasena,
                       decoration: InputDecoration(
                         labelText: 'Contrasena',
-                        helperText: 'Minimo 8 caracteres',
+                        helperText: 'Minimo 12 caracteres',
                         prefixIcon: const Icon(Icons.key_rounded),
                         suffixIcon: IconButton(
                           onPressed: () {
@@ -1859,9 +2482,9 @@ class _HomePageState extends State<HomePage> {
                     _mostrarMensaje('Ingresa un correo valido');
                     return;
                   }
-                  if (contrasena.length < 8) {
+                  if (contrasena.length < 12) {
                     _mostrarMensaje(
-                      'La contrasena debe tener minimo 8 caracteres',
+                      'La contrasena debe tener minimo 12 caracteres',
                     );
                     return;
                   }
@@ -1883,15 +2506,147 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  Future<Map<String, String>?> _pedirDatosEmpleado({
+    required String titulo,
+    required String accion,
+    required EmpleadoGestion empleado,
+  }) {
+    return showDialog<Map<String, String>>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        final TextEditingController nombreController =
+            TextEditingController(text: empleado.nombreCompleto);
+        final TextEditingController usuarioController =
+            TextEditingController(text: empleado.usuario);
+        final TextEditingController correoController =
+            TextEditingController(text: empleado.correo);
+        final TextEditingController contrasenaController =
+            TextEditingController();
+        bool mostrarContrasena = false;
+
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setDialogState) =>
+              AlertDialog(
+            title: Text(titulo),
+            content: SingleChildScrollView(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 480),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    TextField(
+                      controller: nombreController,
+                      autofocus: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Nombre completo',
+                        prefixIcon: Icon(Icons.badge_rounded),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: usuarioController,
+                      decoration: const InputDecoration(
+                        labelText: 'Usuario',
+                        prefixIcon: Icon(Icons.person_rounded),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: correoController,
+                      keyboardType: TextInputType.emailAddress,
+                      decoration: const InputDecoration(
+                        labelText: 'Correo',
+                        prefixIcon: Icon(Icons.mail_rounded),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: contrasenaController,
+                      obscureText: !mostrarContrasena,
+                      decoration: InputDecoration(
+                        labelText: 'Nueva contrasena',
+                        helperText: 'Dejala vacia para conservar la actual',
+                        prefixIcon: const Icon(Icons.key_rounded),
+                        suffixIcon: IconButton(
+                          onPressed: () {
+                            setDialogState(
+                              () => mostrarContrasena = !mostrarContrasena,
+                            );
+                          },
+                          icon: Icon(
+                            mostrarContrasena
+                                ? Icons.visibility_off_rounded
+                                : Icons.visibility_rounded,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton.icon(
+                onPressed: () {
+                  final String nombre = nombreController.text.trim();
+                  final String nombreUsuario =
+                      usuarioController.text.trim().toLowerCase();
+                  final String correo = correoController.text.trim();
+                  final String contrasena = contrasenaController.text;
+
+                  if (nombre.length < 3) {
+                    _mostrarMensaje('El nombre debe tener minimo 3 caracteres');
+                    return;
+                  }
+                  if (nombreUsuario.length < 3) {
+                    _mostrarMensaje(
+                      'El usuario debe tener minimo 3 caracteres',
+                    );
+                    return;
+                  }
+                  if (!correo.contains('@')) {
+                    _mostrarMensaje('Ingresa un correo valido');
+                    return;
+                  }
+                  if (contrasena.isNotEmpty && contrasena.length < 12) {
+                    _mostrarMensaje(
+                      'La nueva contrasena debe tener minimo 12 caracteres',
+                    );
+                    return;
+                  }
+
+                  Navigator.of(dialogContext).pop(<String, String>{
+                    'nombreCompleto': nombre,
+                    'usuario': nombreUsuario,
+                    'correo': correo,
+                    if (contrasena.isNotEmpty) 'contrasena': contrasena,
+                  });
+                },
+                icon: const Icon(Icons.check_rounded),
+                label: Text(accion),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   void _cerrarSesion() {
     _apiClient.setAuthToken(null);
     _loginContrasenaController.clear();
+    _registroInstitucionController.clear();
+    _registroNombreController.clear();
+    _registroCorreoController.clear();
 
     setState(() {
       _usuarioSesion = null;
       _catalogos = null;
       _presupuesto = null;
-      _presupuestoTodosLosDias = null;
       _clientes = const <Cliente>[];
       _cobrosRuta = const <CobroRuta>[];
       _creditos = const <CreditoRegistro>[];
@@ -1906,6 +2661,7 @@ class _HomePageState extends State<HomePage> {
       _cargandoMasMovimientosCaja = false;
       _seccionActual = 0;
       _cajaMenorFiltroId = null;
+      _registrandoInstitucion = false;
       _cargando = false;
       _guardando = false;
       _error = null;
@@ -1932,7 +2688,6 @@ class _HomePageState extends State<HomePage> {
           await Future.wait<dynamic>(<Future<dynamic>>[
         _obtenerCatalogos(),
         _obtenerPresupuesto(),
-        _obtenerPresupuesto(todosLosDias: true),
         _obtenerClientes(),
         _obtenerCobrosRuta(),
         _obtenerCreditosPagina(),
@@ -1947,13 +2702,12 @@ class _HomePageState extends State<HomePage> {
       setState(() {
         _catalogos = resultados[0] as Catalogos;
         _presupuesto = resultados[1] as Presupuesto;
-        _presupuestoTodosLosDias = resultados[2] as Presupuesto;
-        _clientes = resultados[3] as List<Cliente>;
-        _cobrosRuta = resultados[4] as List<CobroRuta>;
+        _clientes = resultados[2] as List<Cliente>;
+        _cobrosRuta = resultados[3] as List<CobroRuta>;
         final _PaginaDatos<CreditoRegistro> creditos =
-            resultados[5] as _PaginaDatos<CreditoRegistro>;
+            resultados[4] as _PaginaDatos<CreditoRegistro>;
         final _PaginaDatos<MovimientoCaja> movimientosCaja =
-            resultados[6] as _PaginaDatos<MovimientoCaja>;
+            resultados[5] as _PaginaDatos<MovimientoCaja>;
         _creditos = creditos.items;
         _siguienteOffsetCreditos = creditos.nextOffset ?? _creditos.length;
         _hayMasCreditos = creditos.hasMore;
@@ -1961,7 +2715,7 @@ class _HomePageState extends State<HomePage> {
         _siguienteOffsetMovimientosCaja =
             movimientosCaja.nextOffset ?? _movimientosCaja.length;
         _hayMasMovimientosCaja = movimientosCaja.hasMore;
-        _conteoCreditosInicio = resultados[7] as _ConteoCreditosInicio;
+        _conteoCreditosInicio = resultados[6] as _ConteoCreditosInicio;
         _ajustarSelecciones();
       });
     } catch (error) {
@@ -1984,11 +2738,11 @@ class _HomePageState extends State<HomePage> {
     return Catalogos.fromJson(await _apiClient.getObject('/catalogos'));
   }
 
-  Future<Presupuesto> _obtenerPresupuesto({bool todosLosDias = false}) async {
+  Future<Presupuesto> _obtenerPresupuesto() async {
     return Presupuesto.fromJson(
       await _apiClient.getObject(
         '/presupuesto',
-        query: _queryPresupuesto(todosLosDias: todosLosDias),
+        query: _queryPresupuesto(),
       ),
     );
   }
@@ -2019,45 +2773,18 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<_ConteoCreditosInicio> _obtenerConteoCreditosInicio() async {
-    const int limit = 100;
-    int offset = 0;
-    int total = 0;
-    int activos = 0;
-    int inactivos = 0;
-
-    while (true) {
-      final Map<String, dynamic> response = await _apiClient.getObject(
-        '/creditos',
+    return _ConteoCreditosInicio.fromJson(
+      await _apiClient.getObject(
+        '/creditos/resumen',
         query: <String, String?>{
-          'limit': limit.toString(),
-          'offset': offset.toString(),
-          'estado': 'todos',
+          'fechaDesde': _fechaInicioDesde == null
+              ? null
+              : _fechaValor(_fechaInicioDesde!),
+          'fechaHasta': _fechaInicioHasta == null
+              ? null
+              : _fechaValor(_fechaInicioHasta!),
         },
-      );
-      final _PaginaDatos<CreditoRegistro> pagina = _PaginaDatos.fromJson(
-        response,
-        CreditoRegistro.fromJson,
-      );
-
-      total += pagina.items.length;
-      activos += pagina.items
-          .where((CreditoRegistro credito) => credito.activo)
-          .length;
-      inactivos += pagina.items
-          .where((CreditoRegistro credito) => !credito.activo)
-          .length;
-
-      if (!pagina.hasMore || pagina.items.isEmpty) {
-        break;
-      }
-
-      offset = pagina.nextOffset ?? offset + pagina.items.length;
-    }
-
-    return _ConteoCreditosInicio(
-      total: total,
-      activos: activos,
-      inactivos: inactivos,
+      ),
     );
   }
 
@@ -2092,19 +2819,17 @@ class _HomePageState extends State<HomePage> {
     };
   }
 
-  Map<String, String?> _queryPresupuesto({bool todosLosDias = false}) {
+  Map<String, String?> _queryPresupuesto() {
     final String search = _buscarCajaInicioController.text.trim();
     return <String, String?>{
       'cajaMenorId': _cajaInicioFiltroId == _todasLasCajasFiltro
           ? null
           : _cajaInicioFiltroId,
       'search': search.isEmpty ? null : search,
-      'fechaDesde': todosLosDias || _fechaInicioDesde == null
-          ? null
-          : _fechaValor(_fechaInicioDesde!),
-      'fechaHasta': todosLosDias || _fechaInicioHasta == null
-          ? null
-          : _fechaValor(_fechaInicioHasta!),
+      'fechaDesde':
+          _fechaInicioDesde == null ? null : _fechaValor(_fechaInicioDesde!),
+      'fechaHasta':
+          _fechaInicioHasta == null ? null : _fechaValor(_fechaInicioHasta!),
     };
   }
 
@@ -2155,7 +2880,6 @@ class _HomePageState extends State<HomePage> {
     final List<Future<dynamic>> tareas = <Future<dynamic>>[];
     int? catalogosIndex;
     int? presupuestoIndex;
-    int? presupuestoTodosLosDiasIndex;
     int? clientesIndex;
     int? cobrosRutaIndex;
     int? creditosIndex;
@@ -2172,10 +2896,6 @@ class _HomePageState extends State<HomePage> {
     }
     if (presupuesto) {
       agregar(_obtenerPresupuesto(), (int index) => presupuestoIndex = index);
-      agregar(
-        _obtenerPresupuesto(todosLosDias: true),
-        (int index) => presupuestoTodosLosDiasIndex = index,
-      );
     }
     if (clientes) {
       agregar(_obtenerClientes(), (int index) => clientesIndex = index);
@@ -2188,6 +2908,8 @@ class _HomePageState extends State<HomePage> {
         _obtenerCreditosPagina(),
         (int index) => creditosIndex = index,
       );
+    }
+    if (creditos || presupuesto) {
       agregar(
         _obtenerConteoCreditosInicio(),
         (int index) => conteoCreditosIndex = index,
@@ -2217,15 +2939,12 @@ class _HomePageState extends State<HomePage> {
         if (presupuestoIndex != null) {
           _presupuesto = resultados[presupuestoIndex!] as Presupuesto;
         }
-        if (presupuestoTodosLosDiasIndex != null) {
-          _presupuestoTodosLosDias =
-              resultados[presupuestoTodosLosDiasIndex!] as Presupuesto;
-        }
         if (clientesIndex != null) {
           _clientes = resultados[clientesIndex!] as List<Cliente>;
         }
         if (cobrosRutaIndex != null) {
           _cobrosRuta = resultados[cobrosRutaIndex!] as List<CobroRuta>;
+          _cobrosConPagoInstantaneo.clear();
         }
         if (creditosIndex != null) {
           final _PaginaDatos<CreditoRegistro> pagina =
@@ -2296,6 +3015,7 @@ class _HomePageState extends State<HomePage> {
       _clienteCreditoId,
       _clientes.map((Cliente cliente) => cliente.id),
     );
+    _mantenerClientesCreditoSeleccionados();
     _rutaCreditoId = _mantenerSeleccion(
       _rutaCreditoId,
       catalogos.rutasAbiertas.map((RutaCatalogo ruta) => ruta.id),
@@ -2356,6 +3076,64 @@ class _HomePageState extends State<HomePage> {
     return disponibles.isEmpty ? null : disponibles.first;
   }
 
+  void _mantenerClientesCreditoSeleccionados() {
+    final Set<String> disponibles =
+        _clientes.map((Cliente cliente) => cliente.id).toSet();
+    final List<String> removidos = _clientesCreditoIds
+        .where((String clienteId) => !disponibles.contains(clienteId))
+        .toList(growable: false);
+
+    for (final String clienteId in removidos) {
+      _clientesCreditoIds.remove(clienteId);
+      _valorCreditoPorClienteControllers.remove(clienteId)?.dispose();
+    }
+
+    if (_clientesCreditoIds.isEmpty && _clienteCreditoId != null) {
+      _clientesCreditoIds.add(_clienteCreditoId!);
+      _valorCreditoControllerParaCliente(_clienteCreditoId!);
+    }
+  }
+
+  void _actualizarClientesCreditoSeleccionados(Set<String> clienteIds) {
+    final Set<String> disponibles =
+        _clientes.map((Cliente cliente) => cliente.id).toSet();
+    final Set<String> normalizados = clienteIds
+        .where((String clienteId) => disponibles.contains(clienteId))
+        .toSet();
+    final List<String> removidos = _clientesCreditoIds
+        .where((String clienteId) => !normalizados.contains(clienteId))
+        .toList(growable: false);
+
+    for (final String clienteId in removidos) {
+      _valorCreditoPorClienteControllers.remove(clienteId)?.dispose();
+    }
+
+    for (final String clienteId in normalizados) {
+      _valorCreditoControllerParaCliente(clienteId);
+    }
+
+    _clientesCreditoIds
+      ..clear()
+      ..addAll(normalizados);
+    _clienteCreditoId =
+        _clientesCreditoIds.isEmpty ? null : _clientesCreditoIds.first;
+  }
+
+  TextEditingController _valorCreditoControllerParaCliente(String clienteId) {
+    return _valorCreditoPorClienteControllers.putIfAbsent(
+      clienteId,
+      () => TextEditingController(text: _valorCreditoController.text),
+    );
+  }
+
+  void _limpiarMontosCreditoPorCliente() {
+    for (final TextEditingController controller
+        in _valorCreditoPorClienteControllers.values) {
+      controller.clear();
+    }
+    _valorCreditoController.clear();
+  }
+
   String? _cajaActivaPredeterminadaId(Catalogos? catalogos) {
     return _cajaActivaMasRecienteId(
       catalogos?.cajasMenores ?? const <CajaMenorCatalogo>[],
@@ -2407,6 +3185,23 @@ class _HomePageState extends State<HomePage> {
         );
       _clientes = actualizados.toList(growable: false);
       _clienteCreditoId ??= cliente.id;
+      _ajustarSelecciones();
+    });
+  }
+
+  void _eliminarClienteLocal(String clienteId) {
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _clientes = _clientes
+          .where((Cliente item) => item.id != clienteId)
+          .toList(growable: false);
+      if (_clienteCreditoId == clienteId) {
+        _clienteCreditoId = null;
+      }
+      _clientesCreditoIds.remove(clienteId);
       _ajustarSelecciones();
     });
   }
@@ -2597,7 +3392,8 @@ class _HomePageState extends State<HomePage> {
         return false;
       }
 
-      if (_filtroCredito == _FiltroEstadoCredito.inactivos && credito.activo) {
+      if (_filtroCredito == _FiltroEstadoCredito.inactivos &&
+          !credito.inactivo) {
         return false;
       }
 
@@ -2760,13 +3556,22 @@ class _HomePageState extends State<HomePage> {
       return false;
     }
 
-    final String? clienteId = _clienteCreditoId;
+    if (!_puedeCrearCreditos) {
+      _mostrarMensaje('No tienes permiso para crear creditos');
+      return false;
+    }
+
+    final List<String> clienteIds = _clientesCreditoIds.isNotEmpty
+        ? _clientesCreditoIds.toList(growable: false)
+        : <String>[if (_clienteCreditoId != null) _clienteCreditoId!];
     final String? rutaId = _rutaCreditoId;
     final String? monedaCodigo = _monedaCreditoCodigo;
     final int? frecuenciaPagoId = _frecuenciaPagoId;
     final String? cajaMenorId = _cajaMenorCreditoId;
 
-    if (clienteId == null || monedaCodigo == null || frecuenciaPagoId == null) {
+    if (clienteIds.isEmpty ||
+        monedaCodigo == null ||
+        frecuenciaPagoId == null) {
       _mostrarMensaje('Faltan datos reales para crear el crédito');
       return false;
     }
@@ -2776,12 +3581,16 @@ class _HomePageState extends State<HomePage> {
       return false;
     }
 
-    final double valorPrincipal;
     final double porcentajeInteres;
     final int plazoDias;
+    final Map<String, double> valoresPorCliente = <String, double>{};
 
     try {
-      valorPrincipal = _leerMonto(_valorCreditoController.text);
+      for (final String clienteId in clienteIds) {
+        final TextEditingController controller =
+            _valorCreditoControllerParaCliente(clienteId);
+        valoresPorCliente[clienteId] = _leerMonto(controller.text);
+      }
       porcentajeInteres = _leerPorcentaje(_interesController.text);
       plazoDias = _leerEnteroPositivo(_plazoController.text);
     } catch (error) {
@@ -2789,37 +3598,50 @@ class _HomePageState extends State<HomePage> {
       return false;
     }
 
-    if (!_validarPresupuestoCaja(cajaMenorId, valorPrincipal)) {
+    final double valorPrincipalTotal = valoresPorCliente.values.fold<double>(
+      0,
+      (double total, double valor) => total + valor,
+    );
+
+    if (!_validarPresupuestoCaja(cajaMenorId, valorPrincipalTotal)) {
       return false;
     }
 
     cerrarFormulario?.call();
-    _mostrarMensaje('Creando credito...');
+    _mostrarMensaje(
+      clienteIds.length == 1 ? 'Creando credito...' : 'Creando creditos...',
+    );
 
     return _ejecutarAccion(() async {
-      final CreditoRegistro credito = CreditoRegistro.fromJson(
-        await _apiClient.postObject('/creditos', <String, dynamic>{
-          'clienteId': clienteId,
-          if (rutaId != null) 'rutaId': rutaId,
-          'monedaCodigo': monedaCodigo,
-          'frecuenciaPagoId': frecuenciaPagoId,
-          'fechaInicio': _fechaValor(_fechaInicioCredito),
-          'valorPrincipal': valorPrincipal,
-          'porcentajeInteres': porcentajeInteres,
-          'plazoDias': plazoDias,
-          'omitirDomingos': _omitirDomingos,
-          'cajaMenorId': cajaMenorId,
-          if (_observacionCreditoController.text.trim().isNotEmpty)
-            'observacion': _observacionCreditoController.text.trim(),
-        }),
-      );
-      _guardarCreditoLocal(credito);
-      _valorCreditoController.clear();
+      for (final String clienteId in clienteIds) {
+        final CreditoRegistro credito = CreditoRegistro.fromJson(
+          await _apiClient.postObject('/creditos', <String, dynamic>{
+            'clienteId': clienteId,
+            if (rutaId != null) 'rutaId': rutaId,
+            'monedaCodigo': monedaCodigo,
+            'frecuenciaPagoId': frecuenciaPagoId,
+            'fechaInicio': _fechaValor(_fechaInicioCredito),
+            'valorPrincipal': valoresPorCliente[clienteId],
+            'porcentajeInteres': porcentajeInteres,
+            'plazoDias': plazoDias,
+            'omitirDomingos': _omitirDomingos,
+            'cajaMenorId': cajaMenorId,
+            if (_observacionCreditoController.text.trim().isNotEmpty)
+              'observacion': _observacionCreditoController.text.trim(),
+          }),
+        );
+        _guardarCreditoLocal(credito);
+      }
+      _limpiarMontosCreditoPorCliente();
       _interesController.text = _interesCreditoPredeterminado;
       _plazoController.text = _plazoCreditoPredeterminado;
       _observacionCreditoController.clear();
       _mostrarCuotasRegistradas();
-      _mostrarMensaje('Crédito creado con sus cuotas');
+      _mostrarMensaje(
+        clienteIds.length == 1
+            ? 'Credito creado con sus cuotas'
+            : '${clienteIds.length} creditos creados con sus cuotas',
+      );
       _recargarEnSegundoPlano(
         catalogos: rutaId == null,
         presupuesto: true,
@@ -2830,6 +3652,11 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _abrirCrearCreditoModal() async {
+    if (!_puedeCrearCreditos) {
+      _mostrarMensaje('No tienes permiso para crear creditos');
+      return;
+    }
+
     final Catalogos? catalogos = _catalogos;
     final bool listo = catalogos != null &&
         _clientes.isNotEmpty &&
@@ -2870,7 +3697,7 @@ class _HomePageState extends State<HomePage> {
             return AlertDialog(
               title: const Text('Nuevo credito'),
               content: _DialogContent(
-                maxWidth: 600,
+                maxWidth: 760,
                 child: _FormularioCredito(
                   clientes: _clientes,
                   rutas: catalogos.rutasAbiertas,
@@ -2885,12 +3712,19 @@ class _HomePageState extends State<HomePage> {
                   fechaInicio: _fechaInicioCredito,
                   omitirDomingos: _omitirDomingos,
                   valorController: _valorCreditoController,
+                  clientesSeleccionadosIds: _clientesCreditoIds,
+                  valorClienteController: _valorCreditoControllerParaCliente,
                   interesController: _interesController,
                   plazoController: _plazoController,
                   observacionController: _observacionCreditoController,
                   guardando: guardandoDialogo,
                   onClienteChanged: (String? value) {
                     actualizarFormulario(() => _clienteCreditoId = value);
+                  },
+                  onClientesSeleccionadosChanged: (Set<String> value) {
+                    actualizarFormulario(
+                      () => _actualizarClientesCreditoSeleccionados(value),
+                    );
                   },
                   onRutaChanged: (String? value) {
                     actualizarFormulario(() => _rutaCreditoId = value);
@@ -2955,6 +3789,11 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _abrirSeleccionRefinanciacion() async {
+    if (!_puedeRefinanciarCreditos) {
+      _mostrarMensaje('No tienes permiso para refinanciar creditos');
+      return;
+    }
+
     final List<CreditoRegistro> activos = _filtrarCreditos()
         .where((CreditoRegistro credito) => credito.activo)
         .toList(growable: false);
@@ -3019,6 +3858,11 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _abrirRefinanciarCredito(CreditoRegistro credito) async {
+    if (!_puedeRefinanciarCreditos) {
+      _mostrarMensaje('No tienes permiso para refinanciar creditos');
+      return;
+    }
+
     if (!credito.activo) {
       _mostrarMensaje('Solo se pueden refinanciar creditos activos');
       return;
@@ -3032,11 +3876,13 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
-    final List<CajaMenorCatalogo> cajasCompatibles = catalogos
-        .cajasMenoresActivas
-        .where((CajaMenorCatalogo caja) =>
-            caja.monedaCodigo == credito.monedaCodigo)
-        .toList(growable: false);
+    final List<CajaMenorCatalogo> cajasCompatibles =
+        catalogos.cajasMenoresActivas
+            .where(
+              (CajaMenorCatalogo caja) =>
+                  caja.monedaCodigo == credito.monedaCodigo,
+            )
+            .toList(growable: false);
     if (cajasCompatibles.isEmpty) {
       _mostrarMensaje('No hay caja menor activa para esa moneda');
       return;
@@ -3064,8 +3910,8 @@ class _HomePageState extends State<HomePage> {
         ? credito.cajaMenorId
         : cajasCompatibles.first.id;
     int? frecuenciaPagoId = catalogos.frecuenciasPago.any(
-            (FrecuenciaPago frecuencia) =>
-                frecuencia.id == credito.frecuenciaPago.id)
+      (FrecuenciaPago frecuencia) => frecuencia.id == credito.frecuenciaPago.id,
+    )
         ? credito.frecuenciaPago.id
         : catalogos.frecuenciasPago.first.id;
     DateTime fechaInicio = DateTime.now();
@@ -3256,8 +4102,8 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _abrirModificarCredito(CreditoRegistro credito) async {
-    if (!(_usuarioSesion?.esAdministrador ?? false)) {
-      _mostrarMensaje('Solo los administradores pueden modificar creditos');
+    if (!_puedeModificarCreditos) {
+      _mostrarMensaje('No tienes permiso para modificar creditos');
       return;
     }
 
@@ -3304,8 +4150,8 @@ class _HomePageState extends State<HomePage> {
         ? credito.cajaMenorId
         : cajasCompatibles.first.id;
     int? frecuenciaPagoId = catalogos.frecuenciasPago.any(
-            (FrecuenciaPago frecuencia) =>
-                frecuencia.id == credito.frecuenciaPago.id)
+      (FrecuenciaPago frecuencia) => frecuencia.id == credito.frecuenciaPago.id,
+    )
         ? credito.frecuenciaPago.id
         : catalogos.frecuenciasPago.first.id;
     DateTime fechaInicio = credito.fechaInicio;
@@ -3521,8 +4367,8 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _confirmarEliminarCredito(CreditoRegistro credito) async {
-    if (!(_usuarioSesion?.esAdministrador ?? false)) {
-      _mostrarMensaje('Solo los administradores pueden eliminar creditos');
+    if (!_puedeEliminarCreditos) {
+      _mostrarMensaje('No tienes permiso para eliminar creditos');
       return;
     }
 
@@ -3586,6 +4432,16 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _abrirRegistrarPago(CobroRuta cobro) async {
+    if (!_puedeAgregarCuota) {
+      _mostrarMensaje('No tienes permiso para agregar cuota');
+      return;
+    }
+
+    await _abrirRegistrarPagoMultiple(cobro);
+  }
+
+  // ignore: unused_element
+  Future<void> _abrirRegistrarPagoAnterior(CobroRuta cobro) async {
     final List<MedioPago> mediosPago =
         _catalogos?.mediosPago ?? const <MedioPago>[];
     if (mediosPago.isEmpty) {
@@ -3628,24 +4484,12 @@ class _HomePageState extends State<HomePage> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      initialValue: medioPagoCodigo,
-                      decoration: const InputDecoration(
-                        labelText: 'Medio de pago',
-                        prefixIcon: Icon(Icons.credit_card_rounded),
-                      ),
-                      items: mediosPago
-                          .map(
-                            (MedioPago medio) => DropdownMenuItem<String>(
-                              value: medio.codigo,
-                              child: Text(medio.nombre),
-                            ),
-                          )
-                          .toList(growable: false),
-                      onChanged: (String? value) {
-                        if (value != null) {
-                          setDialogState(() => medioPagoCodigo = value);
-                        }
+                    _SelectorMedioPagoBuscable(
+                      mediosPago: mediosPago,
+                      medioPagoCodigo: medioPagoCodigo,
+                      enabled: !guardandoPago,
+                      onChanged: (String value) {
+                        setDialogState(() => medioPagoCodigo = value);
                       },
                     ),
                     const SizedBox(height: 12),
@@ -3722,26 +4566,277 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  Future<void> _abrirRegistrarPagoMultiple(CobroRuta cobro) async {
+    if (!_puedeAgregarCuota) {
+      _mostrarMensaje('No tienes permiso para agregar cuota');
+      return;
+    }
+
+    final List<MedioPago> mediosPago =
+        _catalogos?.mediosPago ?? const <MedioPago>[];
+    if (mediosPago.isEmpty) {
+      _mostrarMensaje('No hay medios de pago registrados');
+      return;
+    }
+
+    final List<CobroRuta> cobrosDisponibles = _cobrosRuta
+        .where(
+          (CobroRuta item) =>
+              item.proximaCuotaId != null &&
+              item.saldo > 0.009 &&
+              (_rutaFiltroId == null || item.rutaId == _rutaFiltroId),
+        )
+        .toList(growable: false);
+    final TextEditingController observacionController = TextEditingController();
+    final List<_PagoRutaSeleccion> seleccionados = <_PagoRutaSeleccion>[
+      _PagoRutaSeleccion(cobro),
+    ];
+
+    await showDialog<void>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        String medioPagoCodigo = mediosPago.first.codigo;
+        bool guardandoPago = false;
+
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setDialogState) {
+            final Set<String> cuotasSeleccionadas = seleccionados
+                .map((_PagoRutaSeleccion item) => item.cuotaId)
+                .whereType<String>()
+                .toSet();
+
+            return AlertDialog(
+              title: const Text('Registrar pagos'),
+              content: SizedBox(
+                width: 520,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      _SelectorCobroRutaBuscable(
+                        cobros: cobrosDisponibles,
+                        cuotasSeleccionadas: cuotasSeleccionadas,
+                        enabled: !guardandoPago,
+                        onSelected: (CobroRuta item) {
+                          if (cuotasSeleccionadas
+                              .contains(item.proximaCuotaId)) {
+                            return;
+                          }
+                          seleccionados.add(_PagoRutaSeleccion(item));
+                          setDialogState(() {});
+                        },
+                      ),
+                      const SizedBox(height: 14),
+                      ...seleccionados.map(
+                        (_PagoRutaSeleccion item) => Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: ClaySurface(
+                            radius: 12,
+                            padding: const EdgeInsets.all(12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: <Widget>[
+                                Row(
+                                  children: <Widget>[
+                                    Icon(
+                                      Icons.check_circle_rounded,
+                                      color: Colors.green.shade700,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: <Widget>[
+                                          Text(
+                                            item.cobro.cliente,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .titleSmall
+                                                ?.copyWith(
+                                                  fontWeight: FontWeight.w900,
+                                                ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            [
+                                              if ((item.cobro.cedula ?? '')
+                                                  .isNotEmpty)
+                                                'CC ${item.cobro.cedula!}',
+                                              'Cuota ${item.cobro.proximaNumeroCuota ?? '-'}',
+                                              _fechaEtiqueta(
+                                                item.cobro.proximaFechaPago,
+                                              ),
+                                            ].join(' - '),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodySmall
+                                                ?.copyWith(
+                                                  color:
+                                                      context.clay.subtleText,
+                                                ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    if (seleccionados.length > 1)
+                                      IconButton(
+                                        tooltip: 'Quitar',
+                                        onPressed: guardandoPago
+                                            ? null
+                                            : () {
+                                                seleccionados.remove(item);
+                                                setDialogState(() {});
+                                              },
+                                        icon: const Icon(Icons.close_rounded),
+                                      ),
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+                                TextField(
+                                  controller: item.montoController,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                                  decoration: InputDecoration(
+                                    labelText: 'Monto de ${item.cobro.cliente}',
+                                    prefixIcon:
+                                        const Icon(Icons.payments_rounded),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      _SelectorMedioPagoBuscable(
+                        mediosPago: mediosPago,
+                        medioPagoCodigo: medioPagoCodigo,
+                        enabled: !guardandoPago,
+                        onChanged: (String value) {
+                          setDialogState(() => medioPagoCodigo = value);
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: observacionController,
+                        maxLines: 2,
+                        decoration: const InputDecoration(
+                          labelText: 'Observacion',
+                          prefixIcon: Icon(Icons.notes_rounded),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: guardandoPago
+                      ? null
+                      : () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Cancelar'),
+                ),
+                FilledButton.icon(
+                  onPressed: () {
+                    if (guardandoPago) {
+                      return;
+                    }
+                    if (seleccionados.isEmpty) {
+                      _mostrarMensaje('Agrega al menos un cliente');
+                      return;
+                    }
+
+                    final String? observacion =
+                        observacionController.text.trim().isEmpty
+                            ? null
+                            : observacionController.text.trim();
+                    final List<_PagoRutaSolicitud> pagos =
+                        <_PagoRutaSolicitud>[];
+
+                    for (final _PagoRutaSeleccion item in seleccionados) {
+                      final String? cuotaId = item.cuotaId;
+                      if (cuotaId == null || _cuotasEnPago.contains(cuotaId)) {
+                        _mostrarMensaje('Este pago ya se esta procesando');
+                        return;
+                      }
+
+                      final double monto;
+                      try {
+                        monto = _leerMonto(item.montoController.text);
+                      } catch (error) {
+                        _mostrarMensaje(_mensajeError(error));
+                        return;
+                      }
+
+                      if (monto > item.cobro.saldo) {
+                        _mostrarMensaje(
+                          'El pago de ${item.cobro.cliente} supera el saldo',
+                        );
+                        return;
+                      }
+
+                      pagos.add(
+                        _PagoRutaSolicitud(
+                          cuotaId: cuotaId,
+                          monto: monto,
+                          medioPagoCodigo: medioPagoCodigo,
+                          observacion: observacion,
+                        ),
+                      );
+                    }
+
+                    setDialogState(() => guardandoPago = true);
+
+                    if (dialogContext.mounted) {
+                      Navigator.of(dialogContext).pop();
+                    }
+
+                    unawaited(_registrarPagosRuta(pagos));
+                  },
+                  icon: const Icon(Icons.check_rounded),
+                  label: const Text('Registrar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   Future<void> _registrarPagoRuta({
     required String cuotaId,
     required double monto,
     required String medioPagoCodigo,
     String? observacion,
   }) async {
+    if (!_puedeAgregarCuota) {
+      _mostrarMensaje('No tienes permiso para agregar cuota');
+      return;
+    }
+
     if (_cuotasEnPago.contains(cuotaId)) {
       return;
     }
 
     if (mounted) {
       setState(() {
-        _guardando = true;
         _error = null;
         _cuotasEnPago.add(cuotaId);
       });
     }
     final List<CobroRuta> cobrosAntes = _cobrosRuta;
-    _aplicarPagoRutaOptimista(cuotaId, monto);
-    _mostrarMensaje('Procesando pago...');
+    final List<String> cobrosAplicados =
+        _aplicarPagoRutaOptimista(cuotaId, monto);
+    _mostrarMensaje('Pago aplicado en pantalla. Confirmando...');
 
     try {
       await _apiClient.postObject('/pagos', <String, dynamic>{
@@ -3756,6 +4851,7 @@ class _HomePageState extends State<HomePage> {
       if (mounted) {
         setState(() {
           _cobrosRuta = cobrosAntes;
+          _cobrosConPagoInstantaneo.removeAll(cobrosAplicados);
           _error = _mensajeError(error);
         });
         _mostrarMensaje(_mensajeError(error));
@@ -3763,8 +4859,81 @@ class _HomePageState extends State<HomePage> {
     } finally {
       if (mounted) {
         setState(() {
-          _guardando = false;
           _cuotasEnPago.remove(cuotaId);
+        });
+      }
+    }
+  }
+
+  Future<void> _registrarPagosRuta(List<_PagoRutaSolicitud> pagos) async {
+    if (!_puedeAgregarCuota) {
+      _mostrarMensaje('No tienes permiso para agregar cuota');
+      return;
+    }
+
+    final List<_PagoRutaSolicitud> pagosPendientes = pagos
+        .where(
+          (_PagoRutaSolicitud pago) => !_cuotasEnPago.contains(pago.cuotaId),
+        )
+        .toList(growable: false);
+    if (pagosPendientes.isEmpty) {
+      _mostrarMensaje('Este pago ya se esta procesando');
+      return;
+    }
+
+    final List<String> cuotasIds = pagosPendientes
+        .map((_PagoRutaSolicitud pago) => pago.cuotaId)
+        .toList(growable: false);
+    if (mounted) {
+      setState(() {
+        _error = null;
+        _cuotasEnPago.addAll(cuotasIds);
+      });
+    }
+
+    final List<CobroRuta> cobrosAntes = _cobrosRuta;
+    final List<String> cobrosAplicados = <String>[];
+    for (final _PagoRutaSolicitud pago in pagosPendientes) {
+      cobrosAplicados.addAll(
+        _aplicarPagoRutaOptimista(pago.cuotaId, pago.monto),
+      );
+    }
+    _mostrarMensaje(
+      pagosPendientes.length == 1
+          ? 'Pago aplicado en pantalla. Confirmando...'
+          : '${pagosPendientes.length} pagos aplicados en pantalla. '
+              'Confirmando...',
+    );
+
+    try {
+      await Future.wait<Map<String, dynamic>>(
+        pagosPendientes.map((_PagoRutaSolicitud pago) {
+          return _apiClient.postObject('/pagos', <String, dynamic>{
+            'creditoCuotaId': pago.cuotaId,
+            'montoPagado': pago.monto,
+            'medioPagoCodigo': pago.medioPagoCodigo,
+            if (pago.observacion != null) 'observacion': pago.observacion,
+          });
+        }),
+      );
+      _mostrarMensaje(
+        pagosPendientes.length == 1 ? 'Pago registrado' : 'Pagos registrados',
+      );
+      _recargarEnSegundoPlano();
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _cobrosRuta = cobrosAntes;
+          _cobrosConPagoInstantaneo.removeAll(cobrosAplicados);
+          _error = _mensajeError(error);
+        });
+        _mostrarMensaje(_mensajeError(error));
+        _recargarEnSegundoPlano();
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _cuotasEnPago.removeAll(cuotasIds);
         });
       }
     }
@@ -3942,11 +5111,12 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  void _aplicarPagoRutaOptimista(String cuotaId, double monto) {
+  List<String> _aplicarPagoRutaOptimista(String cuotaId, double monto) {
     if (!mounted) {
-      return;
+      return const <String>[];
     }
 
+    final List<String> cobrosAplicados = <String>[];
     setState(() {
       _cobrosRuta = _cobrosRuta.map((CobroRuta cobro) {
         if (cobro.proximaCuotaId != cuotaId) {
@@ -3964,9 +5134,25 @@ class _HomePageState extends State<HomePage> {
           cobro.proximoSaldoCuota - pagoAplicado,
         );
         final bool cuotaCubierta = saldoCuota <= 0.009;
-        final int cuotasRestantes = cuotaCubierta
-            ? math.max(0, cobro.cuotasRestantes - 1)
-            : cobro.cuotasRestantes;
+        final bool creditoCubierto = nuevoSaldo <= 0.009;
+        final double montoDespuesDeCuota = math.max(
+          0,
+          pagoAplicado - cobro.proximoSaldoCuota,
+        );
+        final int cuotasAdicionalesCubiertas =
+            cuotaCubierta && cobro.valorCuota > 0
+                ? math.min(
+                    math.max(0, cobro.cuotasRestantes - 1),
+                    montoDespuesDeCuota ~/ cobro.valorCuota,
+                  )
+                : 0;
+        final int cuotasCubiertas =
+            cuotaCubierta ? 1 + cuotasAdicionalesCubiertas : 0;
+        final int cuotasRestantes = creditoCubierto
+            ? 0
+            : math.max(0, cobro.cuotasRestantes - cuotasCubiertas);
+        cobrosAplicados.add(cobro.id);
+        _cobrosConPagoInstantaneo.add(cobro.id);
 
         return cobro.copyWith(
           totalAbonado: nuevoAbonado,
@@ -3974,9 +5160,13 @@ class _HomePageState extends State<HomePage> {
           cuotasRestantes: cuotasRestantes,
           proximoSaldoCuota: cuotaCubierta ? 0 : saldoCuota,
           proximaCuotaId: cuotaCubierta ? null : cobro.proximaCuotaId,
+          proximaNumeroCuota: cuotaCubierta ? null : cobro.proximaNumeroCuota,
+          proximaFechaPago: cuotaCubierta ? null : cobro.proximaFechaPago,
+          estadoCobro: creditoCubierto ? EstadoCobro.pagado : cobro.estadoCobro,
         );
       }).toList(growable: false);
     });
+    return cobrosAplicados;
   }
 
   // ignore: unused_element
@@ -3991,6 +5181,7 @@ class _HomePageState extends State<HomePage> {
         final TextEditingController correoController = TextEditingController();
         final TextEditingController telefonoController =
             TextEditingController();
+        LatLng? ubicacionCliente;
 
         return AlertDialog(
           title: const Text('Nuevo cliente'),
@@ -4025,8 +5216,14 @@ class _HomePageState extends State<HomePage> {
                   controller: direccionController,
                   decoration: const InputDecoration(
                     labelText: 'Direccion',
+                    hintText: _direccionCasaHint,
                     prefixIcon: Icon(Icons.location_on_rounded),
                   ),
+                ),
+                const SizedBox(height: 12),
+                _ClienteUbicacionPicker(
+                  value: ubicacionCliente,
+                  onChanged: (LatLng? value) => ubicacionCliente = value,
                 ),
                 const SizedBox(height: 12),
                 TextField(
@@ -4061,6 +5258,12 @@ class _HomePageState extends State<HomePage> {
                   return;
                 }
 
+                if (ubicacionCliente != null &&
+                    direccionController.text.trim().isEmpty) {
+                  _mostrarMensaje(_mensajeDireccionCasa);
+                  return;
+                }
+
                 await _ejecutarAccion(() async {
                   final Cliente cliente = Cliente.fromJson(
                     await _apiClient.postObject('/clientes', <String, dynamic>{
@@ -4069,6 +5272,10 @@ class _HomePageState extends State<HomePage> {
                         'cedula': cedulaController.text.trim(),
                       if (direccionController.text.trim().isNotEmpty)
                         'direccion': direccionController.text.trim(),
+                      if (ubicacionCliente != null) ...<String, dynamic>{
+                        'latitud': ubicacionCliente!.latitude,
+                        'longitud': ubicacionCliente!.longitude,
+                      },
                       if (correoController.text.trim().isNotEmpty)
                         'correo': correoController.text.trim(),
                       if (telefonoController.text.trim().isNotEmpty)
@@ -4098,6 +5305,304 @@ class _HomePageState extends State<HomePage> {
 
     if (creado == true) {
       _mostrarMensaje('Cliente creado');
+    }
+  }
+
+  Future<void> _abrirModificarCliente(Cliente cliente) async {
+    if (!(_usuarioSesion?.esAdministrador ?? false)) {
+      _mostrarMensaje('Solo los administradores pueden modificar clientes');
+      return;
+    }
+
+    final TextEditingController nombreController = TextEditingController(
+      text: cliente.nombreCompleto,
+    );
+    final TextEditingController cedulaController = TextEditingController(
+      text: cliente.cedula ?? '',
+    );
+    final TextEditingController negocioController = TextEditingController(
+      text: cliente.nombreComercial ?? '',
+    );
+    final TextEditingController direccionController = TextEditingController(
+      text: cliente.direccion ?? '',
+    );
+    final TextEditingController correoController = TextEditingController(
+      text: cliente.correo ?? '',
+    );
+    final TextEditingController telefonoController = TextEditingController(
+      text: cliente.telefono ?? '',
+    );
+    LatLng? ubicacionCliente = cliente.tieneUbicacion
+        ? LatLng(cliente.latitude!, cliente.longitude!)
+        : null;
+
+    try {
+      final bool? modificado = await showDialog<bool>(
+        context: context,
+        builder: (BuildContext dialogContext) {
+          bool guardandoDialogo = false;
+
+          return StatefulBuilder(
+            builder: (BuildContext context, StateSetter setDialogState) {
+              return AlertDialog(
+                title: const Text('Modificar cliente'),
+                content: _DialogContent(
+                  maxWidth: 460,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      TextField(
+                        controller: nombreController,
+                        enabled: !guardandoDialogo,
+                        autofocus: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Nombre completo',
+                          prefixIcon: Icon(Icons.person_rounded),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: cedulaController,
+                        enabled: !guardandoDialogo,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: <TextInputFormatter>[
+                          FilteringTextInputFormatter.digitsOnly,
+                          LengthLimitingTextInputFormatter(20),
+                        ],
+                        decoration: const InputDecoration(
+                          labelText: 'Cedula',
+                          hintText: 'Numero de identificacion',
+                          prefixIcon: Icon(Icons.badge_rounded),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: negocioController,
+                        enabled: !guardandoDialogo,
+                        decoration: const InputDecoration(
+                          labelText: 'Negocio',
+                          prefixIcon: Icon(Icons.storefront_rounded),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: direccionController,
+                        enabled: !guardandoDialogo,
+                        decoration: const InputDecoration(
+                          labelText: 'Direccion',
+                          hintText: _direccionCasaHint,
+                          prefixIcon: Icon(Icons.location_on_rounded),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      _ClienteUbicacionPicker(
+                        value: ubicacionCliente,
+                        enabled: !guardandoDialogo,
+                        onChanged: (LatLng? value) {
+                          setDialogState(() => ubicacionCliente = value);
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      _DosColumnas(
+                        left: TextField(
+                          controller: correoController,
+                          enabled: !guardandoDialogo,
+                          keyboardType: TextInputType.emailAddress,
+                          decoration: const InputDecoration(
+                            labelText: 'Correo',
+                            prefixIcon: Icon(Icons.mail_rounded),
+                          ),
+                        ),
+                        right: TextField(
+                          controller: telefonoController,
+                          enabled: !guardandoDialogo,
+                          keyboardType: TextInputType.phone,
+                          decoration: const InputDecoration(
+                            labelText: 'Telefono',
+                            prefixIcon: Icon(Icons.phone_rounded),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                actions: <Widget>[
+                  TextButton(
+                    onPressed: guardandoDialogo
+                        ? null
+                        : () => Navigator.of(dialogContext).pop(false),
+                    child: const Text('Cancelar'),
+                  ),
+                  FilledButton.icon(
+                    onPressed: guardandoDialogo
+                        ? null
+                        : () async {
+                            if (nombreController.text.trim().length < 2) {
+                              _mostrarMensaje(
+                                'El cliente necesita nombre completo',
+                              );
+                              return;
+                            }
+
+                            if (ubicacionCliente != null &&
+                                direccionController.text.trim().isEmpty) {
+                              _mostrarMensaje(_mensajeDireccionCasa);
+                              return;
+                            }
+
+                            setDialogState(() => guardandoDialogo = true);
+                            final bool guardado =
+                                await _ejecutarAccion(() async {
+                              final Cliente actualizado = Cliente.fromJson(
+                                await _apiClient.patchObject(
+                                  '/clientes/${cliente.id}',
+                                  <String, dynamic>{
+                                    'nombreCompleto':
+                                        nombreController.text.trim(),
+                                    if (cedulaController.text.trim().isNotEmpty)
+                                      'cedula': cedulaController.text.trim(),
+                                    if (negocioController.text
+                                        .trim()
+                                        .isNotEmpty)
+                                      'nombreComercial':
+                                          negocioController.text.trim(),
+                                    if (direccionController.text
+                                        .trim()
+                                        .isNotEmpty)
+                                      'direccion':
+                                          direccionController.text.trim(),
+                                    if (ubicacionCliente !=
+                                        null) ...<String, dynamic>{
+                                      'latitud': ubicacionCliente!.latitude,
+                                      'longitud': ubicacionCliente!.longitude,
+                                    },
+                                    if (correoController.text.trim().isNotEmpty)
+                                      'correo': correoController.text.trim(),
+                                    if (telefonoController.text
+                                        .trim()
+                                        .isNotEmpty)
+                                      'telefono':
+                                          telefonoController.text.trim(),
+                                  },
+                                ),
+                              );
+                              _guardarClienteLocal(actualizado);
+                              _recargarEnSegundoPlano(
+                                presupuesto: false,
+                                clientes: true,
+                                cobrosRuta: true,
+                                creditos: true,
+                                movimientosCaja: false,
+                              );
+                            });
+
+                            if (!guardado) {
+                              if (dialogContext.mounted) {
+                                setDialogState(
+                                  () => guardandoDialogo = false,
+                                );
+                              }
+                              return;
+                            }
+
+                            if (dialogContext.mounted) {
+                              Navigator.of(dialogContext).pop(true);
+                            }
+                          },
+                    icon: guardandoDialogo
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.check_rounded),
+                    label: const Text('Guardar'),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      );
+
+      if (modificado == true) {
+        _mostrarMensaje('Cliente modificado');
+      }
+    } finally {
+      nombreController.dispose();
+      cedulaController.dispose();
+      negocioController.dispose();
+      direccionController.dispose();
+      correoController.dispose();
+      telefonoController.dispose();
+    }
+  }
+
+  Future<void> _confirmarEliminarCliente(Cliente cliente) async {
+    if (!(_usuarioSesion?.esAdministrador ?? false)) {
+      _mostrarMensaje('Solo los administradores pueden eliminar clientes');
+      return;
+    }
+
+    final bool? confirmado = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('Seguro que quieres eliminar?'),
+          content: Text(
+            'Se eliminara "${cliente.nombreCompleto}". No se puede eliminar si tiene creditos o pagos registrados.',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              icon: const Icon(Icons.delete_outline_rounded),
+              label: const Text('Eliminar'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmado != true) {
+      return;
+    }
+
+    final List<Cliente> clientesAntes = _clientes;
+    final String? clienteCreditoAntes = _clienteCreditoId;
+    final Set<String> clientesCreditoAntes =
+        Set<String>.of(_clientesCreditoIds);
+    final bool eliminado = await _ejecutarAccion(() async {
+      _eliminarClienteLocal(cliente.id);
+      try {
+        await _apiClient.deleteObject('/clientes/${cliente.id}');
+      } catch (_) {
+        if (mounted) {
+          setState(() {
+            _clientes = clientesAntes;
+            _clienteCreditoId = clienteCreditoAntes;
+            _clientesCreditoIds
+              ..clear()
+              ..addAll(clientesCreditoAntes);
+            _ajustarSelecciones();
+          });
+        }
+        rethrow;
+      }
+      _recargarEnSegundoPlano(
+        presupuesto: false,
+        clientes: true,
+        cobrosRuta: true,
+        creditos: true,
+        movimientosCaja: false,
+      );
+    });
+
+    if (eliminado) {
+      _mostrarMensaje('Cliente eliminado');
     }
   }
 
@@ -4156,6 +5661,8 @@ class _HomePageState extends State<HomePage> {
         );
         DateTime fechaInicio = DateTime.now();
         bool omitirDomingos = _omitirDomingos;
+        LatLng? ubicacionCliente;
+        bool obteniendoUbicacion = false;
 
         return StatefulBuilder(
           builder: (BuildContext context, StateSetter setDialogState) {
@@ -4195,8 +5702,68 @@ class _HomePageState extends State<HomePage> {
                       enabled: !guardandoDialogo,
                       decoration: const InputDecoration(
                         labelText: 'Direccion',
+                        hintText: _direccionCasaHint,
                         prefixIcon: Icon(Icons.location_on_rounded),
                       ),
+                    ),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: OutlinedButton.icon(
+                        onPressed: guardandoDialogo || obteniendoUbicacion
+                            ? null
+                            : () async {
+                                setDialogState(
+                                  () => obteniendoUbicacion = true,
+                                );
+                                try {
+                                  final LatLng position =
+                                      await const DeviceRouteLocationService()
+                                          .currentPosition();
+                                  if (dialogContext.mounted) {
+                                    setDialogState(
+                                      () {
+                                        ubicacionCliente = position;
+                                      },
+                                    );
+                                    _mostrarMensaje(_mensajeUbicacionCasa);
+                                  }
+                                } on RouteLocationException catch (error) {
+                                  _mostrarMensaje(error.message);
+                                } finally {
+                                  if (dialogContext.mounted) {
+                                    setDialogState(
+                                      () => obteniendoUbicacion = false,
+                                    );
+                                  }
+                                }
+                              },
+                        icon: obteniendoUbicacion
+                            ? const SizedBox.square(
+                                dimension: 17,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : Icon(
+                                ubicacionCliente == null
+                                    ? Icons.my_location_rounded
+                                    : Icons.check_circle_rounded,
+                              ),
+                        label: Text(
+                          ubicacionCliente == null
+                              ? 'Guardar ubicación del cliente'
+                              : 'Ubicación lista para el mapa',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    _ClienteUbicacionPicker(
+                      value: ubicacionCliente,
+                      enabled: !guardandoDialogo,
+                      onChanged: (LatLng? value) {
+                        setDialogState(() => ubicacionCliente = value);
+                      },
                     ),
                     const SizedBox(height: 12),
                     _DosColumnas(
@@ -4308,6 +5875,12 @@ class _HomePageState extends State<HomePage> {
                             return;
                           }
 
+                          if (ubicacionCliente != null &&
+                              direccionController.text.trim().isEmpty) {
+                            _mostrarMensaje(_mensajeDireccionCasa);
+                            return;
+                          }
+
                           double? valorPrincipal;
                           double? porcentajeInteres;
                           int? plazoDias;
@@ -4370,6 +5943,11 @@ class _HomePageState extends State<HomePage> {
                                         .isNotEmpty)
                                       'direccion':
                                           direccionController.text.trim(),
+                                    if (ubicacionCliente !=
+                                        null) ...<String, dynamic>{
+                                      'latitud': ubicacionCliente!.latitude,
+                                      'longitud': ubicacionCliente!.longitude,
+                                    },
                                     if (correoController.text.trim().isNotEmpty)
                                       'correo': correoController.text.trim(),
                                     if (telefonoController.text
@@ -4459,6 +6037,11 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _abrirCrearCajaMenor() async {
+    if (!_puedeCrearCajaMenor) {
+      _mostrarMensaje('No tienes permiso para crear caja menor');
+      return;
+    }
+
     if (_catalogos == null) {
       _mostrarMensaje('Los datos todavia estan cargando. Intenta nuevamente.');
       return;
@@ -4592,6 +6175,11 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _abrirMovimientoCaja() async {
+    if (!_puedeRegistrarFlujoCaja) {
+      _mostrarMensaje('No tienes permiso para registrar flujo en caja menor');
+      return;
+    }
+
     final Catalogos? catalogos = _catalogos;
     if (catalogos == null) {
       _mostrarMensaje('Los datos todavía están cargando. Intenta nuevamente.');
@@ -4786,12 +6374,17 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _abrirEditarMovimientoCaja(MovimientoCaja movimiento) async {
-    if (!(_usuarioSesion?.esAdministrador ?? false)) {
-      _mostrarMensaje('Solo los administradores pueden modificar movimientos');
+    if (!_puedeModificarMovimientos) {
+      _mostrarMensaje('No tienes permiso para modificar movimientos');
       return;
     }
     if (!movimiento.esEditablePorAdmin) {
       _mostrarMensaje('Este movimiento no se puede modificar desde caja menor');
+      return;
+    }
+    if (movimiento.referenciaTabla == 'credito_desembolso' &&
+        !_puedeModificarCreditos) {
+      _mostrarMensaje('No tienes permiso para modificar creditos');
       return;
     }
 
@@ -5024,12 +6617,17 @@ class _HomePageState extends State<HomePage> {
   Future<void> _confirmarEliminarMovimientoCaja(
     MovimientoCaja movimiento,
   ) async {
-    if (!(_usuarioSesion?.esAdministrador ?? false)) {
-      _mostrarMensaje('Solo los administradores pueden eliminar movimientos');
+    if (!_puedeEliminarMovimientos) {
+      _mostrarMensaje('No tienes permiso para eliminar movimientos');
       return;
     }
     if (!movimiento.esEditablePorAdmin) {
       _mostrarMensaje('Este movimiento no se puede eliminar desde caja menor');
+      return;
+    }
+    if (movimiento.referenciaTabla == 'credito_desembolso' &&
+        !_puedeEliminarCreditos) {
+      _mostrarMensaje('No tienes permiso para eliminar creditos');
       return;
     }
 
@@ -5329,6 +6927,7 @@ _TipoMensaje _tipoMensaje(String message) {
 
   if (normalizado.contains('cread') ||
       normalizado.contains('registrad') ||
+      normalizado.contains('aplicad') ||
       normalizado.contains('complet')) {
     return _TipoMensaje.exito;
   }
@@ -5774,6 +7373,14 @@ class _ConteoCreditosInicio {
     required this.inactivos,
   });
 
+  factory _ConteoCreditosInicio.fromJson(Map<String, dynamic> json) {
+    return _ConteoCreditosInicio(
+      total: _enteroJson(json['total']),
+      activos: _enteroJson(json['activos']),
+      inactivos: _enteroJson(json['inactivos']),
+    );
+  }
+
   const _ConteoCreditosInicio.vacio()
       : total = 0,
         activos = 0,
@@ -5787,7 +7394,6 @@ class _ConteoCreditosInicio {
 class _PaginaInicioPresupuesto extends StatelessWidget {
   const _PaginaInicioPresupuesto({
     required this.totales,
-    required this.creditosTodosLosDias,
     required this.clientesActivos,
     required this.cartera,
     required this.conteoCreditos,
@@ -5818,7 +7424,6 @@ class _PaginaInicioPresupuesto extends StatelessWidget {
   });
 
   final PresupuestoTotales totales;
-  final double creditosTodosLosDias;
   final int clientesActivos;
   final double cartera;
   final _ConteoCreditosInicio conteoCreditos;
@@ -5903,7 +7508,7 @@ class _PaginaInicioPresupuesto extends StatelessWidget {
                             ),
                             const SizedBox(height: 22),
                             _ResumenCreditosInicio(
-                              montoCreditos: creditosTodosLosDias,
+                              montoCreditos: totales.creditos,
                               activos: conteoCreditos.activos,
                               inactivos: conteoCreditos.inactivos,
                               atrasados: creditosAtrasados,
@@ -5923,10 +7528,7 @@ class _PaginaInicioPresupuesto extends StatelessWidget {
                               subtitulo: 'Balance actual de ingresos y salidas',
                             ),
                             const SizedBox(height: 12),
-                            _ComposicionPresupuesto(
-                              totales: totales,
-                              creditosTodosLosDias: creditosTodosLosDias,
-                            ),
+                            _ComposicionPresupuesto(totales: totales),
                             const SizedBox(height: 28),
                             const _TituloSeccionPresupuesto(
                               icono: Icons.insights_rounded,
@@ -6561,13 +8163,9 @@ class _TituloSeccionPresupuesto extends StatelessWidget {
 }
 
 class _ComposicionPresupuesto extends StatelessWidget {
-  const _ComposicionPresupuesto({
-    required this.totales,
-    required this.creditosTodosLosDias,
-  });
+  const _ComposicionPresupuesto({required this.totales});
 
   final PresupuestoTotales totales;
-  final double creditosTodosLosDias;
 
   @override
   Widget build(BuildContext context) {
@@ -6593,7 +8191,7 @@ class _ComposicionPresupuesto extends StatelessWidget {
       _DatoPresupuesto(
         icono: Icons.trending_down_rounded,
         etiqueta: 'Dinero en creditos',
-        valor: _dinero(creditosTodosLosDias),
+        valor: _dinero(totales.creditos),
         color: CobroAppTheme.danger,
       ),
     ];
@@ -7081,6 +8679,7 @@ class _FiltrosRuta extends StatelessWidget {
     required this.rutas,
     required this.rutaSeleccionadaId,
     required this.exportando,
+    required this.vistaMapaDesktop,
     required this.mostrarLimpiarFiltros,
     required this.onRutaChanged,
     required this.onExportar,
@@ -7091,6 +8690,7 @@ class _FiltrosRuta extends StatelessWidget {
   final List<RutaCatalogo> rutas;
   final String? rutaSeleccionadaId;
   final bool exportando;
+  final bool vistaMapaDesktop;
   final bool mostrarLimpiarFiltros;
   final ValueChanged<String?> onRutaChanged;
   final VoidCallback onExportar;
@@ -7151,6 +8751,44 @@ class _FiltrosRuta extends StatelessWidget {
             icon: const Icon(Icons.filter_alt_off_rounded),
           ),
         );
+
+        if (vistaMapaDesktop) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              buscar,
+              const SizedBox(height: 10),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: <Widget>[
+                  Expanded(child: selectorRuta),
+                  const SizedBox(width: 10),
+                  Tooltip(
+                    message: exportando ? 'Exportando' : 'Exportar ruta',
+                    child: SizedBox.square(
+                      dimension: 56,
+                      child: IconButton.outlined(
+                        onPressed: exportando ? null : onExportar,
+                        icon: exportando
+                            ? const SizedBox.square(
+                                dimension: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.file_download_outlined),
+                      ),
+                    ),
+                  ),
+                  if (mostrarLimpiarFiltros) ...<Widget>[
+                    const SizedBox(width: 8),
+                    SizedBox.square(dimension: 56, child: limpiar),
+                  ],
+                ],
+              ),
+            ],
+          );
+        }
 
         if (compact) {
           return Column(
@@ -7439,6 +9077,7 @@ class _ResumenEstados extends StatelessWidget {
     required this.alDia,
     required this.pendientes,
     required this.atrasados,
+    required this.pagados,
     required this.filtro,
     required this.onFiltroChanged,
   });
@@ -7446,6 +9085,7 @@ class _ResumenEstados extends StatelessWidget {
   final int alDia;
   final int pendientes;
   final int atrasados;
+  final int pagados;
   final _FiltroEstadoRuta filtro;
   final ValueChanged<_FiltroEstadoRuta> onFiltroChanged;
 
@@ -7475,6 +9115,13 @@ class _ResumenEstados extends StatelessWidget {
           color: CobroAppTheme.danger,
           selected: filtro == _FiltroEstadoRuta.atrasado,
           onTap: () => onFiltroChanged(_FiltroEstadoRuta.atrasado),
+        ),
+        _EstadoContador(
+          label: 'Pagados',
+          value: pagados,
+          color: CobroAppTheme.primary,
+          selected: filtro == _FiltroEstadoRuta.pagado,
+          onTap: () => onFiltroChanged(_FiltroEstadoRuta.pagado),
         ),
       ],
     );
@@ -7862,14 +9509,16 @@ class _SkeletonTarjetaMovimientoCaja extends StatelessWidget {
 class _TarjetaCreditoRegistro extends StatelessWidget {
   const _TarjetaCreditoRegistro({
     required this.credito,
-    required this.esAdministrador,
+    required this.puedeModificar,
+    required this.puedeEliminar,
     required this.onModificar,
     required this.onEliminar,
     required this.onRefinanciar,
   });
 
   final CreditoRegistro credito;
-  final bool esAdministrador;
+  final bool puedeModificar;
+  final bool puedeEliminar;
   final VoidCallback onModificar;
   final VoidCallback onEliminar;
   final VoidCallback? onRefinanciar;
@@ -7918,7 +9567,7 @@ class _TarjetaCreditoRegistro extends StatelessWidget {
                 ),
               ),
               _EstadoCreditoChip(credito: credito),
-              if (esAdministrador) ...<Widget>[
+              if (puedeModificar || puedeEliminar) ...<Widget>[
                 const SizedBox(width: 4),
                 PopupMenuButton<_AccionCredito>(
                   tooltip: 'Acciones',
@@ -7932,27 +9581,29 @@ class _TarjetaCreditoRegistro extends StatelessWidget {
                     }
                   },
                   itemBuilder: (BuildContext context) {
-                    return const <PopupMenuEntry<_AccionCredito>>[
-                      PopupMenuItem<_AccionCredito>(
-                        value: _AccionCredito.modificar,
-                        child: Row(
-                          children: <Widget>[
-                            Icon(Icons.edit_outlined),
-                            SizedBox(width: 12),
-                            Text('Modificar'),
-                          ],
+                    return <PopupMenuEntry<_AccionCredito>>[
+                      if (puedeModificar)
+                        const PopupMenuItem<_AccionCredito>(
+                          value: _AccionCredito.modificar,
+                          child: Row(
+                            children: <Widget>[
+                              Icon(Icons.edit_outlined),
+                              SizedBox(width: 12),
+                              Text('Modificar'),
+                            ],
+                          ),
                         ),
-                      ),
-                      PopupMenuItem<_AccionCredito>(
-                        value: _AccionCredito.eliminar,
-                        child: Row(
-                          children: <Widget>[
-                            Icon(Icons.delete_outline_rounded),
-                            SizedBox(width: 12),
-                            Text('Eliminar'),
-                          ],
+                      if (puedeEliminar)
+                        const PopupMenuItem<_AccionCredito>(
+                          value: _AccionCredito.eliminar,
+                          child: Row(
+                            children: <Widget>[
+                              Icon(Icons.delete_outline_rounded),
+                              SizedBox(width: 12),
+                              Text('Eliminar'),
+                            ],
+                          ),
                         ),
-                      ),
                     ];
                   },
                 ),
@@ -8116,12 +9767,16 @@ class _TarjetaCobroRuta extends StatelessWidget {
   const _TarjetaCobroRuta({
     required this.cobro,
     required this.pagoEnProceso,
+    required this.pagoAplicadoInstantaneo,
     required this.onRegistrarPago,
+    this.onGuardarUbicacion,
   });
 
   final CobroRuta cobro;
   final bool pagoEnProceso;
+  final bool pagoAplicadoInstantaneo;
   final VoidCallback? onRegistrarPago;
+  final VoidCallback? onGuardarUbicacion;
 
   @override
   Widget build(BuildContext context) {
@@ -8215,10 +9870,48 @@ class _TarjetaCobroRuta extends StatelessWidget {
           const SizedBox(height: 14),
           Align(
             alignment: Alignment.centerRight,
-            child: FilledButton.icon(
-              onPressed: onRegistrarPago,
-              icon: const Icon(Icons.payments_rounded),
-              label: Text(pagoEnProceso ? 'Procesando' : 'Registrar pago'),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              alignment: WrapAlignment.end,
+              children: <Widget>[
+                OutlinedButton.icon(
+                  key: ValueKey<String>('save-location-${cobro.id}'),
+                  onPressed: onGuardarUbicacion,
+                  icon: Icon(
+                    cobro.latitude == null || cobro.longitude == null
+                        ? Icons.add_location_alt_rounded
+                        : Icons.edit_location_alt_rounded,
+                    size: 18,
+                  ),
+                  label: Text(
+                    cobro.latitude == null || cobro.longitude == null
+                        ? 'Ubicar'
+                        : 'Actualizar punto',
+                  ),
+                ),
+                FilledButton.icon(
+                  key: ValueKey<String>('register-payment-${cobro.id}'),
+                  onPressed: onRegistrarPago,
+                  icon: pagoEnProceso
+                      ? const SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : pagoAplicadoInstantaneo
+                          ? const Icon(Icons.check_circle_rounded)
+                          : const Icon(Icons.payments_rounded),
+                  label: Text(
+                    pagoEnProceso
+                        ? 'Aplicando'
+                        : pagoAplicadoInstantaneo
+                            ? 'Aplicado'
+                            : cobro.saldo <= 0.009
+                                ? 'Pagado'
+                                : 'Registrar pago',
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -9138,6 +10831,271 @@ String _etiquetaCliente(Cliente cliente) {
   return '${cliente.nombreCompleto} - CC $cedula';
 }
 
+class _SelectorClientesCreditoMultiple extends StatefulWidget {
+  const _SelectorClientesCreditoMultiple({
+    required this.clientes,
+    required this.clientesSeleccionadosIds,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  final List<Cliente> clientes;
+  final Set<String> clientesSeleccionadosIds;
+  final bool enabled;
+  final ValueChanged<Set<String>> onChanged;
+
+  @override
+  State<_SelectorClientesCreditoMultiple> createState() =>
+      _SelectorClientesCreditoMultipleState();
+}
+
+class _SelectorClientesCreditoMultipleState
+    extends State<_SelectorClientesCreditoMultiple> {
+  late final TextEditingController _buscarController;
+
+  @override
+  void initState() {
+    super.initState();
+    _buscarController = TextEditingController();
+    _buscarController.addListener(_refrescar);
+  }
+
+  @override
+  void dispose() {
+    _buscarController.removeListener(_refrescar);
+    _buscarController.dispose();
+    super.dispose();
+  }
+
+  void _refrescar() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final List<Cliente> clientesFiltrados = _clientesFiltrados();
+    final int seleccionados = widget.clientesSeleccionadosIds.length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        TextField(
+          controller: _buscarController,
+          enabled: widget.enabled,
+          decoration: InputDecoration(
+            labelText: 'Clientes',
+            hintText: 'Buscar por nombre o cedula',
+            prefixIcon: const Icon(Icons.person_search_rounded),
+            suffixIcon: seleccionados == 0
+                ? null
+                : Padding(
+                    padding: const EdgeInsets.only(right: 10),
+                    child: Chip(
+                      label: Text('$seleccionados'),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+            suffixIconConstraints: const BoxConstraints(minWidth: 44),
+          ),
+        ),
+        const SizedBox(height: 8),
+        DecoratedBox(
+          decoration: BoxDecoration(
+            border: Border.all(color: Theme.of(context).dividerColor),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 260),
+            child: clientesFiltrados.isEmpty
+                ? Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(
+                      'No hay clientes con ese nombre o cedula',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  )
+                : ListView.separated(
+                    padding: EdgeInsets.zero,
+                    shrinkWrap: true,
+                    itemCount: clientesFiltrados.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (BuildContext context, int index) {
+                      final Cliente cliente = clientesFiltrados[index];
+                      final bool seleccionado =
+                          widget.clientesSeleccionadosIds.contains(cliente.id);
+                      return InkWell(
+                        onTap: widget.enabled
+                            ? () => _alternarCliente(cliente.id)
+                            : null,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 8,
+                          ),
+                          child: Row(
+                            children: <Widget>[
+                              Checkbox(
+                                value: seleccionado,
+                                onChanged: widget.enabled
+                                    ? (_) => _alternarCliente(cliente.id)
+                                    : null,
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: _ClienteOpcionCredito(cliente: cliente),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  List<Cliente> _clientesFiltrados() {
+    final String consulta = _buscarController.text.trim().toLowerCase();
+    if (consulta.isEmpty) {
+      return widget.clientes;
+    }
+
+    return widget.clientes.where((Cliente cliente) {
+      final String nombre = cliente.nombreCompleto.toLowerCase();
+      final String cedula = (cliente.cedula ?? '').toLowerCase();
+      final String negocio = (cliente.nombreComercial ?? '').toLowerCase();
+      return nombre.contains(consulta) ||
+          cedula.contains(consulta) ||
+          negocio.contains(consulta);
+    }).toList(growable: false);
+  }
+
+  void _alternarCliente(String clienteId) {
+    final Set<String> actualizados =
+        Set<String>.of(widget.clientesSeleccionadosIds);
+    if (!actualizados.add(clienteId)) {
+      actualizados.remove(clienteId);
+    }
+    widget.onChanged(actualizados);
+  }
+}
+
+class _MontosClientesCredito extends StatelessWidget {
+  const _MontosClientesCredito({
+    required this.clientes,
+    required this.clientesSeleccionadosIds,
+    required this.enabled,
+    required this.controllerForCliente,
+  });
+
+  final List<Cliente> clientes;
+  final Set<String> clientesSeleccionadosIds;
+  final bool enabled;
+  final TextEditingController Function(String clienteId) controllerForCliente;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<Cliente> seleccionados = clientes
+        .where(
+          (Cliente cliente) => clientesSeleccionadosIds.contains(cliente.id),
+        )
+        .toList(growable: false);
+
+    if (seleccionados.isEmpty) {
+      return InputDecorator(
+        decoration: const InputDecoration(
+          prefixIcon: Icon(Icons.request_quote_rounded),
+          labelText: 'Monto por cliente',
+        ),
+        child: Text(
+          'Selecciona al menos un cliente',
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: context.clay.subtleText,
+              ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          'Monto por cliente',
+          style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+        ),
+        const SizedBox(height: 8),
+        ...seleccionados.map(
+          (Cliente cliente) => Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: _MontoClienteCreditoItem(
+              cliente: cliente,
+              controller: controllerForCliente(cliente.id),
+              enabled: enabled,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _MontoClienteCreditoItem extends StatelessWidget {
+  const _MontoClienteCreditoItem({
+    required this.cliente,
+    required this.controller,
+    required this.enabled,
+  });
+
+  final Cliente cliente;
+  final TextEditingController controller;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final Widget clienteInfo = _ClienteOpcionCredito(cliente: cliente);
+        final Widget monto = TextField(
+          controller: controller,
+          enabled: enabled,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(
+            labelText: 'Monto',
+            prefixIcon: Icon(Icons.request_quote_rounded),
+          ),
+        );
+
+        if (constraints.maxWidth < 560) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              clienteInfo,
+              const SizedBox(height: 8),
+              monto,
+            ],
+          );
+        }
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Expanded(child: clienteInfo),
+            const SizedBox(width: 12),
+            SizedBox(width: 220, child: monto),
+          ],
+        );
+      },
+    );
+  }
+}
+
 class _FormularioCredito extends StatelessWidget {
   const _FormularioCredito({
     required this.clientes,
@@ -9169,6 +11127,9 @@ class _FormularioCredito extends StatelessWidget {
     this.accionLabel = 'Crear credito',
     this.clienteBloqueado = false,
     this.monedaBloqueada = false,
+    this.clientesSeleccionadosIds = const <String>{},
+    this.valorClienteController,
+    this.onClientesSeleccionadosChanged,
   });
 
   final List<Cliente> clientes;
@@ -9184,11 +11145,15 @@ class _FormularioCredito extends StatelessWidget {
   final DateTime fechaInicio;
   final bool omitirDomingos;
   final TextEditingController valorController;
+  final Set<String> clientesSeleccionadosIds;
+  final TextEditingController Function(String clienteId)?
+      valorClienteController;
   final TextEditingController interesController;
   final TextEditingController plazoController;
   final TextEditingController observacionController;
   final bool guardando;
   final ValueChanged<String?> onClienteChanged;
+  final ValueChanged<Set<String>>? onClientesSeleccionadosChanged;
   final ValueChanged<String?> onRutaChanged;
   final ValueChanged<String?> onMonedaChanged;
   final ValueChanged<int?> onFrecuenciaChanged;
@@ -9203,15 +11168,25 @@ class _FormularioCredito extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bool seleccionarVariosClientes =
+        onClientesSeleccionadosChanged != null && !clienteBloqueado;
     final Widget contenido = Column(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        _SelectorClienteCredito(
-          clientes: clientes,
-          clienteId: clienteId,
-          enabled: !guardando && !clienteBloqueado,
-          onChanged: onClienteChanged,
-        ),
+        if (seleccionarVariosClientes)
+          _SelectorClientesCreditoMultiple(
+            clientes: clientes,
+            clientesSeleccionadosIds: clientesSeleccionadosIds,
+            enabled: !guardando,
+            onChanged: onClientesSeleccionadosChanged!,
+          )
+        else
+          _SelectorClienteCredito(
+            clientes: clientes,
+            clienteId: clienteId,
+            enabled: !guardando && !clienteBloqueado,
+            onChanged: onClienteChanged,
+          ),
         const SizedBox(height: 12),
         DropdownButtonFormField<String?>(
           key: ValueKey<String?>('ruta-$rutaId'),
@@ -9295,27 +11270,47 @@ class _FormularioCredito extends StatelessWidget {
           onChanged: guardando ? null : onCajaMenorChanged,
         ),
         const SizedBox(height: 12),
-        _DosColumnas(
-          left: TextField(
-            controller: valorController,
+        if (seleccionarVariosClientes) ...<Widget>[
+          _MontosClientesCredito(
+            clientes: clientes,
+            clientesSeleccionadosIds: clientesSeleccionadosIds,
             enabled: !guardando,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
-              labelText: 'Valor principal',
-              prefixIcon: Icon(Icons.request_quote_rounded),
-            ),
+            controllerForCliente: valorClienteController!,
           ),
-          right: TextField(
+          const SizedBox(height: 12),
+          TextField(
             controller: interesController,
             enabled: !guardando,
             readOnly: true,
             enableInteractiveSelection: false,
             decoration: const InputDecoration(
-              labelText: 'Interés %',
+              labelText: 'Interes %',
               prefixIcon: Icon(Icons.percent_rounded),
             ),
           ),
-        ),
+        ] else
+          _DosColumnas(
+            left: TextField(
+              controller: valorController,
+              enabled: !guardando,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'Valor principal',
+                prefixIcon: Icon(Icons.request_quote_rounded),
+              ),
+            ),
+            right: TextField(
+              controller: interesController,
+              enabled: !guardando,
+              readOnly: true,
+              enableInteractiveSelection: false,
+              decoration: const InputDecoration(
+                labelText: 'Interés %',
+                prefixIcon: Icon(Icons.percent_rounded),
+              ),
+            ),
+          ),
         const SizedBox(height: 12),
         _DosColumnas(
           left: TextField(
@@ -9354,16 +11349,18 @@ class _FormularioCredito extends StatelessWidget {
           contentPadding: EdgeInsets.zero,
         ),
         const SizedBox(height: 8),
-        _ResumenCreditoAnimado(
-          valorController: valorController,
-          interesController: interesController,
-          plazoController: plazoController,
-          frecuencias: frecuencias,
-          frecuenciaPagoId: frecuenciaPagoId,
-          fechaInicio: fechaInicio,
-          omitirDomingos: omitirDomingos,
-        ),
-        const SizedBox(height: 12),
+        if (!seleccionarVariosClientes) ...<Widget>[
+          _ResumenCreditoAnimado(
+            valorController: valorController,
+            interesController: interesController,
+            plazoController: plazoController,
+            frecuencias: frecuencias,
+            frecuenciaPagoId: frecuenciaPagoId,
+            fechaInicio: fechaInicio,
+            omitirDomingos: omitirDomingos,
+          ),
+          const SizedBox(height: 12),
+        ],
         TextField(
           controller: observacionController,
           enabled: !guardando,
@@ -9622,6 +11619,279 @@ class _CamposCreditoSinCliente extends StatelessWidget {
   }
 }
 
+class _ClienteUbicacionPicker extends StatefulWidget {
+  const _ClienteUbicacionPicker({
+    required this.value,
+    required this.onChanged,
+    this.enabled = true,
+  });
+
+  final LatLng? value;
+  final ValueChanged<LatLng?> onChanged;
+  final bool enabled;
+
+  @override
+  State<_ClienteUbicacionPicker> createState() =>
+      _ClienteUbicacionPickerState();
+}
+
+class _ClienteUbicacionPickerState extends State<_ClienteUbicacionPicker>
+    with SingleTickerProviderStateMixin {
+  static const LatLng _riohacha = LatLng(11.5449, -72.9072);
+
+  late final MapcnController _controller;
+  LatLng? _value;
+  bool _mapReady = false;
+  bool _locating = false;
+  bool _usingDeviceLocation = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = MapcnController(vsync: this);
+    _value = widget.value;
+  }
+
+  @override
+  void didUpdateWidget(_ClienteUbicacionPicker oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final LatLng? value = widget.value;
+    if (value == null && oldWidget.value != null) {
+      _value = null;
+      _usingDeviceLocation = false;
+      return;
+    }
+    if (value != null &&
+        (oldWidget.value == null ||
+            oldWidget.value!.latitude != value.latitude ||
+            oldWidget.value!.longitude != value.longitude)) {
+      _controller.flyTo(
+        value,
+        zoom: 16,
+        duration: const Duration(milliseconds: 520),
+        curve: Curves.easeOutCubic,
+      );
+      _value = value;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _useCurrentLocation() async {
+    if (!widget.enabled || _locating) {
+      return;
+    }
+
+    setState(() => _locating = true);
+    try {
+      final LatLng position =
+          await const DeviceRouteLocationService().currentPosition();
+      _setValue(position, fromDevice: true);
+      _controller.flyTo(
+        position,
+        zoom: 17,
+        duration: const Duration(milliseconds: 650),
+        curve: Curves.easeOutCubic,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(_mensajeUbicacionCasa),
+          ),
+        );
+      }
+    } on RouteLocationException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.message)),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _locating = false);
+      }
+    }
+  }
+
+  void _markCenter(LatLng center, bool hasGesture) {
+    if (!hasGesture || !widget.enabled) {
+      return;
+    }
+    _setValue(center);
+  }
+
+  void _setValue(LatLng? value, {bool fromDevice = false}) {
+    setState(() {
+      _value = value;
+      _usingDeviceLocation = value != null && fromDevice;
+    });
+    widget.onChanged(value);
+  }
+
+  String _statusText() {
+    final LatLng? value = _value;
+    if (value == null) {
+      return 'Opcional: usa el localizador o mueve el mapa bajo el pin.';
+    }
+
+    final String coordinates =
+        '${value.latitude.toStringAsFixed(6)}, ${value.longitude.toStringAsFixed(6)}';
+    return _usingDeviceLocation
+        ? 'Ubicación actual marcada: $coordinates'
+        : coordinates;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ClayTokens clay = context.clay;
+    final LatLng center = _value ?? _riohacha;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: clay.surfaceHigh,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: clay.border),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    'Ubicacion en mapa',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleSmall
+                        ?.copyWith(fontWeight: FontWeight.w900),
+                  ),
+                ),
+                Tooltip(
+                  message: _statusText(),
+                  child: OutlinedButton.icon(
+                    onPressed: widget.enabled && !_locating
+                        ? _useCurrentLocation
+                        : null,
+                    icon: _locating
+                        ? const SizedBox.square(
+                            dimension: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.my_location_rounded, size: 18),
+                    label: Text(_locating ? 'Ubicando' : 'Localizador'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: SizedBox(
+                height: MediaQuery.sizeOf(context).width < 520 ? 220 : 260,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: <Widget>[
+                    AbsorbPointer(
+                      absorbing: !widget.enabled,
+                      child: Mapcn(
+                        controller: _controller,
+                        initialCenter: center,
+                        initialZoom: _value == null ? 13.5 : 16,
+                        style: MapcnStyle.dark,
+                        points: _value == null
+                            ? const <LatLng>[]
+                            : <LatLng>[_value!],
+                        markerConfig: MarkerConfig.minimal,
+                        showTooltip: false,
+                        showAttribution: true,
+                        minZoom: 3,
+                        maxZoom: 18,
+                        enableTileCaching: true,
+                        maxTileCache: 80,
+                        onCameraMove: (camera, hasGesture) {
+                          _markCenter(camera.center, hasGesture);
+                        },
+                        onMapReady: () {
+                          if (mounted) {
+                            setState(() => _mapReady = true);
+                          }
+                        },
+                      ),
+                    ),
+                    Center(
+                      child: Transform.translate(
+                        offset: const Offset(0, -18),
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: CobroAppTheme.primary,
+                            shape: BoxShape.circle,
+                            boxShadow: <BoxShadow>[
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.28),
+                                blurRadius: 14,
+                                offset: const Offset(0, 8),
+                              ),
+                            ],
+                          ),
+                          child: const Padding(
+                            padding: EdgeInsets.all(9),
+                            child: Icon(
+                              Icons.location_on_rounded,
+                              color: Colors.white,
+                              size: 24,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    if (!_mapReady)
+                      ColoredBox(
+                        color: clay.surface.withValues(alpha: 0.72),
+                        child: const Center(
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    _value == null
+                        ? 'Opcional: usa el localizador o mueve el mapa bajo el pin.'
+                        : _usingDeviceLocation
+                            ? 'Ubicación actual marcada: ${_value!.latitude.toStringAsFixed(6)}, ${_value!.longitude.toStringAsFixed(6)}'
+                            : '${_value!.latitude.toStringAsFixed(6)}, ${_value!.longitude.toStringAsFixed(6)}',
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: clay.subtleText),
+                  ),
+                ),
+                if (_value != null)
+                  TextButton.icon(
+                    onPressed: widget.enabled ? () => _setValue(null) : null,
+                    icon: const Icon(Icons.close_rounded, size: 18),
+                    label: const Text('Quitar'),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _DialogContent extends StatelessWidget {
   const _DialogContent({
     required this.child,
@@ -9687,13 +11957,15 @@ class _DosColumnas extends StatelessWidget {
 class _MovimientoCajaItem extends StatelessWidget {
   const _MovimientoCajaItem({
     required this.movimiento,
-    required this.esAdministrador,
+    required this.puedeModificar,
+    required this.puedeEliminar,
     required this.onModificar,
     required this.onEliminar,
   });
 
   final MovimientoCaja movimiento;
-  final bool esAdministrador;
+  final bool puedeModificar;
+  final bool puedeEliminar;
   final VoidCallback onModificar;
   final VoidCallback onEliminar;
 
@@ -9768,7 +12040,8 @@ class _MovimientoCajaItem extends StatelessWidget {
             _dinero(movimiento.montoConNaturaleza),
             style: TextStyle(color: color, fontWeight: FontWeight.w900),
           ),
-          if (esAdministrador && movimiento.esEditablePorAdmin) ...<Widget>[
+          if ((puedeModificar || puedeEliminar) &&
+              movimiento.esEditablePorAdmin) ...<Widget>[
             const SizedBox(width: 4),
             PopupMenuButton<_AccionMovimientoCaja>(
               tooltip: 'Acciones',
@@ -9782,27 +12055,29 @@ class _MovimientoCajaItem extends StatelessWidget {
                 }
               },
               itemBuilder: (BuildContext context) {
-                return const <PopupMenuEntry<_AccionMovimientoCaja>>[
-                  PopupMenuItem<_AccionMovimientoCaja>(
-                    value: _AccionMovimientoCaja.modificar,
-                    child: Row(
-                      children: <Widget>[
-                        Icon(Icons.edit_outlined),
-                        SizedBox(width: 12),
-                        Text('Modificar'),
-                      ],
+                return <PopupMenuEntry<_AccionMovimientoCaja>>[
+                  if (puedeModificar)
+                    const PopupMenuItem<_AccionMovimientoCaja>(
+                      value: _AccionMovimientoCaja.modificar,
+                      child: Row(
+                        children: <Widget>[
+                          Icon(Icons.edit_outlined),
+                          SizedBox(width: 12),
+                          Text('Modificar'),
+                        ],
+                      ),
                     ),
-                  ),
-                  PopupMenuItem<_AccionMovimientoCaja>(
-                    value: _AccionMovimientoCaja.eliminar,
-                    child: Row(
-                      children: <Widget>[
-                        Icon(Icons.delete_outline_rounded),
-                        SizedBox(width: 12),
-                        Text('Eliminar'),
-                      ],
+                  if (puedeEliminar)
+                    const PopupMenuItem<_AccionMovimientoCaja>(
+                      value: _AccionMovimientoCaja.eliminar,
+                      child: Row(
+                        children: <Widget>[
+                          Icon(Icons.delete_outline_rounded),
+                          SizedBox(width: 12),
+                          Text('Eliminar'),
+                        ],
+                      ),
                     ),
-                  ),
                 ];
               },
             ),
@@ -9814,9 +12089,17 @@ class _MovimientoCajaItem extends StatelessWidget {
 }
 
 class _ClienteItem extends StatelessWidget {
-  const _ClienteItem({required this.cliente});
+  const _ClienteItem({
+    required this.cliente,
+    required this.esAdministrador,
+    required this.onModificar,
+    required this.onEliminar,
+  });
 
   final Cliente cliente;
+  final bool esAdministrador;
+  final VoidCallback onModificar;
+  final VoidCallback onEliminar;
 
   @override
   Widget build(BuildContext context) {
@@ -9890,6 +12173,1251 @@ class _ClienteItem extends StatelessWidget {
                   fontWeight: FontWeight.w900,
                 ),
           ),
+          if (esAdministrador) ...<Widget>[
+            const SizedBox(width: 4),
+            PopupMenuButton<_AccionCliente>(
+              tooltip: 'Acciones',
+              icon: const Icon(Icons.more_vert_rounded),
+              onSelected: (_AccionCliente accion) {
+                switch (accion) {
+                  case _AccionCliente.modificar:
+                    onModificar();
+                  case _AccionCliente.eliminar:
+                    onEliminar();
+                }
+              },
+              itemBuilder: (BuildContext context) {
+                return const <PopupMenuEntry<_AccionCliente>>[
+                  PopupMenuItem<_AccionCliente>(
+                    value: _AccionCliente.modificar,
+                    child: Row(
+                      children: <Widget>[
+                        Icon(Icons.edit_outlined),
+                        SizedBox(width: 12),
+                        Text('Modificar'),
+                      ],
+                    ),
+                  ),
+                  PopupMenuItem<_AccionCliente>(
+                    value: _AccionCliente.eliminar,
+                    child: Row(
+                      children: <Widget>[
+                        Icon(Icons.delete_outline_rounded),
+                        SizedBox(width: 12),
+                        Text('Eliminar'),
+                      ],
+                    ),
+                  ),
+                ];
+              },
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _GestionEmpleadosPage extends StatefulWidget {
+  const _GestionEmpleadosPage({
+    required this.apiClient,
+    required this.cargarEmpleados,
+    required this.cargarActividadEmpleados,
+    required this.crearEmpleado,
+    required this.modificarEmpleado,
+    required this.puedeGestionar,
+    required this.mensajeError,
+    required this.mostrarMensaje,
+    this.embebida = false,
+  });
+
+  final ApiClient apiClient;
+  final Future<List<EmpleadoGestion>> Function() cargarEmpleados;
+  final Future<List<ActividadEmpleado>> Function() cargarActividadEmpleados;
+  final Future<bool> Function() crearEmpleado;
+  final Future<EmpleadoGestion?> Function(EmpleadoGestion empleado)
+      modificarEmpleado;
+  final bool puedeGestionar;
+  final String Function(Object error) mensajeError;
+  final void Function(String message) mostrarMensaje;
+  final bool embebida;
+
+  @override
+  State<_GestionEmpleadosPage> createState() => _GestionEmpleadosPageState();
+}
+
+class _GestionEmpleadosPageState extends State<_GestionEmpleadosPage> {
+  List<EmpleadoGestion> _empleados = const <EmpleadoGestion>[];
+  List<ActividadEmpleado> _actividades = const <ActividadEmpleado>[];
+  String? _empleadoSeleccionadoId;
+  Set<String> _permisosSeleccionados = Set<String>.of(
+    _permisosEmpleadoCodigos,
+  );
+  bool _aplicarATodos = false;
+  bool _cargando = true;
+  bool _guardando = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_recargarEmpleados());
+  }
+
+  EmpleadoGestion? _empleadoPorId(String? empleadoId) {
+    for (final EmpleadoGestion empleado in _empleados) {
+      if (empleado.id == empleadoId) {
+        return empleado;
+      }
+    }
+    return null;
+  }
+
+  Future<void> _recargarEmpleados() async {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _cargando = true;
+      _error = null;
+    });
+
+    try {
+      final List<dynamic> resultados = await Future.wait<dynamic>([
+        widget.cargarEmpleados(),
+        widget.cargarActividadEmpleados(),
+      ]);
+      final List<EmpleadoGestion> empleados =
+          resultados[0] as List<EmpleadoGestion>;
+      final List<ActividadEmpleado> actividades =
+          resultados[1] as List<ActividadEmpleado>;
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _empleados = empleados;
+        _actividades = actividades;
+        _sincronizarSeleccion(resetPermisos: true);
+      });
+    } catch (error) {
+      if (mounted) {
+        setState(() => _error = widget.mensajeError(error));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _cargando = false);
+      }
+    }
+  }
+
+  void _sincronizarSeleccion({required bool resetPermisos}) {
+    if (_empleados.isEmpty) {
+      _empleadoSeleccionadoId = null;
+      _permisosSeleccionados = Set<String>.of(_permisosEmpleadoCodigos);
+      return;
+    }
+
+    if (_aplicarATodos) {
+      if (resetPermisos) {
+        _permisosSeleccionados = Set<String>.of(_permisosEmpleadoCodigos);
+      }
+      return;
+    }
+
+    final bool seleccionValida = _empleados.any(
+      (EmpleadoGestion empleado) => empleado.id == _empleadoSeleccionadoId,
+    );
+    if (!seleccionValida) {
+      _empleadoSeleccionadoId = _empleados.first.id;
+    }
+
+    if (resetPermisos) {
+      _permisosSeleccionados =
+          _empleadoPorId(_empleadoSeleccionadoId)?.permisos.toSet() ??
+              Set<String>.of(_permisosEmpleadoCodigos);
+    }
+  }
+
+  void _seleccionarEmpleado(String? empleadoId) {
+    final EmpleadoGestion? empleado = _empleadoPorId(empleadoId);
+    setState(() {
+      _aplicarATodos = false;
+      _empleadoSeleccionadoId = empleado?.id;
+      _permisosSeleccionados = empleado == null
+          ? Set<String>.of(_permisosEmpleadoCodigos)
+          : empleado.permisos.toSet();
+    });
+  }
+
+  Future<void> _crearEmpleado() async {
+    if (_guardando || !widget.puedeGestionar) {
+      return;
+    }
+    setState(() => _guardando = true);
+    try {
+      final bool creado = await widget.crearEmpleado();
+      if (creado) {
+        await _recargarEmpleados();
+      }
+    } catch (error) {
+      widget.mostrarMensaje(widget.mensajeError(error));
+    } finally {
+      if (mounted) {
+        setState(() => _guardando = false);
+      }
+    }
+  }
+
+  Future<void> _modificarEmpleado(EmpleadoGestion empleado) async {
+    if (_guardando || !widget.puedeGestionar) {
+      return;
+    }
+    setState(() => _guardando = true);
+
+    try {
+      final EmpleadoGestion? actualizado =
+          await widget.modificarEmpleado(empleado);
+      if (!mounted || actualizado == null) {
+        return;
+      }
+      setState(() {
+        _empleados = _empleados
+            .map(
+              (EmpleadoGestion item) =>
+                  item.id == actualizado.id ? actualizado : item,
+            )
+            .toList(growable: false);
+        if (!_aplicarATodos && _empleadoSeleccionadoId == actualizado.id) {
+          _permisosSeleccionados = actualizado.permisos.toSet();
+        }
+      });
+      widget.mostrarMensaje('Empleado modificado');
+    } catch (error) {
+      widget.mostrarMensaje(widget.mensajeError(error));
+    } finally {
+      if (mounted) {
+        setState(() => _guardando = false);
+      }
+    }
+  }
+
+  Future<void> _actualizarEstadoEmpleado(
+    EmpleadoGestion empleado,
+    bool activo,
+  ) async {
+    if (_guardando || !widget.puedeGestionar) {
+      return;
+    }
+    setState(() => _guardando = true);
+
+    try {
+      final EmpleadoGestion actualizado = EmpleadoGestion.fromJson(
+        await widget.apiClient.patchObject(
+          '/usuarios/${empleado.id}/estado',
+          <String, dynamic>{'activo': activo},
+        ),
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _empleados = _empleados
+            .map(
+              (EmpleadoGestion item) =>
+                  item.id == actualizado.id ? actualizado : item,
+            )
+            .toList(growable: false);
+        if (!_aplicarATodos && _empleadoSeleccionadoId == actualizado.id) {
+          _permisosSeleccionados = actualizado.permisos.toSet();
+        }
+      });
+      widget.mostrarMensaje(
+        activo ? 'Empleado activado' : 'Empleado desactivado',
+      );
+    } catch (error) {
+      widget.mostrarMensaje(widget.mensajeError(error));
+    } finally {
+      if (mounted) {
+        setState(() => _guardando = false);
+      }
+    }
+  }
+
+  Future<void> _guardarPermisos() async {
+    final EmpleadoGestion? empleadoSeleccionado =
+        _empleadoPorId(_empleadoSeleccionadoId);
+    if (_guardando ||
+        !widget.puedeGestionar ||
+        _empleados.isEmpty ||
+        (!_aplicarATodos && empleadoSeleccionado == null)) {
+      return;
+    }
+
+    setState(() => _guardando = true);
+    try {
+      final List<dynamic> respuesta = await widget.apiClient.patchList(
+        '/usuarios/permisos',
+        <String, dynamic>{
+          'todos': _aplicarATodos,
+          if (!_aplicarATodos)
+            'usuarioIds': <String>[empleadoSeleccionado!.id],
+          'permisos': _permisosSeleccionados.toList(growable: false),
+        },
+      );
+
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _empleados = respuesta
+            .map(
+              (dynamic item) =>
+                  EmpleadoGestion.fromJson(item as Map<String, dynamic>),
+            )
+            .toList(growable: false);
+        _sincronizarSeleccion(resetPermisos: !_aplicarATodos);
+      });
+      widget.mostrarMensaje('Permisos actualizados');
+    } catch (error) {
+      widget.mostrarMensaje(widget.mensajeError(error));
+    } finally {
+      if (mounted) {
+        setState(() => _guardando = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool esMovil =
+        MediaQuery.sizeOf(context).width < _HomePageState._mobileBreakpoint;
+    final bool mostrarGuardarMovil = widget.puedeGestionar &&
+        esMovil &&
+        !_cargando &&
+        _error == null &&
+        _empleados.isNotEmpty;
+
+    if (widget.embebida) {
+      return _construirCuerpo(
+        esMovil,
+        usarBarraGuardarMovil: false,
+      );
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Gestion de empleado'),
+        actions: <Widget>[
+          Tooltip(
+            message: 'Recargar',
+            child: IconButton(
+              onPressed: _cargando || _guardando ? null : _recargarEmpleados,
+              icon: const Icon(Icons.refresh_rounded),
+            ),
+          ),
+          if (!esMovil && widget.puedeGestionar)
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: FilledButton.icon(
+                onPressed: _guardando ? null : _crearEmpleado,
+                icon: const Icon(Icons.person_add_alt_1_rounded),
+                label: const Text('Agregar empleado'),
+              ),
+            ),
+        ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Divider(height: 1, color: context.clay.border),
+        ),
+      ),
+      body: SafeArea(
+        bottom: !esMovil,
+        child: DecoratedBox(
+          decoration: BoxDecoration(color: context.clay.background),
+          child: _construirCuerpo(
+            esMovil,
+            usarBarraGuardarMovil: true,
+          ),
+        ),
+      ),
+      floatingActionButton: esMovil &&
+              widget.puedeGestionar &&
+              !_cargando &&
+              _error == null
+          ? FloatingActionButton(
+              onPressed: _guardando ? null : _crearEmpleado,
+              tooltip: 'Agregar empleado',
+              child: const Icon(Icons.person_add_alt_1_rounded),
+            )
+          : null,
+      bottomNavigationBar:
+          mostrarGuardarMovil ? _construirBarraGuardarMovil() : null,
+    );
+  }
+
+  Widget _construirCuerpo(
+    bool esMovil, {
+    required bool usarBarraGuardarMovil,
+  }) {
+    if (_cargando && _empleados.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_error != null && _empleados.isEmpty) {
+      return Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(18),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 460),
+            child: _EstadoVacio(
+              icono: Icons.warning_amber_rounded,
+              titulo: 'No se pudo cargar',
+              mensaje: _error!,
+              accion: OutlinedButton.icon(
+                onPressed: _recargarEmpleados,
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('Reintentar'),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _recargarEmpleados,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.fromLTRB(
+          esMovil ? 14 : 24,
+          esMovil ? 14 : 24,
+          esMovil ? 14 : 24,
+          esMovil && usarBarraGuardarMovil ? 112 : 28,
+        ),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 1160),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                _construirEncabezado(esMovil),
+                const SizedBox(height: 14),
+                if (esMovil)
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      _construirPanelEmpleados(),
+                      if (widget.puedeGestionar) ...<Widget>[
+                        const SizedBox(height: 14),
+                        _construirPanelPermisos(
+                          esMovil,
+                          usarBarraGuardarMovil: usarBarraGuardarMovil,
+                        ),
+                      ],
+                      const SizedBox(height: 14),
+                      _construirPanelActividad(esMovil),
+                    ],
+                  )
+                else
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      SizedBox(
+                        width: 390,
+                        child: _construirPanelEmpleados(),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: <Widget>[
+                            if (widget.puedeGestionar) ...<Widget>[
+                              _construirPanelPermisos(
+                                esMovil,
+                                usarBarraGuardarMovil: usarBarraGuardarMovil,
+                              ),
+                              const SizedBox(height: 16),
+                            ],
+                            _construirPanelActividad(esMovil),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _construirEncabezado(bool esMovil) {
+    final int activos = _empleados.where((EmpleadoGestion e) => e.activo).length;
+    final int inactivos = _empleados.length - activos;
+
+    return ClaySurface(
+      radius: 18,
+      padding: EdgeInsets.all(esMovil ? 16 : 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              const ClayIcon(icon: Icons.manage_accounts_rounded),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      'Gestion de empleado',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w900,
+                          ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      widget.puedeGestionar
+                          ? 'Administra empleados, permisos y actividad diaria.'
+                          : 'Consulta el equipo y la actividad diaria.',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: context.clay.subtleText,
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: <Widget>[
+              _EmpleadoGestionMetrica(
+                icono: Icons.groups_rounded,
+                etiqueta: 'Empleados',
+                valor: _empleados.length.toString(),
+              ),
+              _EmpleadoGestionMetrica(
+                icono: Icons.check_circle_rounded,
+                etiqueta: 'Activos',
+                valor: activos.toString(),
+                color: CobroAppTheme.success,
+              ),
+              _EmpleadoGestionMetrica(
+                icono: Icons.pause_circle_rounded,
+                etiqueta: 'Inactivos',
+                valor: inactivos.toString(),
+                color: CobroAppTheme.danger,
+              ),
+            ],
+          ),
+          if (widget.embebida) ...<Widget>[
+            const SizedBox(height: 16),
+            Align(
+              alignment: Alignment.centerRight,
+              child: SizedBox(
+                width: esMovil ? double.infinity : null,
+                child: FilledButton.icon(
+                  onPressed: _guardando ? null : _crearEmpleado,
+                  icon: const Icon(Icons.person_add_alt_1_rounded),
+                  label: const Text('Agregar empleado'),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _construirPanelEmpleados() {
+    return ClaySurface(
+      radius: 18,
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  'Empleados',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
+                ),
+              ),
+              if (_cargando)
+                const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (_empleados.isEmpty)
+            _MensajePanel(
+              icono: Icons.groups_outlined,
+              titulo: 'Sin empleados',
+              mensaje: 'Agrega un empleado para asignar permisos.',
+            )
+          else
+            ..._empleados.map(
+              (EmpleadoGestion empleado) => Padding(
+                padding: const EdgeInsets.only(bottom: 9),
+                child: _EmpleadoGestionItem(
+                  empleado: empleado,
+                  seleccionado: empleado.id == _empleadoSeleccionadoId &&
+                      !_aplicarATodos,
+                  guardando: _guardando,
+                  puedeGestionar: widget.puedeGestionar,
+                  onSeleccionar: () => _seleccionarEmpleado(empleado.id),
+                  onModificar: () => _modificarEmpleado(empleado),
+                  onActivoChanged: (bool activo) =>
+                      _actualizarEstadoEmpleado(empleado, activo),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _construirPanelPermisos(
+    bool esMovil, {
+    required bool usarBarraGuardarMovil,
+  }) {
+    final EmpleadoGestion? empleadoSeleccionado =
+        _empleadoPorId(_empleadoSeleccionadoId);
+    final String destinoPermisos = _aplicarATodos
+        ? 'Todos los empleados'
+        : empleadoSeleccionado?.nombreCompleto ?? 'Selecciona un empleado';
+
+    return ClaySurface(
+      radius: 18,
+      padding: EdgeInsets.all(esMovil ? 14 : 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      'Permisos de empleados',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w900,
+                          ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      destinoPermisos,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: context.clay.subtleText,
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+              if (!esMovil) const Icon(Icons.admin_panel_settings_rounded),
+            ],
+          ),
+          const SizedBox(height: 12),
+          SwitchListTile(
+            value: _aplicarATodos,
+            onChanged: _guardando || _empleados.isEmpty
+                ? null
+                : (bool value) {
+                    setState(() {
+                      _aplicarATodos = value;
+                      if (value) {
+                        _permisosSeleccionados = Set<String>.of(
+                          _permisosEmpleadoCodigos,
+                        );
+                      } else {
+                        _empleadoSeleccionadoId ??= _empleados.first.id;
+                        _permisosSeleccionados =
+                            _empleadoPorId(_empleadoSeleccionadoId)
+                                    ?.permisos
+                                    .toSet() ??
+                                Set<String>.of(_permisosEmpleadoCodigos);
+                      }
+                    });
+                  },
+            title: const Text('Aplicar a todos los empleados'),
+            secondary: const Icon(Icons.groups_rounded),
+            contentPadding: EdgeInsets.zero,
+          ),
+          if (!_aplicarATodos && _empleados.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              key: ValueKey<String?>(_empleadoSeleccionadoId),
+              initialValue: _empleadoSeleccionadoId,
+              decoration: const InputDecoration(
+                labelText: 'Empleado',
+                prefixIcon: Icon(Icons.person_rounded),
+              ),
+              items: _empleados
+                  .map(
+                    (EmpleadoGestion empleado) => DropdownMenuItem<String>(
+                      value: empleado.id,
+                      child: Text(
+                        empleado.nombreCompleto,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  )
+                  .toList(growable: false),
+              onChanged: _guardando ? null : _seleccionarEmpleado,
+            ),
+          ],
+          const SizedBox(height: 16),
+          if (_empleados.isEmpty)
+            _MensajePanel(
+              icono: Icons.lock_open_rounded,
+              titulo: 'Permisos pendientes',
+              mensaje: 'Cuando agregues empleados podras asignar accesos.',
+            )
+          else
+            ..._permisosEmpleado.map(
+              (_PermisoEmpleadoDef permiso) => CheckboxListTile(
+                value: _permisosSeleccionados.contains(permiso.codigo),
+                onChanged: _guardando
+                    ? null
+                    : (bool? value) {
+                        setState(() {
+                          if (value ?? false) {
+                            _permisosSeleccionados.add(permiso.codigo);
+                          } else {
+                            _permisosSeleccionados.remove(permiso.codigo);
+                          }
+                        });
+                      },
+                title: Text(permiso.nombre),
+                controlAffinity: ListTileControlAffinity.leading,
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
+          if (!esMovil || !usarBarraGuardarMovil) ...<Widget>[
+            const SizedBox(height: 16),
+            Align(
+              alignment: Alignment.centerRight,
+              child: _construirGuardarPermisosButton(expandido: esMovil),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _construirPanelActividad(bool esMovil) {
+    return ClaySurface(
+      radius: 18,
+      padding: EdgeInsets.all(esMovil ? 14 : 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      'Actividad de los empleados',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w900,
+                          ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'Rutas, recaudos y cumplimiento de cobros de hoy',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: context.clay.subtleText,
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+              if (_cargando)
+                const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              else
+                const Icon(Icons.timeline_rounded),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (_actividades.isEmpty)
+            _MensajePanel(
+              icono: Icons.route_outlined,
+              titulo: 'Sin actividad',
+              mensaje: 'No hay rutas, creditos o recaudos para mostrar.',
+            )
+          else
+            ..._actividades.map(
+              (ActividadEmpleado actividad) => Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _ActividadEmpleadoCard(actividad: actividad),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _construirGuardarPermisosButton({required bool expandido}) {
+    final EmpleadoGestion? empleadoSeleccionado =
+        _empleadoPorId(_empleadoSeleccionadoId);
+    final bool habilitado = !_guardando &&
+        widget.puedeGestionar &&
+        _empleados.isNotEmpty &&
+        (_aplicarATodos || empleadoSeleccionado != null);
+    final Widget button = FilledButton.icon(
+      onPressed: habilitado ? _guardarPermisos : null,
+      icon: _guardando
+          ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white,
+              ),
+            )
+          : const Icon(Icons.save_rounded),
+      label: const Text('Guardar permisos'),
+    );
+
+    return expandido ? SizedBox(width: double.infinity, child: button) : button;
+  }
+
+  Widget _construirBarraGuardarMovil() {
+    return ColoredBox(
+      color: context.clay.background,
+      child: SafeArea(
+        top: false,
+        minimum: const EdgeInsets.fromLTRB(14, 8, 14, 12),
+        child: _construirGuardarPermisosButton(expandido: true),
+      ),
+    );
+  }
+}
+
+class _ActividadEmpleadoCard extends StatelessWidget {
+  const _ActividadEmpleadoCard({required this.actividad});
+
+  final ActividadEmpleado actividad;
+
+  @override
+  Widget build(BuildContext context) {
+    final ClayTokens clay = context.clay;
+    final Color estadoColor = switch (actividad.estadoRuta) {
+      EstadoActividadEmpleado.cumplido => CobroAppTheme.success,
+      EstadoActividadEmpleado.pendiente => CobroAppTheme.warning,
+      EstadoActividadEmpleado.sinRutaHoy => CobroAppTheme.primary,
+    };
+    final String estadoTexto = switch (actividad.estadoRuta) {
+      EstadoActividadEmpleado.cumplido => 'Cumplido',
+      EstadoActividadEmpleado.pendiente => 'Pendiente',
+      EstadoActividadEmpleado.sinRutaHoy => 'Sin ruta hoy',
+    };
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: clay.surfaceHigh,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: clay.border),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                CircleAvatar(
+                  backgroundColor: estadoColor.withValues(alpha: 0.12),
+                  foregroundColor: estadoColor,
+                  child: Text(
+                    actividad.nombreCompleto.isEmpty
+                        ? '?'
+                        : actividad.nombreCompleto
+                            .substring(0, 1)
+                            .toUpperCase(),
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        actividad.nombreCompleto,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style:
+                            Theme.of(context).textTheme.titleSmall?.copyWith(
+                                  fontWeight: FontWeight.w900,
+                                ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${actividad.usuario} - ${actividad.rutas.length} rutas',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: clay.subtleText,
+                              fontWeight: FontWeight.w700,
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  estadoTexto,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: estadoColor,
+                        fontWeight: FontWeight.w900,
+                      ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: LinearProgressIndicator(
+                minHeight: 8,
+                value: actividad.porcentajeCumplimiento / 100,
+                backgroundColor: clay.border.withValues(alpha: 0.42),
+                valueColor: AlwaysStoppedAnimation<Color>(estadoColor),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '${actividad.resumen.cumplidosHoy}/${actividad.resumen.deberesHoy} deberes cumplidos hoy',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: clay.subtleText,
+                    fontWeight: FontWeight.w700,
+                  ),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: <Widget>[
+                _ActividadDato(
+                  icono: Icons.payments_rounded,
+                  etiqueta: 'Recaudo hoy',
+                  valor: _dinero(actividad.resumen.recaudoHoy),
+                  color: CobroAppTheme.success,
+                ),
+                _ActividadDato(
+                  icono: Icons.calendar_month_rounded,
+                  etiqueta: 'Recaudo mes',
+                  valor: _dinero(actividad.resumen.recaudoMes),
+                ),
+                _ActividadDato(
+                  icono: Icons.add_business_rounded,
+                  etiqueta: 'Creditos mes',
+                  valor: actividad.resumen.creditosMes.toString(),
+                ),
+                _ActividadDato(
+                  icono: Icons.warning_amber_rounded,
+                  etiqueta: 'Pendientes',
+                  valor: actividad.resumen.pendientesHoy.toString(),
+                  color: actividad.resumen.pendientesHoy > 0
+                      ? CobroAppTheme.warning
+                      : CobroAppTheme.success,
+                ),
+                _ActividadDato(
+                  icono: Icons.priority_high_rounded,
+                  etiqueta: 'Atrasados',
+                  valor: actividad.resumen.atrasados.toString(),
+                  color: actividad.resumen.atrasados > 0
+                      ? CobroAppTheme.danger
+                      : CobroAppTheme.success,
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (actividad.rutas.isEmpty)
+              Text(
+                'Sin rutas asignadas por creditos creados.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: clay.subtleText,
+                      fontWeight: FontWeight.w700,
+                    ),
+              )
+            else
+              Column(
+                children: actividad.rutas
+                    .map(
+                      (ActividadRutaEmpleado ruta) => _ActividadRutaRow(
+                        ruta: ruta,
+                      ),
+                    )
+                    .toList(growable: false),
+              ),
+            if (actividad.ultimaActividad != null) ...<Widget>[
+              const SizedBox(height: 8),
+              Text(
+                'Ultima actividad ${_fechaHoraEtiqueta(actividad.ultimaActividad)}',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: clay.subtleText,
+                    ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ActividadDato extends StatelessWidget {
+  const _ActividadDato({
+    required this.icono,
+    required this.etiqueta,
+    required this.valor,
+    this.color,
+  });
+
+  final IconData icono;
+  final String etiqueta;
+  final String valor;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color iconColor = color ?? Theme.of(context).colorScheme.primary;
+
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: 132),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: iconColor.withValues(alpha: 0.09),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Icon(icono, size: 18, color: iconColor),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      valor,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                            fontWeight: FontWeight.w900,
+                          ),
+                    ),
+                    Text(
+                      etiqueta,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: context.clay.subtleText,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ActividadRutaRow extends StatelessWidget {
+  const _ActividadRutaRow({required this.ruta});
+
+  final ActividadRutaEmpleado ruta;
+
+  @override
+  Widget build(BuildContext context) {
+    final ClayTokens clay = context.clay;
+    final int deberes = ruta.debenHoy;
+    final int cumplidos = ruta.cumplidosHoy;
+    final double progreso = deberes == 0 ? 1 : cumplidos / deberes;
+    final Color color =
+        ruta.pendientesHoy > 0 || ruta.atrasados > 0
+            ? CobroAppTheme.warning
+            : CobroAppTheme.success;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          border: Border.all(color: clay.border),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  Icon(Icons.route_rounded, size: 18, color: color),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      ruta.nombre,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                  Text(
+                    _dinero(ruta.recaudadoHoy),
+                    style: TextStyle(color: color, fontWeight: FontWeight.w900),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: LinearProgressIndicator(
+                  minHeight: 6,
+                  value: math.max(0.0, math.min(1.0, progreso)),
+                  backgroundColor: clay.border.withValues(alpha: 0.4),
+                  valueColor: AlwaysStoppedAnimation<Color>(color),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '${ruta.creditos} creditos - ${ruta.clientes} clientes - '
+                '$cumplidos/$deberes hoy - ${ruta.atrasados} atrasados',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: clay.subtleText,
+                      fontWeight: FontWeight.w700,
+                    ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _EmpleadoGestionMetrica extends StatelessWidget {
+  const _EmpleadoGestionMetrica({
+    required this.icono,
+    required this.etiqueta,
+    required this.valor,
+    this.color,
+  });
+
+  final IconData icono;
+  final String etiqueta;
+  final String valor;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final ClayTokens clay = context.clay;
+    final Color acento = color ?? Theme.of(context).colorScheme.primary;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Color.alphaBlend(
+          acento.withValues(alpha: clay.isDark ? 0.16 : 0.09),
+          clay.surfaceHigh,
+        ),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: acento.withValues(alpha: 0.2)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(icono, size: 18, color: acento),
+            const SizedBox(width: 8),
+            Text(
+              valor,
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    color: acento,
+                    fontWeight: FontWeight.w900,
+                  ),
+            ),
+            const SizedBox(width: 5),
+            Text(
+              etiqueta,
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: clay.subtleText,
+                    fontWeight: FontWeight.w800,
+                  ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MensajePanel extends StatelessWidget {
+  const _MensajePanel({
+    required this.icono,
+    required this.titulo,
+    required this.mensaje,
+  });
+
+  final IconData icono;
+  final String titulo;
+  final String mensaje;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 18),
+      child: Column(
+        children: <Widget>[
+          Icon(icono, size: 34, color: CobroAppTheme.primary),
+          const SizedBox(height: 9),
+          Text(
+            titulo,
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w900,
+                ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            mensaje,
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: context.clay.subtleText,
+                  fontWeight: FontWeight.w600,
+                ),
+          ),
         ],
       ),
     );
@@ -9943,6 +13471,163 @@ class _EstadoVacio extends StatelessWidget {
   }
 }
 
+class _EmpleadoGestionItem extends StatelessWidget {
+  const _EmpleadoGestionItem({
+    required this.empleado,
+    required this.seleccionado,
+    required this.guardando,
+    required this.puedeGestionar,
+    required this.onSeleccionar,
+    required this.onModificar,
+    required this.onActivoChanged,
+  });
+
+  final EmpleadoGestion empleado;
+  final bool seleccionado;
+  final bool guardando;
+  final bool puedeGestionar;
+  final VoidCallback onSeleccionar;
+  final VoidCallback onModificar;
+  final ValueChanged<bool> onActivoChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final ClayTokens clay = context.clay;
+    final Color estadoColor =
+        empleado.activo ? CobroAppTheme.success : CobroAppTheme.danger;
+    final int permisosActivos = empleado.permisos.length;
+
+    return ClaySurface(
+      radius: 12,
+      padding: EdgeInsets.zero,
+      color: seleccionado ? clay.surfaceHigh : clay.surface,
+      borderColor: seleccionado
+          ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.42)
+          : clay.border,
+      onTap: guardando ? null : onSeleccionar,
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final Widget avatar = CircleAvatar(
+            backgroundColor:
+                Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
+            foregroundColor: Theme.of(context).colorScheme.primary,
+            child: Text(
+              empleado.nombreCompleto.isEmpty
+                  ? '?'
+                  : empleado.nombreCompleto.substring(0, 1).toUpperCase(),
+              style: const TextStyle(fontWeight: FontWeight.w900),
+            ),
+          );
+          final Widget estado = Text(
+            empleado.activo ? 'Activo' : 'Inactivo',
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: estadoColor,
+                  fontWeight: FontWeight.w900,
+                ),
+          );
+          final Widget switchEstado = Switch(
+            value: empleado.activo,
+            onChanged: guardando || !puedeGestionar ? null : onActivoChanged,
+          );
+          final Widget? botonEditar = puedeGestionar
+              ? IconButton(
+                  tooltip: 'Modificar empleado',
+                  onPressed: guardando ? null : onModificar,
+                  icon: const Icon(Icons.edit_outlined),
+                )
+              : null;
+
+          if (constraints.maxWidth >= 380) {
+            return ListTile(
+              leading: avatar,
+              title: Text(
+                empleado.nombreCompleto,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w900),
+              ),
+              subtitle: Text(
+                '${empleado.usuario} - $permisosActivos permisos',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              trailing: Wrap(
+                spacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: <Widget>[
+                  estado,
+                  if (botonEditar != null) botonEditar,
+                  switchEstado,
+                ],
+              ),
+            );
+          }
+
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 10, 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    avatar,
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            empleado.nombreCompleto,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            empleado.usuario,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style:
+                                Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: clay.subtleText,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (botonEditar != null) botonEditar,
+                    switchEstado,
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: <Widget>[
+                    estado,
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '$permisosActivos permisos',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.right,
+                        style: Theme.of(context).textTheme.labelMedium,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
 class _DestinoMenu {
   const _DestinoMenu({
     required this.icono,
@@ -9955,10 +13640,20 @@ class _DestinoMenu {
   final String etiqueta;
 }
 
+class _PermisoEmpleadoDef {
+  const _PermisoEmpleadoDef({
+    required this.codigo,
+    required this.nombre,
+  });
+
+  final String codigo;
+  final String nombre;
+}
+
 enum _AccionSesion {
   recargar,
   cambiarTema,
-  crearEmpleado,
+  gestionEmpleados,
   cerrarSesion,
 }
 
@@ -9972,7 +13667,8 @@ enum _FiltroEstadoRuta {
   todos,
   alDia,
   pendiente,
-  atrasado;
+  atrasado,
+  pagado;
 
   EstadoCobro? get estadoCobro {
     return switch (this) {
@@ -9980,6 +13676,7 @@ enum _FiltroEstadoRuta {
       _FiltroEstadoRuta.alDia => EstadoCobro.alDia,
       _FiltroEstadoRuta.pendiente => EstadoCobro.pendiente,
       _FiltroEstadoRuta.atrasado => EstadoCobro.atrasado,
+      _FiltroEstadoRuta.pagado => EstadoCobro.pagado,
     };
   }
 
@@ -9989,6 +13686,7 @@ enum _FiltroEstadoRuta {
       _FiltroEstadoRuta.alDia => 'AL_DIA',
       _FiltroEstadoRuta.pendiente => 'PENDIENTE',
       _FiltroEstadoRuta.atrasado => 'ATRASADO',
+      _FiltroEstadoRuta.pagado => 'PAGADO',
     };
   }
 }
@@ -10000,6 +13698,11 @@ enum _FiltroEstadoCredito {
 }
 
 enum _AccionCredito {
+  modificar,
+  eliminar,
+}
+
+enum _AccionCliente {
   modificar,
   eliminar,
 }
@@ -10094,10 +13797,19 @@ class SesionUsuario {
     required this.correo,
     required this.roles,
     required this.esAdministrador,
+    required this.permisos,
+    required this.activo,
   });
 
   factory SesionUsuario.fromJson(Map<String, dynamic> json) {
     final Object? rawRoles = json['roles'];
+    final Object? rawPermisos = json['permisos'];
+    final bool esAdministrador = json['esAdministrador'] as bool? ?? false;
+    final List<String> permisos = rawPermisos is List<dynamic>
+        ? rawPermisos.whereType<String>().toList(growable: false)
+        : esAdministrador
+            ? _permisosEmpleadoCodigos
+            : const <String>[];
 
     return SesionUsuario(
       id: json['id'] as String,
@@ -10107,7 +13819,9 @@ class SesionUsuario {
       roles: rawRoles is List<dynamic>
           ? rawRoles.whereType<String>().toList(growable: false)
           : const <String>[],
-      esAdministrador: json['esAdministrador'] as bool? ?? false,
+      esAdministrador: esAdministrador,
+      permisos: permisos,
+      activo: json['activo'] as bool? ?? true,
     );
   }
 
@@ -10117,6 +13831,203 @@ class SesionUsuario {
   final String correo;
   final List<String> roles;
   final bool esAdministrador;
+  final List<String> permisos;
+  final bool activo;
+
+  bool puede(String permiso) {
+    return esAdministrador || permisos.contains(permiso);
+  }
+}
+
+class EmpleadoGestion {
+  const EmpleadoGestion({
+    required this.id,
+    required this.usuario,
+    required this.nombreCompleto,
+    required this.correo,
+    required this.permisos,
+    required this.activo,
+  });
+
+  factory EmpleadoGestion.fromJson(Map<String, dynamic> json) {
+    final Object? rawPermisos = json['permisos'];
+    return EmpleadoGestion(
+      id: json['id'] as String,
+      usuario: json['usuario'] as String,
+      nombreCompleto: json['nombreCompleto'] as String,
+      correo: json['correo'] as String,
+      permisos: rawPermisos is List<dynamic>
+          ? rawPermisos.whereType<String>().toList(growable: false)
+          : const <String>[],
+      activo: json['activo'] as bool? ?? true,
+    );
+  }
+
+  final String id;
+  final String usuario;
+  final String nombreCompleto;
+  final String correo;
+  final List<String> permisos;
+  final bool activo;
+}
+
+enum EstadoActividadEmpleado {
+  cumplido,
+  pendiente,
+  sinRutaHoy;
+
+  factory EstadoActividadEmpleado.fromWire(String? value) {
+    return switch (value) {
+      'CUMPLIDO' => EstadoActividadEmpleado.cumplido,
+      'PENDIENTE' => EstadoActividadEmpleado.pendiente,
+      _ => EstadoActividadEmpleado.sinRutaHoy,
+    };
+  }
+}
+
+class ActividadEmpleado {
+  const ActividadEmpleado({
+    required this.empleadoId,
+    required this.usuario,
+    required this.nombreCompleto,
+    required this.correo,
+    required this.activo,
+    required this.estadoRuta,
+    required this.porcentajeCumplimiento,
+    required this.rutas,
+    required this.resumen,
+    this.ultimaActividad,
+  });
+
+  factory ActividadEmpleado.fromJson(Map<String, dynamic> json) {
+    final Object? rawResumen = json['resumen'];
+    return ActividadEmpleado(
+      empleadoId: json['empleadoId'] as String,
+      usuario: json['usuario'] as String,
+      nombreCompleto: json['nombreCompleto'] as String,
+      correo: json['correo'] as String,
+      activo: json['activo'] as bool? ?? true,
+      estadoRuta:
+          EstadoActividadEmpleado.fromWire(json['estadoRuta'] as String?),
+      porcentajeCumplimiento: math.max(
+        0,
+        math.min(100, _enteroJson(json['porcentajeCumplimiento'])),
+      ),
+      rutas: _lista(json['rutas'])
+          .map(ActividadRutaEmpleado.fromJson)
+          .toList(growable: false),
+      resumen: rawResumen is Map<String, dynamic>
+          ? ActividadEmpleadoResumen.fromJson(rawResumen)
+          : const ActividadEmpleadoResumen.vacio(),
+      ultimaActividad: _fechaNullable(json['ultimaActividad']),
+    );
+  }
+
+  final String empleadoId;
+  final String usuario;
+  final String nombreCompleto;
+  final String correo;
+  final bool activo;
+  final EstadoActividadEmpleado estadoRuta;
+  final int porcentajeCumplimiento;
+  final List<ActividadRutaEmpleado> rutas;
+  final ActividadEmpleadoResumen resumen;
+  final DateTime? ultimaActividad;
+}
+
+class ActividadEmpleadoResumen {
+  const ActividadEmpleadoResumen({
+    required this.totalCreditos,
+    required this.creditosHoy,
+    required this.creditosMes,
+    required this.valorCreditosTotal,
+    required this.recaudoHoy,
+    required this.recaudoMes,
+    required this.pagosHoy,
+    required this.deberesHoy,
+    required this.cumplidosHoy,
+    required this.pendientesHoy,
+    required this.atrasados,
+  });
+
+  const ActividadEmpleadoResumen.vacio()
+      : totalCreditos = 0,
+        creditosHoy = 0,
+        creditosMes = 0,
+        valorCreditosTotal = 0,
+        recaudoHoy = 0,
+        recaudoMes = 0,
+        pagosHoy = 0,
+        deberesHoy = 0,
+        cumplidosHoy = 0,
+        pendientesHoy = 0,
+        atrasados = 0;
+
+  factory ActividadEmpleadoResumen.fromJson(Map<String, dynamic> json) {
+    return ActividadEmpleadoResumen(
+      totalCreditos: _enteroJson(json['totalCreditos']),
+      creditosHoy: _enteroJson(json['creditosHoy']),
+      creditosMes: _enteroJson(json['creditosMes']),
+      valorCreditosTotal: _doble(json['valorCreditosTotal']),
+      recaudoHoy: _doble(json['recaudoHoy']),
+      recaudoMes: _doble(json['recaudoMes']),
+      pagosHoy: _enteroJson(json['pagosHoy']),
+      deberesHoy: _enteroJson(json['deberesHoy']),
+      cumplidosHoy: _enteroJson(json['cumplidosHoy']),
+      pendientesHoy: _enteroJson(json['pendientesHoy']),
+      atrasados: _enteroJson(json['atrasados']),
+    );
+  }
+
+  final int totalCreditos;
+  final int creditosHoy;
+  final int creditosMes;
+  final double valorCreditosTotal;
+  final double recaudoHoy;
+  final double recaudoMes;
+  final int pagosHoy;
+  final int deberesHoy;
+  final int cumplidosHoy;
+  final int pendientesHoy;
+  final int atrasados;
+}
+
+class ActividadRutaEmpleado {
+  const ActividadRutaEmpleado({
+    required this.rutaId,
+    required this.nombre,
+    required this.creditos,
+    required this.clientes,
+    required this.debenHoy,
+    required this.cumplidosHoy,
+    required this.pendientesHoy,
+    required this.atrasados,
+    required this.recaudadoHoy,
+  });
+
+  factory ActividadRutaEmpleado.fromJson(Map<String, dynamic> json) {
+    return ActividadRutaEmpleado(
+      rutaId: json['rutaId'] as String? ?? '',
+      nombre: json['nombre'] as String? ?? 'Ruta',
+      creditos: _enteroJson(json['creditos']),
+      clientes: _enteroJson(json['clientes']),
+      debenHoy: _enteroJson(json['debenHoy']),
+      cumplidosHoy: _enteroJson(json['cumplidosHoy']),
+      pendientesHoy: _enteroJson(json['pendientesHoy']),
+      atrasados: _enteroJson(json['atrasados']),
+      recaudadoHoy: _doble(json['recaudadoHoy']),
+    );
+  }
+
+  final String rutaId;
+  final String nombre;
+  final int creditos;
+  final int clientes;
+  final int debenHoy;
+  final int cumplidosHoy;
+  final int pendientesHoy;
+  final int atrasados;
+  final double recaudadoHoy;
 }
 
 class Catalogos {
@@ -10337,10 +14248,28 @@ class Cliente {
     this.nombreComercial,
     this.correo,
     this.telefono,
+    this.latitude,
+    this.longitude,
   });
 
   factory Cliente.fromJson(Map<String, dynamic> json) {
     final Map<String, dynamic> estado = json['estado'] as Map<String, dynamic>;
+    final Object? rawDirecciones = json['direcciones'];
+    Map<String, dynamic>? direccionPrincipal;
+    if (rawDirecciones is List) {
+      for (final Object? item in rawDirecciones) {
+        if (item is Map<String, dynamic> && item['esPrincipal'] == true) {
+          direccionPrincipal = item;
+          break;
+        }
+      }
+      if (direccionPrincipal == null && rawDirecciones.isNotEmpty) {
+        final Object? first = rawDirecciones.first;
+        if (first is Map<String, dynamic>) {
+          direccionPrincipal = first;
+        }
+      }
+    }
     return Cliente(
       id: json['id'] as String,
       nombreCompleto: json['nombreCompleto'] as String,
@@ -10350,6 +14279,10 @@ class Cliente {
       correo: json['correo'] as String?,
       telefono: json['telefono'] as String?,
       estadoNombre: estado['nombre'] as String,
+      latitude:
+          _dobleNullable(json['latitud'] ?? direccionPrincipal?['latitud']),
+      longitude:
+          _dobleNullable(json['longitud'] ?? direccionPrincipal?['longitud']),
     );
   }
 
@@ -10360,7 +14293,22 @@ class Cliente {
   final String? nombreComercial;
   final String? correo;
   final String? telefono;
+  final double? latitude;
+  final double? longitude;
   final String estadoNombre;
+
+  bool get tieneUbicacion {
+    final double? latitud = latitude;
+    final double? longitud = longitude;
+    return latitud != null &&
+        longitud != null &&
+        latitud.isFinite &&
+        longitud.isFinite &&
+        latitud >= -90 &&
+        latitud <= 90 &&
+        longitud >= -180 &&
+        longitud <= 180;
+  }
 }
 
 class CreditoRegistro {
@@ -10467,7 +14415,12 @@ class CreditoRegistro {
   final DateTime? creadoEn;
   final DateTime? actualizadoEn;
 
-  bool get activo => !<String>{'PAGADO', 'ANULADO'}.contains(estado.codigo);
+  bool get pagado =>
+      estado.codigo == 'PAGADO' || saldo <= 0.009 || cuotasRestantes <= 0;
+
+  bool get activo => estado.codigo == 'ACTIVO';
+
+  bool get inactivo => estado.codigo == 'PAGADO';
 
   DateTime? get fechaModificacionVisible {
     final DateTime? actualizado = actualizadoEn;
@@ -10598,9 +14551,391 @@ class CreditoRefinanciacion {
   final double valorNuevo;
 }
 
+class _SelectorCobroRutaBuscable extends StatefulWidget {
+  const _SelectorCobroRutaBuscable({
+    required this.cobros,
+    required this.cuotasSeleccionadas,
+    required this.enabled,
+    required this.onSelected,
+  });
+
+  final List<CobroRuta> cobros;
+  final Set<String> cuotasSeleccionadas;
+  final bool enabled;
+  final ValueChanged<CobroRuta> onSelected;
+
+  @override
+  State<_SelectorCobroRutaBuscable> createState() =>
+      _SelectorCobroRutaBuscableState();
+}
+
+class _SelectorCobroRutaBuscableState
+    extends State<_SelectorCobroRutaBuscable> {
+  late final TextEditingController _controller;
+  late final FocusNode _focusNode;
+  late final ScrollController _scrollController;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController();
+    _focusNode = FocusNode();
+    _scrollController = ScrollController();
+    _controller.addListener(_actualizarBusqueda);
+  }
+
+  @override
+  void dispose() {
+    _controller.removeListener(_actualizarBusqueda);
+    _controller.dispose();
+    _focusNode.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _actualizarBusqueda() {
+    setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ClayTokens clay = context.clay;
+    final String consulta = _controller.text.trim().toLowerCase();
+    final List<CobroRuta> opciones = widget.cobros.where((CobroRuta cobro) {
+      if (cobro.proximaCuotaId == null ||
+          widget.cuotasSeleccionadas.contains(cobro.proximaCuotaId)) {
+        return false;
+      }
+
+      if (consulta.isEmpty) {
+        return true;
+      }
+
+      return cobro.cliente.toLowerCase().contains(consulta) ||
+          (cobro.cedula ?? '').toLowerCase().contains(consulta) ||
+          (cobro.negocio ?? '').toLowerCase().contains(consulta) ||
+          cobro.ruta.toLowerCase().contains(consulta);
+    }).toList(growable: false);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        TextField(
+          controller: _controller,
+          focusNode: _focusNode,
+          enabled: widget.enabled,
+          decoration: InputDecoration(
+            labelText: 'Buscar y agregar cliente',
+            prefixIcon: const Icon(Icons.person_search_rounded),
+            suffixIcon: _controller.text.isEmpty
+                ? const Icon(Icons.list_alt_rounded)
+                : IconButton(
+                    tooltip: 'Limpiar busqueda',
+                    onPressed: widget.enabled ? _controller.clear : null,
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+          ),
+          onSubmitted: (_) {
+            if (widget.enabled && opciones.isNotEmpty) {
+              _seleccionar(opciones.first);
+            }
+          },
+        ),
+        const SizedBox(height: 8),
+        DecoratedBox(
+          decoration: BoxDecoration(
+            color: clay.surfaceHigh,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: clay.border),
+          ),
+          child: Material(
+            type: MaterialType.transparency,
+            child: opciones.isEmpty
+                ? Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Text(
+                      consulta.isEmpty
+                          ? 'Todos los clientes pendientes ya estan agregados'
+                          : 'Sin clientes pendientes',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: clay.subtleText,
+                          ),
+                    ),
+                  )
+                : SizedBox(
+                    height: math.min(
+                      280.0,
+                      math.max(72.0, opciones.length * 64.0),
+                    ),
+                    child: Scrollbar(
+                      controller: _scrollController,
+                      child: ListView.separated(
+                        controller: _scrollController,
+                        padding: EdgeInsets.zero,
+                        itemCount: opciones.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (BuildContext context, int index) {
+                          final CobroRuta cobro = opciones[index];
+                          return ListTile(
+                            dense: true,
+                            enabled: widget.enabled,
+                            leading: const Icon(Icons.person_add_alt_1_rounded),
+                            title: Text(
+                              cobro.cliente,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            subtitle: Text(
+                              [
+                                if ((cobro.cedula ?? '').isNotEmpty)
+                                  'CC ${cobro.cedula!}',
+                                cobro.ruta,
+                                'Cuota ${cobro.proximaNumeroCuota ?? '-'}',
+                                _dinero(cobro.proximoSaldoCuota),
+                              ].join(' - '),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            onTap: widget.enabled
+                                ? () => _seleccionar(cobro)
+                                : null,
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _seleccionar(CobroRuta cobro) {
+    widget.onSelected(cobro);
+    _controller.clear();
+    _focusNode.requestFocus();
+  }
+}
+
+class _SelectorMedioPagoBuscable extends StatefulWidget {
+  const _SelectorMedioPagoBuscable({
+    required this.mediosPago,
+    required this.medioPagoCodigo,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  final List<MedioPago> mediosPago;
+  final String medioPagoCodigo;
+  final bool enabled;
+  final ValueChanged<String> onChanged;
+
+  @override
+  State<_SelectorMedioPagoBuscable> createState() =>
+      _SelectorMedioPagoBuscableState();
+}
+
+class _SelectorMedioPagoBuscableState
+    extends State<_SelectorMedioPagoBuscable> {
+  late final TextEditingController _controller;
+  late final FocusNode _focusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: _medioSeleccionado.nombre);
+    _focusNode = FocusNode();
+    _focusNode.addListener(_abrirAlEnfocar);
+  }
+
+  @override
+  void didUpdateWidget(_SelectorMedioPagoBuscable oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.medioPagoCodigo != widget.medioPagoCodigo ||
+        oldWidget.mediosPago != widget.mediosPago) {
+      final String nombre = _medioSeleccionado.nombre;
+      if (_controller.text != nombre) {
+        _controller.text = nombre;
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _focusNode.removeListener(_abrirAlEnfocar);
+    _focusNode.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  MedioPago get _medioSeleccionado {
+    return widget.mediosPago.firstWhere(
+      (MedioPago medio) => medio.codigo == widget.medioPagoCodigo,
+      orElse: () => widget.mediosPago.first,
+    );
+  }
+
+  void _abrirAlEnfocar() {
+    if (_focusNode.hasFocus && widget.enabled) {
+      _controller.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: _controller.text.length,
+      );
+    } else if (!_focusNode.hasFocus) {
+      _seleccionarTexto(_controller.text);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return RawAutocomplete<MedioPago>(
+      textEditingController: _controller,
+      focusNode: _focusNode,
+      displayStringForOption: (MedioPago medio) => medio.nombre,
+      optionsBuilder: (TextEditingValue value) {
+        final String consulta = value.text.trim().toLowerCase();
+        if (consulta.isEmpty) {
+          return widget.mediosPago;
+        }
+
+        return widget.mediosPago.where((MedioPago medio) {
+          return medio.nombre.toLowerCase().contains(consulta) ||
+              medio.codigo.toLowerCase().contains(consulta);
+        });
+      },
+      onSelected: (MedioPago medio) {
+        widget.onChanged(medio.codigo);
+      },
+      fieldViewBuilder: (
+        BuildContext context,
+        TextEditingController controller,
+        FocusNode focusNode,
+        VoidCallback onFieldSubmitted,
+      ) {
+        return TextField(
+          controller: controller,
+          focusNode: focusNode,
+          enabled: widget.enabled,
+          decoration: InputDecoration(
+            labelText: 'Medio de pago',
+            prefixIcon: const Icon(Icons.credit_card_rounded),
+            suffixIcon: IconButton(
+              tooltip: 'Ver medios',
+              onPressed: widget.enabled
+                  ? () {
+                      focusNode.requestFocus();
+                      controller.selection = TextSelection(
+                        baseOffset: 0,
+                        extentOffset: controller.text.length,
+                      );
+                    }
+                  : null,
+              icon: const Icon(Icons.arrow_drop_down_rounded),
+            ),
+          ),
+          onTap: () {
+            controller.selection = TextSelection(
+              baseOffset: 0,
+              extentOffset: controller.text.length,
+            );
+          },
+          onSubmitted: (_) => _seleccionarTexto(controller.text),
+          onEditingComplete: () => _seleccionarTexto(controller.text),
+        );
+      },
+      optionsViewBuilder: (
+        BuildContext context,
+        AutocompleteOnSelected<MedioPago> onSelected,
+        Iterable<MedioPago> options,
+      ) {
+        final List<MedioPago> opciones = options.toList(growable: false);
+        return Align(
+          alignment: Alignment.topLeft,
+          child: Material(
+            elevation: 8,
+            borderRadius: BorderRadius.circular(8),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 220, maxWidth: 420),
+              child: opciones.isEmpty
+                  ? Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Text(
+                        'Sin medios encontrados',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                    )
+                  : ListView.builder(
+                      padding: EdgeInsets.zero,
+                      shrinkWrap: true,
+                      itemCount: opciones.length,
+                      itemBuilder: (BuildContext context, int index) {
+                        final MedioPago medio = opciones[index];
+                        return ListTile(
+                          dense: true,
+                          leading: const Icon(Icons.credit_card_rounded),
+                          title: Text(medio.nombre),
+                          subtitle: Text(medio.codigo),
+                          onTap: () => onSelected(medio),
+                        );
+                      },
+                    ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _seleccionarTexto(String value) {
+    final String consulta = value.trim().toLowerCase();
+    MedioPago? medio;
+    for (final MedioPago item in widget.mediosPago) {
+      if (item.nombre.toLowerCase() == consulta ||
+          item.codigo.toLowerCase() == consulta) {
+        medio = item;
+        break;
+      }
+    }
+
+    if (medio != null) {
+      widget.onChanged(medio.codigo);
+      _controller.text = medio.nombre;
+      return;
+    }
+
+    _controller.text = _medioSeleccionado.nombre;
+  }
+}
+
+class _PagoRutaSolicitud {
+  const _PagoRutaSolicitud({
+    required this.cuotaId,
+    required this.monto,
+    required this.medioPagoCodigo,
+    this.observacion,
+  });
+
+  final String cuotaId;
+  final double monto;
+  final String medioPagoCodigo;
+  final String? observacion;
+}
+
+class _PagoRutaSeleccion {
+  _PagoRutaSeleccion(this.cobro)
+      : montoController =
+            TextEditingController(text: _numero(cobro.proximoSaldoCuota));
+
+  final CobroRuta cobro;
+  final TextEditingController montoController;
+
+  String? get cuotaId => cobro.proximaCuotaId;
+}
+
 class CobroRuta {
   const CobroRuta({
     required this.id,
+    required this.clienteId,
     required this.cliente,
     required this.rutaId,
     required this.ruta,
@@ -10615,6 +14950,8 @@ class CobroRuta {
     this.cedula,
     this.negocio,
     this.direccion,
+    this.latitude,
+    this.longitude,
     this.proximaCuotaId,
     this.proximaNumeroCuota,
     this.proximaFechaPago,
@@ -10623,10 +14960,13 @@ class CobroRuta {
   factory CobroRuta.fromJson(Map<String, dynamic> json) {
     return CobroRuta(
       id: json['id'] as String,
+      clienteId: json['clienteId'] as String? ?? json['id'] as String,
       cliente: json['cliente'] as String,
       cedula: json['cedula'] as String?,
       negocio: json['negocio'] as String?,
       direccion: json['direccion'] as String?,
+      latitude: _dobleNullable(json['latitud']),
+      longitude: _dobleNullable(json['longitud']),
       rutaId: json['rutaId'] as String,
       ruta: json['ruta'] as String,
       valorTotal: _doble(json['valorTotal']),
@@ -10646,18 +14986,27 @@ class CobroRuta {
   static const Object _sinCambio = Object();
 
   CobroRuta copyWith({
+    String? direccion,
+    double? latitude,
+    double? longitude,
     double? totalAbonado,
     double? saldo,
     int? cuotasRestantes,
     Object? proximaCuotaId = _sinCambio,
+    Object? proximaNumeroCuota = _sinCambio,
+    Object? proximaFechaPago = _sinCambio,
     double? proximoSaldoCuota,
+    EstadoCobro? estadoCobro,
   }) {
     return CobroRuta(
       id: id,
+      clienteId: clienteId,
       cliente: cliente,
       cedula: cedula,
       negocio: negocio,
-      direccion: direccion,
+      direccion: direccion ?? this.direccion,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
       rutaId: rutaId,
       ruta: ruta,
       valorTotal: valorTotal,
@@ -10669,18 +15018,25 @@ class CobroRuta {
       proximaCuotaId: identical(proximaCuotaId, _sinCambio)
           ? this.proximaCuotaId
           : proximaCuotaId as String?,
-      proximaNumeroCuota: proximaNumeroCuota,
-      proximaFechaPago: proximaFechaPago,
+      proximaNumeroCuota: identical(proximaNumeroCuota, _sinCambio)
+          ? this.proximaNumeroCuota
+          : proximaNumeroCuota as int?,
+      proximaFechaPago: identical(proximaFechaPago, _sinCambio)
+          ? this.proximaFechaPago
+          : proximaFechaPago as DateTime?,
       proximoSaldoCuota: proximoSaldoCuota ?? this.proximoSaldoCuota,
-      estadoCobro: estadoCobro,
+      estadoCobro: estadoCobro ?? this.estadoCobro,
     );
   }
 
   final String id;
+  final String clienteId;
   final String cliente;
   final String? cedula;
   final String? negocio;
   final String? direccion;
+  final double? latitude;
+  final double? longitude;
   final String rutaId;
   final String ruta;
   final double valorTotal;
@@ -10694,6 +15050,19 @@ class CobroRuta {
   final DateTime? proximaFechaPago;
   final double proximoSaldoCuota;
   final EstadoCobro estadoCobro;
+
+  bool get tieneUbicacion {
+    final double? latitud = latitude;
+    final double? longitud = longitude;
+    return latitud != null &&
+        longitud != null &&
+        latitud.isFinite &&
+        longitud.isFinite &&
+        latitud >= -90 &&
+        latitud <= 90 &&
+        longitud >= -180 &&
+        longitud <= 180;
+  }
 }
 
 class MovimientoCaja {
@@ -10880,13 +15249,15 @@ class PresupuestoTotales {
 enum EstadoCobro {
   alDia,
   pendiente,
-  atrasado;
+  atrasado,
+  pagado;
 
   factory EstadoCobro.fromWire(String value) {
     return switch (value) {
       'AL_DIA' => EstadoCobro.alDia,
       'PENDIENTE' => EstadoCobro.pendiente,
       'ATRASADO' => EstadoCobro.atrasado,
+      'PAGADO' => EstadoCobro.pagado,
       _ => EstadoCobro.pendiente,
     };
   }
@@ -10896,6 +15267,7 @@ enum EstadoCobro {
       EstadoCobro.alDia => 'Al día',
       EstadoCobro.pendiente => 'Debe hoy',
       EstadoCobro.atrasado => 'Atrasado',
+      EstadoCobro.pagado => 'Pagado',
     };
   }
 
@@ -10904,6 +15276,7 @@ enum EstadoCobro {
       EstadoCobro.alDia => CobroAppTheme.success,
       EstadoCobro.pendiente => CobroAppTheme.warning,
       EstadoCobro.atrasado => CobroAppTheme.danger,
+      EstadoCobro.pagado => CobroAppTheme.primary,
     };
   }
 }
@@ -10922,6 +15295,28 @@ double _doble(Object? value) {
   }
   if (value is String) {
     return _parseNumero(value) ?? 0;
+  }
+  return 0;
+}
+
+double? _dobleNullable(Object? value) {
+  if (value == null) {
+    return null;
+  }
+  final double? parsed = value is num
+      ? value.toDouble()
+      : value is String
+          ? _parseNumero(value)
+          : null;
+  return parsed?.isFinite ?? false ? parsed : null;
+}
+
+int _enteroJson(Object? value) {
+  if (value is num) {
+    return value.toInt();
+  }
+  if (value is String) {
+    return int.tryParse(value) ?? 0;
   }
   return 0;
 }

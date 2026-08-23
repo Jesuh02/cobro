@@ -7,10 +7,11 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { CobrosController } from './cobros.controller';
 import { CobrosService } from './cobros.service';
 import { ExportacionesR2Service } from './exportaciones-r2.service';
+import { RoutingService } from './routing.service';
 
 @Module({
   imports: [AuthModule, PrismaModule, NotificationsModule, CacheModule],
   controllers: [CobrosController],
-  providers: [CobrosService, ExportacionesR2Service],
+  providers: [CobrosService, ExportacionesR2Service, RoutingService],
 })
 export class CobrosModule {}

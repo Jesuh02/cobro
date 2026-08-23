@@ -1,20 +1,34 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../features/dashboard/presentation/home_page.dart';
 import 'app_config.dart';
 import 'app_theme.dart';
+import 'theme_preference.dart';
 
 class CobroApp extends StatefulWidget {
-  const CobroApp({required this.config, super.key});
+  const CobroApp({
+    required this.config,
+    this.initialThemeMode = ThemeMode.light,
+    super.key,
+  });
 
   final AppConfig config;
+  final ThemeMode initialThemeMode;
 
   @override
   State<CobroApp> createState() => _CobroAppState();
 }
 
 class _CobroAppState extends State<CobroApp> {
-  ThemeMode _themeMode = ThemeMode.light;
+  late ThemeMode _themeMode;
+
+  @override
+  void initState() {
+    super.initState();
+    _themeMode = widget.initialThemeMode;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -29,6 +43,7 @@ class _CobroAppState extends State<CobroApp> {
         themeMode: _themeMode,
         onThemeModeChanged: (ThemeMode mode) {
           setState(() => _themeMode = mode);
+          unawaited(savePreferredThemeMode(mode));
         },
       ),
     );

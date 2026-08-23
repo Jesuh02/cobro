@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { APP_FILTER } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { resolve } from 'node:path';
 
 import { DomainExceptionFilter } from './common/http/domain-exception.filter';
@@ -21,12 +22,36 @@ import { HealthModule } from './modules/health/health.module';
       validatePredefined: process.env.NODE_ENV === 'production',
       validate: validateEnv,
     }),
+    ThrottlerModule.forRoot([
+      {
+        name: 'burst',
+        ttl: 1_000,
+        limit: 20,
+        blockDuration: 2_000,
+      },
+      {
+        name: 'minute',
+        ttl: 60_000,
+        limit: 180,
+        blockDuration: 60_000,
+      },
+      {
+        name: 'hour',
+        ttl: 3_600_000,
+        limit: 3_000,
+        blockDuration: 300_000,
+      },
+    ]),
     PrismaModule,
     HealthModule,
     AuthModule,
     CobrosModule,
   ],
   providers: [
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
     {
       provide: APP_FILTER,
       useClass: DomainExceptionFilter,

@@ -41,8 +41,35 @@ model Rol {
   nombre String @db.VarChar(80)
 
   usuarios UsuarioRol[]
+  recursos RolRecurso[]
 
   @@map("rol")
+  @@schema("public")
+}
+
+model Recurso {
+  recursoId     Int      @id @default(autoincrement()) @map("recurso_id") @db.SmallInt
+  codigo        String   @unique @db.VarChar(60)
+  nombre        String   @db.VarChar(120)
+  creadoEn      DateTime @default(now()) @map("creado_en") @db.Timestamptz(6)
+  actualizadoEn DateTime @default(now()) @map("actualizado_en") @db.Timestamptz(6)
+
+  roles RolRecurso[]
+
+  @@map("recurso")
+  @@schema("public")
+}
+
+model RolRecurso {
+  rolId     Int      @map("rol_id") @db.SmallInt
+  recursoId Int      @map("recurso_id") @db.SmallInt
+  asignadoEn DateTime @default(now()) @map("asignado_en") @db.Timestamptz(6)
+
+  rol     Rol     @relation(fields: [rolId], references: [rolId], onDelete: Cascade)
+  recurso Recurso @relation(fields: [recursoId], references: [recursoId], onDelete: Cascade)
+
+  @@id([rolId, recursoId])
+  @@map("rol_recurso")
   @@schema("public")
 }
 
@@ -582,6 +609,8 @@ model TblPersona {
   apellido     String   @map("per_apellido")
   documento    String   @unique @map("per_documento")
   direccion    String?  @map("per_direccion")
+  latitud      Decimal? @map("per_latitud") @db.Decimal(10, 7)
+  longitud     Decimal? @map("per_longitud") @db.Decimal(10, 7)
   celular      String?  @map("per_num_celular")
   creacion     DateTime @default(now()) @map("per_creacion") @db.Timestamptz(6)
 

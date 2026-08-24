@@ -5848,10 +5848,6 @@ export class CobrosService {
             END
             + COALESCE(entradas_caja.total_entradas, 0)
           )
-          - CASE
-              WHEN ${condicionMostrarCreditos} THEN COALESCE(creditos.total_creditos, 0)
-              ELSE 0
-            END
           - (
             COALESCE(gastos.total_gastos, 0)
             + COALESCE(gastos_caja.total_gastos_caja, 0)
@@ -7886,7 +7882,7 @@ export class CobrosService {
         recaudado,
         gastos,
         creditos,
-        caja_menor + recaudado - creditos - gastos AS presupuesto
+        caja_menor + recaudado - gastos AS presupuesto
       FROM resumen
       ORDER BY moneda_codigo ASC, caja_menor_id ASC
     `);

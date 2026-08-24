@@ -14,3 +14,18 @@ class ApiException implements Exception {
     return 'ApiException(statusCode: $statusCode, code: $code, message: $message)';
   }
 }
+
+class OfflineMutationQueuedException implements Exception {
+  const OfflineMutationQueuedException({
+    required this.pendingCount,
+    this.message = 'Accion guardada. Se sincronizara cuando vuelva internet.',
+  });
+
+  final int pendingCount;
+  final String message;
+
+  @override
+  String toString() {
+    return 'OfflineMutationQueuedException(pendingCount: $pendingCount, message: $message)';
+  }
+}

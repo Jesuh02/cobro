@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:fl_chart/fl_chart.dart';
@@ -8,8 +9,10 @@ import 'package:latlong2/latlong.dart';
 import 'package:mapcn_flutter/mapcn_flutter.dart';
 
 import '../../../app/app_theme.dart';
+import '../../../app/session_cache.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/network/api_exception.dart';
+import '../../../core/network/offline_mutation.dart';
 import '../../../core/platform/export_download.dart';
 import '../../../core/ui/clay.dart';
 import '../../routes/data/api_road_router.dart';
@@ -216,7 +219,10 @@ class _HomePageState extends State<HomePage> {
   Timer? _mensajeTimer;
   Timer? _refrescoTimer;
   Timer? _filtrosListasTimer;
+  Timer? _offlineSyncTimer;
   int _cargaSerial = 0;
+  int _accionesPendientesOffline = 0;
+  bool _sincronizandoOffline = false;
   DateTime? _fechaCajaDesde;
   DateTime? _fechaCajaHasta;
   DateTime? _fechaInicioDesde;
@@ -250,6 +256,12 @@ class _HomePageState extends State<HomePage> {
     _buscarCreditoController.addListener(_programarRecargaListasPesadas);
     _buscarCajaController.addListener(_programarRecargaListasPesadas);
     _buscarClienteController.addListener(_refrescar);
+    unawaited(_cargarAccionesPendientesOffline());
+    unawaited(_restaurarSesionGuardada());
+    _offlineSyncTimer = Timer.periodic(
+      const Duration(seconds: 15),
+      (_) => _sincronizarAccionesOffline(),
+    );
   }
 
   List<_DestinoMenu> get _destinosMenuActual {
@@ -264,6 +276,7 @@ class _HomePageState extends State<HomePage> {
     _mensajeTimer?.cancel();
     _refrescoTimer?.cancel();
     _filtrosListasTimer?.cancel();
+    _offlineSyncTimer?.cancel();
     _mensajeOverlay?.remove();
     if (_cerrarApiClientAlSalir) {
       _apiClient.close();
@@ -303,6 +316,21 @@ class _HomePageState extends State<HomePage> {
         title: const _MarcaAplicacion(),
         actions: <Widget>[
           if (!esMovil) ...<Widget>[
+            if (_accionesPendientesOffline > 0)
+              Tooltip(
+                message: _sincronizandoOffline
+                    ? 'Sincronizando acciones pendientes'
+                    : 'Sincronizar acciones pendientes',
+                child: IconButton(
+                  onPressed: _sincronizandoOffline
+                      ? null
+                      : _sincronizarAccionesOffline,
+                  icon: Badge(
+                    label: Text('$_accionesPendientesOffline'),
+                    child: const Icon(Icons.cloud_sync_rounded),
+                  ),
+                ),
+              ),
             Padding(
               padding: const EdgeInsets.only(right: 6),
               child: Center(
@@ -359,6 +387,8 @@ class _HomePageState extends State<HomePage> {
                           ? ThemeMode.light
                           : ThemeMode.dark,
                     );
+                  case _AccionSesion.sincronizarPendientes:
+                    _sincronizarAccionesOffline();
                   case _AccionSesion.gestionEmpleados:
                     _abrirGestionEmpleados();
                   case _AccionSesion.cerrarSesion:
@@ -403,6 +433,18 @@ class _HomePageState extends State<HomePage> {
                           Icon(Icons.manage_accounts_rounded),
                           SizedBox(width: 12),
                           Text('Gestion de empleado'),
+                        ],
+                      ),
+                    ),
+                  if (_accionesPendientesOffline > 0)
+                    PopupMenuItem<_AccionSesion>(
+                      value: _AccionSesion.sincronizarPendientes,
+                      enabled: !_sincronizandoOffline,
+                      child: Row(
+                        children: <Widget>[
+                          const Icon(Icons.cloud_sync_rounded),
+                          const SizedBox(width: 12),
+                          Text('Sincronizar $_accionesPendientesOffline'),
                         ],
                       ),
                     ),
@@ -1799,6 +1841,7 @@ class _HomePageState extends State<HomePage> {
           'latitud': position.latitude,
           'longitud': position.longitude,
         },
+        queueOffline: true,
       );
       if (!mounted) {
         return;
@@ -2216,6 +2259,7 @@ class _HomePageState extends State<HomePage> {
       );
 
       _apiClient.setAuthToken(sesion.token);
+      await _guardarSesionLocal(sesion);
 
       if (!mounted) {
         return;
@@ -2291,6 +2335,7 @@ class _HomePageState extends State<HomePage> {
       );
 
       _apiClient.setAuthToken(sesion.token);
+      await _guardarSesionLocal(sesion);
 
       if (!mounted) {
         return;
@@ -2364,7 +2409,11 @@ class _HomePageState extends State<HomePage> {
     }
 
     final bool guardado = await _ejecutarAccion(() async {
-      await _apiClient.postObject('/usuarios', <String, dynamic>{...datos});
+      await _apiClient.postObject(
+        '/usuarios',
+        <String, dynamic>{...datos},
+        queueOffline: true,
+      );
       await _cargar();
     });
 
@@ -2658,6 +2707,7 @@ class _HomePageState extends State<HomePage> {
 
   void _cerrarSesion() {
     _apiClient.setAuthToken(null);
+    unawaited(clearCachedSessionPayload());
     _loginContrasenaController.clear();
     _registroInstitucionController.clear();
     _registroNombreController.clear();
@@ -2686,6 +2736,109 @@ class _HomePageState extends State<HomePage> {
       _guardando = false;
       _error = null;
     });
+  }
+
+  Future<void> _restaurarSesionGuardada() async {
+    final String? payload = await loadCachedSessionPayload();
+    if (payload == null || payload.trim().isEmpty || !mounted) {
+      return;
+    }
+
+    try {
+      final Object? decoded = jsonDecode(payload);
+      if (decoded is! Map<String, dynamic>) {
+        return;
+      }
+
+      final Sesion sesion = Sesion.fromJson(decoded);
+      _apiClient.setAuthToken(sesion.token);
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _usuarioSesion = sesion.usuario;
+        _seccionActual = 0;
+        _error = null;
+        _aplicarFechaInicioHoy();
+      });
+
+      unawaited(_cargar());
+    } catch (_) {
+      await clearCachedSessionPayload();
+    }
+  }
+
+  Future<void> _guardarSesionLocal(Sesion sesion) async {
+    await saveCachedSessionPayload(jsonEncode(sesion.toJson()));
+  }
+
+  Future<void> _cargarAccionesPendientesOffline() async {
+    final int pendientes = await _apiClient.pendingOfflineActions();
+    if (!mounted) {
+      return;
+    }
+
+    setState(() => _accionesPendientesOffline = pendientes);
+  }
+
+  Future<void> _sincronizarAccionesOffline() async {
+    if (_usuarioSesion == null || _sincronizandoOffline) {
+      return;
+    }
+
+    setState(() => _sincronizandoOffline = true);
+
+    try {
+      final OfflineSyncResult resultado = await _apiClient.syncOfflineActions();
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _accionesPendientesOffline = resultado.pending;
+      });
+
+      if (resultado.synced > 0) {
+        _mostrarMensaje(
+          resultado.pending == 0
+              ? 'Acciones pendientes sincronizadas'
+              : '${resultado.synced} acciones sincronizadas. '
+                  '${resultado.pending} pendientes.',
+        );
+        unawaited(
+          _recargarDatos(
+            catalogos: true,
+            presupuesto: true,
+            clientes: true,
+            cobrosRuta: true,
+            creditos: true,
+            movimientosCaja: true,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _sincronizandoOffline = false);
+      }
+    }
+  }
+
+  Future<void> _marcarAccionOfflinePendiente(
+    OfflineMutationQueuedException error,
+  ) async {
+    if (!mounted) {
+      return;
+    }
+
+    final int pendientes = await _apiClient.pendingOfflineActions();
+    if (!mounted) {
+      return;
+    }
+
+    setState(() => _accionesPendientesOffline = pendientes);
+    _mostrarMensaje(error.message);
   }
 
   Future<void> _cargar() async {
@@ -2738,6 +2891,7 @@ class _HomePageState extends State<HomePage> {
         _conteoCreditosInicio = resultados[6] as _ConteoCreditosInicio;
         _ajustarSelecciones();
       });
+      unawaited(_sincronizarAccionesOffline());
     } catch (error) {
       if (!mounted || cargaActual != _cargaSerial) {
         return;
@@ -3013,6 +3167,7 @@ class _HomePageState extends State<HomePage> {
 
     if (error is ApiException && error.statusCode == 401) {
       _apiClient.setAuthToken(null);
+      unawaited(clearCachedSessionPayload());
       setState(() {
         _usuarioSesion = null;
         _error = 'La sesion expiro';
@@ -3633,34 +3788,49 @@ class _HomePageState extends State<HomePage> {
     );
 
     return _ejecutarAccion(() async {
+      int creados = 0;
+      int pendientes = 0;
       for (final String clienteId in clienteIds) {
-        final CreditoRegistro credito = CreditoRegistro.fromJson(
-          await _apiClient.postObject('/creditos', <String, dynamic>{
-            'clienteId': clienteId,
-            if (rutaId != null) 'rutaId': rutaId,
-            'monedaCodigo': monedaCodigo,
-            'frecuenciaPagoId': frecuenciaPagoId,
-            'fechaInicio': _fechaValor(_fechaInicioCredito),
-            'valorPrincipal': valoresPorCliente[clienteId],
-            'porcentajeInteres': porcentajeInteres,
-            'plazoDias': plazoDias,
-            'omitirDomingos': _omitirDomingos,
-            'cajaMenorId': cajaMenorId,
-            if (_observacionCreditoController.text.trim().isNotEmpty)
-              'observacion': _observacionCreditoController.text.trim(),
-          }),
-        );
-        _guardarCreditoLocal(credito);
+        try {
+          final CreditoRegistro credito = CreditoRegistro.fromJson(
+            await _apiClient.postObject(
+                '/creditos',
+                <String, dynamic>{
+                  'clienteId': clienteId,
+                  if (rutaId != null) 'rutaId': rutaId,
+                  'monedaCodigo': monedaCodigo,
+                  'frecuenciaPagoId': frecuenciaPagoId,
+                  'fechaInicio': _fechaValor(_fechaInicioCredito),
+                  'valorPrincipal': valoresPorCliente[clienteId],
+                  'porcentajeInteres': porcentajeInteres,
+                  'plazoDias': plazoDias,
+                  'omitirDomingos': _omitirDomingos,
+                  'cajaMenorId': cajaMenorId,
+                  if (_observacionCreditoController.text.trim().isNotEmpty)
+                    'observacion': _observacionCreditoController.text.trim(),
+                },
+                queueOffline: true),
+          );
+          _guardarCreditoLocal(credito);
+          creados++;
+        } on OfflineMutationQueuedException catch (error) {
+          pendientes++;
+          await _marcarAccionOfflinePendiente(error);
+        }
       }
       _limpiarMontosCreditoPorCliente();
       _interesController.text = _interesCreditoPredeterminado;
       _plazoController.text = _plazoCreditoPredeterminado;
       _observacionCreditoController.clear();
-      _mostrarCuotasRegistradas();
+      if (creados > 0) {
+        _mostrarCuotasRegistradas();
+      }
       _mostrarMensaje(
-        clienteIds.length == 1
-            ? 'Credito creado con sus cuotas'
-            : '${clienteIds.length} creditos creados con sus cuotas',
+        pendientes > 0
+            ? '$pendientes creditos guardados para sincronizar'
+            : clienteIds.length == 1
+                ? 'Credito creado con sus cuotas'
+                : '${clienteIds.length} creditos creados con sus cuotas',
       );
       _recargarEnSegundoPlano(
         catalogos: rutaId == null,
@@ -4072,6 +4242,7 @@ class _HomePageState extends State<HomePage> {
                                   'observacion':
                                       observacionController.text.trim(),
                               },
+                              queueOffline: true,
                             ),
                           );
                           _guardarCreditoLocal(actualizado);
@@ -4340,6 +4511,7 @@ class _HomePageState extends State<HomePage> {
                             await _apiClient.patchObject(
                               '/creditos/${credito.id}',
                               payload,
+                              queueOffline: true,
                             ),
                           );
                           _guardarCreditoLocal(respuesta);
@@ -4350,6 +4522,8 @@ class _HomePageState extends State<HomePage> {
                             creditos: true,
                             movimientosCaja: true,
                           );
+                        } on OfflineMutationQueuedException catch (error) {
+                          await _marcarAccionOfflinePendiente(error);
                         } catch (error) {
                           if (mounted) {
                             setState(() {
@@ -4428,7 +4602,12 @@ class _HomePageState extends State<HomePage> {
             .toList(growable: false);
       });
       try {
-        await _apiClient.deleteObject('/creditos/${credito.id}');
+        await _apiClient.deleteObject(
+          '/creditos/${credito.id}',
+          queueOffline: true,
+        );
+      } on OfflineMutationQueuedException catch (error) {
+        await _marcarAccionOfflinePendiente(error);
       } catch (_) {
         if (mounted) {
           setState(() => _creditos = creditosAntes);
@@ -4857,14 +5036,19 @@ class _HomePageState extends State<HomePage> {
     _mostrarMensaje('Pago aplicado en pantalla. Confirmando...');
 
     try {
-      await _apiClient.postObject('/pagos', <String, dynamic>{
-        'creditoCuotaId': cuotaId,
-        'montoPagado': monto,
-        'medioPagoCodigo': medioPagoCodigo,
-        if (observacion != null) 'observacion': observacion,
-      });
+      await _apiClient.postObject(
+          '/pagos',
+          <String, dynamic>{
+            'creditoCuotaId': cuotaId,
+            'montoPagado': monto,
+            'medioPagoCodigo': medioPagoCodigo,
+            if (observacion != null) 'observacion': observacion,
+          },
+          queueOffline: true);
       _mostrarMensaje('Pago registrado');
       _recargarEnSegundoPlano();
+    } on OfflineMutationQueuedException catch (error) {
+      await _marcarAccionOfflinePendiente(error);
     } catch (error) {
       if (mounted) {
         setState(() {
@@ -4926,18 +5110,23 @@ class _HomePageState extends State<HomePage> {
     try {
       await Future.wait<Map<String, dynamic>>(
         pagosPendientes.map((_PagoRutaSolicitud pago) {
-          return _apiClient.postObject('/pagos', <String, dynamic>{
-            'creditoCuotaId': pago.cuotaId,
-            'montoPagado': pago.monto,
-            'medioPagoCodigo': pago.medioPagoCodigo,
-            if (pago.observacion != null) 'observacion': pago.observacion,
-          });
+          return _apiClient.postObject(
+              '/pagos',
+              <String, dynamic>{
+                'creditoCuotaId': pago.cuotaId,
+                'montoPagado': pago.monto,
+                'medioPagoCodigo': pago.medioPagoCodigo,
+                if (pago.observacion != null) 'observacion': pago.observacion,
+              },
+              queueOffline: true);
         }),
       );
       _mostrarMensaje(
         pagosPendientes.length == 1 ? 'Pago registrado' : 'Pagos registrados',
       );
       _recargarEnSegundoPlano();
+    } on OfflineMutationQueuedException catch (error) {
+      await _marcarAccionOfflinePendiente(error);
     } catch (error) {
       if (mounted) {
         setState(() {
@@ -5284,21 +5473,24 @@ class _HomePageState extends State<HomePage> {
 
                 await _ejecutarAccion(() async {
                   final Cliente cliente = Cliente.fromJson(
-                    await _apiClient.postObject('/clientes', <String, dynamic>{
-                      'nombreCompleto': nombreController.text.trim(),
-                      if (cedulaController.text.trim().isNotEmpty)
-                        'cedula': cedulaController.text.trim(),
-                      if (direccionController.text.trim().isNotEmpty)
-                        'direccion': direccionController.text.trim(),
-                      if (ubicacionCliente != null) ...<String, dynamic>{
-                        'latitud': ubicacionCliente!.latitude,
-                        'longitud': ubicacionCliente!.longitude,
-                      },
-                      if (correoController.text.trim().isNotEmpty)
-                        'correo': correoController.text.trim(),
-                      if (telefonoController.text.trim().isNotEmpty)
-                        'telefono': telefonoController.text.trim(),
-                    }),
+                    await _apiClient.postObject(
+                        '/clientes',
+                        <String, dynamic>{
+                          'nombreCompleto': nombreController.text.trim(),
+                          if (cedulaController.text.trim().isNotEmpty)
+                            'cedula': cedulaController.text.trim(),
+                          if (direccionController.text.trim().isNotEmpty)
+                            'direccion': direccionController.text.trim(),
+                          if (ubicacionCliente != null) ...<String, dynamic>{
+                            'latitud': ubicacionCliente!.latitude,
+                            'longitud': ubicacionCliente!.longitude,
+                          },
+                          if (correoController.text.trim().isNotEmpty)
+                            'correo': correoController.text.trim(),
+                          if (telefonoController.text.trim().isNotEmpty)
+                            'telefono': telefonoController.text.trim(),
+                        },
+                        queueOffline: true),
                   );
                   _guardarClienteLocal(cliente);
                   _recargarEnSegundoPlano(
@@ -5502,6 +5694,7 @@ class _HomePageState extends State<HomePage> {
                                       'telefono':
                                           telefonoController.text.trim(),
                                   },
+                                  queueOffline: true,
                                 ),
                               );
                               _guardarClienteLocal(actualizado);
@@ -5596,7 +5789,12 @@ class _HomePageState extends State<HomePage> {
     final bool eliminado = await _ejecutarAccion(() async {
       _eliminarClienteLocal(cliente.id);
       try {
-        await _apiClient.deleteObject('/clientes/${cliente.id}');
+        await _apiClient.deleteObject(
+          '/clientes/${cliente.id}',
+          queueOffline: true,
+        );
+      } on OfflineMutationQueuedException catch (error) {
+        await _marcarAccionOfflinePendiente(error);
       } catch (_) {
         if (mounted) {
           setState(() {
@@ -5974,6 +6172,7 @@ class _HomePageState extends State<HomePage> {
                                       'telefono':
                                           telefonoController.text.trim(),
                                   },
+                                  queueOffline: true,
                                 ),
                               );
                               clienteId = cliente.id;
@@ -6001,6 +6200,7 @@ class _HomePageState extends State<HomePage> {
                                     'observacion':
                                         observacionController.text.trim(),
                                 },
+                                queueOffline: true,
                               );
                             }
 
@@ -6163,6 +6363,7 @@ class _HomePageState extends State<HomePage> {
                                 _fechaHoraValor(fechaAperturaActual),
                             'fechaCierre': _fechaHoraValor(fechaCierre),
                           },
+                          queueOffline: true,
                         ),
                       );
                       _guardarCajaMenorLocal(caja);
@@ -6360,6 +6561,7 @@ class _HomePageState extends State<HomePage> {
                             'monto': monto,
                             'motivo': motivoController.text.trim(),
                           },
+                          queueOffline: true,
                         ),
                       );
                       _guardarMovimientoCajaLocal(movimiento);
@@ -6595,6 +6797,7 @@ class _HomePageState extends State<HomePage> {
                           await _apiClient.patchObject(
                             '/caja-menor/movimientos/${movimiento.id}',
                             payload,
+                            queueOffline: true,
                           ),
                         );
                         _guardarMovimientoCajaLocal(respuesta);
@@ -6606,6 +6809,8 @@ class _HomePageState extends State<HomePage> {
                           creditos: true,
                           movimientosCaja: true,
                         );
+                      } on OfflineMutationQueuedException catch (error) {
+                        await _marcarAccionOfflinePendiente(error);
                       } catch (error) {
                         if (mounted) {
                           setState(() {
@@ -6689,7 +6894,10 @@ class _HomePageState extends State<HomePage> {
       try {
         await _apiClient.deleteObject(
           '/caja-menor/movimientos/${movimiento.id}',
+          queueOffline: true,
         );
+      } on OfflineMutationQueuedException catch (error) {
+        await _marcarAccionOfflinePendiente(error);
       } catch (_) {
         if (mounted) {
           setState(() => _movimientosCaja = movimientosAntes);
@@ -6723,6 +6931,9 @@ class _HomePageState extends State<HomePage> {
 
     try {
       await action();
+      return true;
+    } on OfflineMutationQueuedException catch (error) {
+      await _marcarAccionOfflinePendiente(error);
       return true;
     } catch (error) {
       if (mounted) {
@@ -12477,8 +12688,7 @@ class _GestionEmpleadosPageState extends State<_GestionEmpleadosPage> {
         '/usuarios/permisos',
         <String, dynamic>{
           'todos': _aplicarATodos,
-          if (!_aplicarATodos)
-            'usuarioIds': <String>[empleadoSeleccionado!.id],
+          if (!_aplicarATodos) 'usuarioIds': <String>[empleadoSeleccionado!.id],
           'permisos': _permisosSeleccionados.toList(growable: false),
         },
       );
@@ -12558,16 +12768,14 @@ class _GestionEmpleadosPageState extends State<_GestionEmpleadosPage> {
           ),
         ),
       ),
-      floatingActionButton: esMovil &&
-              widget.puedeGestionar &&
-              !_cargando &&
-              _error == null
-          ? FloatingActionButton(
-              onPressed: _guardando ? null : _crearEmpleado,
-              tooltip: 'Agregar empleado',
-              child: const Icon(Icons.person_add_alt_1_rounded),
-            )
-          : null,
+      floatingActionButton:
+          esMovil && widget.puedeGestionar && !_cargando && _error == null
+              ? FloatingActionButton(
+                  onPressed: _guardando ? null : _crearEmpleado,
+                  tooltip: 'Agregar empleado',
+                  child: const Icon(Icons.person_add_alt_1_rounded),
+                )
+              : null,
       bottomNavigationBar:
           mostrarGuardarMovil ? _construirBarraGuardarMovil() : null,
     );
@@ -12671,7 +12879,8 @@ class _GestionEmpleadosPageState extends State<_GestionEmpleadosPage> {
   }
 
   Widget _construirEncabezado(bool esMovil) {
-    final int activos = _empleados.where((EmpleadoGestion e) => e.activo).length;
+    final int activos =
+        _empleados.where((EmpleadoGestion e) => e.activo).length;
     final int inactivos = _empleados.length - activos;
 
     return ClaySurface(
@@ -12791,8 +13000,8 @@ class _GestionEmpleadosPageState extends State<_GestionEmpleadosPage> {
                 padding: const EdgeInsets.only(bottom: 9),
                 child: _EmpleadoGestionItem(
                   empleado: empleado,
-                  seleccionado: empleado.id == _empleadoSeleccionadoId &&
-                      !_aplicarATodos,
+                  seleccionado:
+                      empleado.id == _empleadoSeleccionadoId && !_aplicarATodos,
                   guardando: _guardando,
                   puedeGestionar: widget.puedeGestionar,
                   onSeleccionar: () => _seleccionarEmpleado(empleado.id),
@@ -13089,10 +13298,9 @@ class _ActividadEmpleadoCard extends StatelessWidget {
                         actividad.nombreCompleto,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style:
-                            Theme.of(context).textTheme.titleSmall?.copyWith(
-                                  fontWeight: FontWeight.w900,
-                                ),
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w900,
+                            ),
                       ),
                       const SizedBox(height: 2),
                       Text(
@@ -13282,10 +13490,9 @@ class _ActividadRutaRow extends StatelessWidget {
     final int deberes = ruta.debenHoy;
     final int cumplidos = ruta.cumplidosHoy;
     final double progreso = deberes == 0 ? 1 : cumplidos / deberes;
-    final Color color =
-        ruta.pendientesHoy > 0 || ruta.atrasados > 0
-            ? CobroAppTheme.warning
-            : CobroAppTheme.success;
+    final Color color = ruta.pendientesHoy > 0 || ruta.atrasados > 0
+        ? CobroAppTheme.warning
+        : CobroAppTheme.success;
 
     return Padding(
       padding: const EdgeInsets.only(top: 8),
@@ -13671,6 +13878,7 @@ class _PermisoEmpleadoDef {
 enum _AccionSesion {
   recargar,
   cambiarTema,
+  sincronizarPendientes,
   gestionEmpleados,
   cerrarSesion,
 }
@@ -13805,6 +14013,13 @@ class Sesion {
 
   final String token;
   final SesionUsuario usuario;
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'token': token,
+      'usuario': usuario.toJson(),
+    };
+  }
 }
 
 class SesionUsuario {
@@ -13851,6 +14066,19 @@ class SesionUsuario {
   final bool esAdministrador;
   final List<String> permisos;
   final bool activo;
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'id': id,
+      'usuario': usuario,
+      'nombreCompleto': nombreCompleto,
+      'correo': correo,
+      'roles': roles,
+      'esAdministrador': esAdministrador,
+      'permisos': permisos,
+      'activo': activo,
+    };
+  }
 
   bool puede(String permiso) {
     return esAdministrador || permisos.contains(permiso);
@@ -14812,7 +15040,12 @@ class _SelectorMedioPagoBuscableState
       displayStringForOption: (MedioPago medio) => medio.nombre,
       optionsBuilder: (TextEditingValue value) {
         final String consulta = value.text.trim().toLowerCase();
-        if (consulta.isEmpty) {
+        final TextSelection selection = value.selection;
+        final bool textoCompletoSeleccionado = selection.isValid &&
+            value.text.isNotEmpty &&
+            selection.start == 0 &&
+            selection.end == value.text.length;
+        if (consulta.isEmpty || textoCompletoSeleccionado) {
           return widget.mediosPago;
         }
 

@@ -54,6 +54,7 @@ type UsuarioTblAuth = {
   correo: string;
   activo: boolean;
   roles: string[];
+  permisos: string[];
 };
 
 type TokenPayload = {
@@ -258,6 +259,7 @@ export class AuthService {
           correo,
           activo: true,
           roles: ['ADMINISTRADOR'],
+          permisos: permisosEmpleadoCodigos,
         }),
       );
     });
@@ -358,17 +360,28 @@ export class AuthService {
   ): Promise<AuthUserResponse[]> {
     this.requerirVerEmpleados(usuario);
 
-    const usuarios = await this.prisma.usuario.findMany({
-      where: {
-        roles: {
-          some: { rol: { codigo: 'COBRADOR' } },
-        },
-      },
-      include: usuarioConRolesInclude,
-      orderBy: [{ estadoUsuarioId: 'asc' }, { nombres: 'asc' }],
-    });
+    if (await this.usarEsquemaTbl()) {
+      return this.listarEmpleadosTbl();
+    }
 
-    return usuarios.map((usuario) => this.formatearUsuario(usuario));
+    try {
+      const usuarios = await this.prisma.usuario.findMany({
+        where: {
+          roles: {
+            some: { rol: { codigo: 'COBRADOR' } },
+          },
+        },
+        include: usuarioConRolesInclude,
+        orderBy: [{ estadoUsuarioId: 'asc' }, { nombres: 'asc' }],
+      });
+
+      return usuarios.map((usuario) => this.formatearUsuario(usuario));
+    } catch (error) {
+      if (this.esErrorEsquemaAuthFaltante(error)) {
+        return this.listarEmpleadosTbl();
+      }
+      throw error;
+    }
   }
 
   async actualizarEmpleado(
@@ -377,6 +390,10 @@ export class AuthService {
     dto: ActualizarUsuarioDto,
   ): Promise<AuthUserResponse> {
     this.requerirAdministrador(administrador);
+
+    if (await this.usarEsquemaTbl()) {
+      return this.actualizarEmpleadoTbl(administrador, empleadoId, dto);
+    }
 
     const nombreUsuario = this.normalizarUsuario(dto.usuario);
     const correo = dto.correo.trim().toLowerCase();
@@ -450,6 +467,10 @@ export class AuthService {
 
   async listarActividadEmpleados(usuario: AuthenticatedUser) {
     this.requerirVerEmpleados(usuario);
+
+    if (await this.usarEsquemaTbl()) {
+      return this.listarActividadEmpleadosTbl();
+    }
 
     const rows = await this.prisma.$queryRaw<ActividadEmpleadoRow[]>(Prisma.sql`
       WITH empleados AS (
@@ -708,6 +729,10 @@ export class AuthService {
       ORDER BY e.activo DESC, e.nombre_completo ASC
     `);
 
+    return this.formatearActividadEmpleados(rows);
+  }
+
+  private formatearActividadEmpleados(rows: ActividadEmpleadoRow[]) {
     return rows.map((row) => {
       const deberesHoy = this.entero(row.deberes_hoy);
       const cumplidosHoy = this.entero(row.cumplidos_hoy);
@@ -748,11 +773,338 @@ export class AuthService {
     });
   }
 
+  private async listarEmpleadosTbl(): Promise<AuthUserResponse[]> {
+    const usuarios = await this.prisma.$queryRaw<UsuarioTblAuth[]>(Prisma.sql`
+      SELECT
+        tu.id_usu::text AS id,
+        tu.usu_usuario AS usuario,
+        tu.usu_password AS "passwordHash",
+        p.per_primer_nombre AS nombres,
+        p.per_apellido AS apellidos,
+        tu.usu_email AS correo,
+        tu.usu_activo AS activo,
+        COALESCE(
+          array_agg(DISTINCT tr.rol_tip::text)
+            FILTER (WHERE tr.rol_tip IS NOT NULL),
+          ARRAY[]::text[]
+        ) AS roles,
+        COALESCE(
+          array_agg(DISTINCT rec.nom)
+            FILTER (WHERE rec.nom IS NOT NULL),
+          ARRAY[]::text[]
+        ) AS permisos
+      FROM public.tbl_usuarios tu
+      JOIN public.tbl_personas p ON p.id_per = tu.persona_id
+      JOIN public.tbl_usuarios_organizaciones uo
+        ON uo.usu_id = tu.id_usu
+       AND uo.urg_activo
+      JOIN public.tbl_roles tr ON tr.id_rol = uo.rol_id
+      LEFT JOIN public.tbl_roles_recursos rr ON rr.rol_id = tr.id_rol
+      LEFT JOIN public.tbl_recursos rec ON rec.id_rec = rr.rec_id
+      WHERE EXISTS (
+        SELECT 1
+        FROM public.tbl_usuarios_organizaciones uo_cobrador
+        JOIN public.tbl_roles rol_cobrador
+          ON rol_cobrador.id_rol = uo_cobrador.rol_id
+        WHERE uo_cobrador.usu_id = tu.id_usu
+          AND uo_cobrador.urg_activo
+          AND rol_cobrador.rol_tip::text = 'COBRADOR'
+      )
+      GROUP BY
+        tu.id_usu,
+        tu.usu_usuario,
+        tu.usu_password,
+        p.per_primer_nombre,
+        p.per_apellido,
+        tu.usu_email,
+        tu.usu_activo
+      ORDER BY tu.usu_activo DESC, p.per_primer_nombre ASC, p.per_apellido ASC
+    `);
+
+    return usuarios.map((usuario) => this.formatearUsuarioTbl(usuario));
+  }
+
+  private async listarActividadEmpleadosTbl() {
+    const rows = await this.prisma.$queryRaw<ActividadEmpleadoRow[]>(Prisma.sql`
+      WITH empleados AS (
+        SELECT DISTINCT
+          tu.id_usu::text AS usuario_id,
+          tu.usu_usuario AS nombre_usuario,
+          concat_ws(' ', p.per_primer_nombre, p.per_apellido) AS nombre_completo,
+          tu.usu_email AS correo,
+          tu.usu_activo AS activo
+        FROM public.tbl_usuarios tu
+        JOIN public.tbl_personas p ON p.id_per = tu.persona_id
+        JOIN public.tbl_usuarios_organizaciones uo
+          ON uo.usu_id = tu.id_usu
+         AND uo.urg_activo
+        JOIN public.tbl_roles r
+          ON r.id_rol = uo.rol_id
+         AND r.rol_tip::text = 'COBRADOR'
+      ),
+      creditos_base AS (
+        SELECT
+          cr.id_cre,
+          cr.usu_id::text AS usuario_id,
+          ruta_credito.ruta_id::text AS ruta_id,
+          COALESCE(ruta_credito.ruta, 'Sin ruta') AS ruta,
+          cr.cli_id,
+          cr.cre_total,
+          cr.cre_fecha_inicio
+        FROM public.tbl_creditos cr
+        JOIN public.tbl_clientes cl ON cl.id_cli = cr.cli_id
+        LEFT JOIN LATERAL (
+          SELECT r.id_rut AS ruta_id, r.rut_nombre AS ruta
+          FROM public.tbl_rutas_clientes rc
+          JOIN public.tbl_rutas r ON r.id_rut = rc.rut_id
+          WHERE rc.cli_id = cl.id_cli
+            AND r.org_id = cl.org_id
+            AND rc.rcl_activo
+          ORDER BY (r.usu_id = cr.usu_id) DESC, r.rut_activa DESC, r.rut_nombre ASC
+          LIMIT 1
+        ) ruta_credito ON TRUE
+        WHERE UPPER(cr.cre_estado::text) <> 'ANULADO'
+      ),
+      cuotas_estado AS (
+        SELECT
+          cb.usuario_id,
+          cb.ruta_id,
+          cb.ruta,
+          cb.cli_id,
+          cb.id_cre,
+          cu.id_cuo,
+          cu.cuo_fecha_vencimiento,
+          GREATEST(
+            cu.cuo_valor - GREATEST(
+              COALESCE(cu.cuo_total_pagado, 0),
+              COALESCE(SUM(cp.cpa_total), 0)
+            ),
+            0
+          ) AS saldo
+        FROM creditos_base cb
+        JOIN public.tbl_cuotas cu ON cu.cre_id = cb.id_cre
+        LEFT JOIN public.tbl_cuotas_pagos cp ON cp.cuo_id = cu.id_cuo
+        WHERE UPPER(cu.cuo_estado::text) <> 'ANULADA'
+        GROUP BY
+          cb.usuario_id,
+          cb.ruta_id,
+          cb.ruta,
+          cb.cli_id,
+          cb.id_cre,
+          cu.id_cuo
+      ),
+      pagos_hoy_cuota AS (
+        SELECT DISTINCT cp.cuo_id
+        FROM public.tbl_cuotas_pagos cp
+        JOIN public.tbl_pagos p ON p.id_pag = cp.pagos_id
+        WHERE (p.pag_fecha AT TIME ZONE 'America/Bogota')::date =
+          (now() AT TIME ZONE 'America/Bogota')::date
+      ),
+      agenda_hoy AS (
+        SELECT
+          ce.usuario_id,
+          ce.ruta_id,
+          COUNT(DISTINCT ce.id_cre)::int AS deberes_hoy,
+          COUNT(DISTINCT ce.id_cre) FILTER (
+            WHERE ce.saldo <= 0 OR phc.cuo_id IS NOT NULL
+          )::int AS cumplidos_hoy,
+          COUNT(DISTINCT ce.id_cre) FILTER (
+            WHERE ce.saldo > 0 AND phc.cuo_id IS NULL
+          )::int AS pendientes_hoy
+        FROM cuotas_estado ce
+        LEFT JOIN pagos_hoy_cuota phc ON phc.cuo_id = ce.id_cuo
+        WHERE ce.cuo_fecha_vencimiento =
+          (now() AT TIME ZONE 'America/Bogota')::date
+        GROUP BY ce.usuario_id, ce.ruta_id
+      ),
+      proxima_cuota AS (
+        SELECT DISTINCT ON (ce.id_cre)
+          ce.usuario_id,
+          ce.ruta_id,
+          ce.id_cre,
+          ce.cuo_fecha_vencimiento
+        FROM cuotas_estado ce
+        WHERE ce.saldo > 0
+        ORDER BY ce.id_cre, ce.cuo_fecha_vencimiento ASC
+      ),
+      atrasos AS (
+        SELECT
+          usuario_id,
+          ruta_id,
+          COUNT(*)::int AS atrasados
+        FROM proxima_cuota
+        WHERE cuo_fecha_vencimiento <
+          (now() AT TIME ZONE 'America/Bogota')::date
+        GROUP BY usuario_id, ruta_id
+      ),
+      pagos_resumen AS (
+        SELECT
+          cr.usu_id::text AS usuario_id,
+          ruta_credito.ruta_id::text AS ruta_id,
+          COALESCE(SUM(p.pag_monto) FILTER (
+            WHERE (p.pag_fecha AT TIME ZONE 'America/Bogota')::date =
+              (now() AT TIME ZONE 'America/Bogota')::date
+          ), 0) AS recaudo_hoy,
+          COALESCE(SUM(p.pag_monto) FILTER (
+            WHERE date_trunc('month', p.pag_fecha AT TIME ZONE 'America/Bogota') =
+              date_trunc('month', now() AT TIME ZONE 'America/Bogota')
+          ), 0) AS recaudo_mes,
+          COUNT(*) FILTER (
+            WHERE (p.pag_fecha AT TIME ZONE 'America/Bogota')::date =
+              (now() AT TIME ZONE 'America/Bogota')::date
+          )::int AS pagos_hoy,
+          MAX(p.pag_fecha) AS ultima_actividad
+        FROM public.tbl_pagos p
+        JOIN public.tbl_creditos cr ON cr.id_cre = p.cre_id
+        JOIN public.tbl_clientes cl ON cl.id_cli = cr.cli_id
+        LEFT JOIN LATERAL (
+          SELECT r.id_rut AS ruta_id
+          FROM public.tbl_rutas_clientes rc
+          JOIN public.tbl_rutas r ON r.id_rut = rc.rut_id
+          WHERE rc.cli_id = cl.id_cli
+            AND r.org_id = cl.org_id
+            AND rc.rcl_activo
+          ORDER BY (r.usu_id = cr.usu_id) DESC, r.rut_activa DESC, r.rut_nombre ASC
+          LIMIT 1
+        ) ruta_credito ON TRUE
+        GROUP BY cr.usu_id, ruta_credito.ruta_id
+      ),
+      rutas_creditos AS (
+        SELECT
+          cb.usuario_id,
+          cb.ruta_id,
+          cb.ruta AS nombre,
+          COUNT(DISTINCT cb.id_cre)::int AS creditos,
+          COUNT(DISTINCT cb.cli_id)::int AS clientes
+        FROM creditos_base cb
+        GROUP BY cb.usuario_id, cb.ruta_id, cb.ruta
+      ),
+      rutas_json AS (
+        SELECT
+          rc.usuario_id,
+          jsonb_agg(
+            jsonb_build_object(
+              'rutaId', COALESCE(rc.ruta_id, ''),
+              'nombre', rc.nombre,
+              'creditos', rc.creditos,
+              'clientes', rc.clientes,
+              'debenHoy', COALESCE(ah.deberes_hoy, 0),
+              'cumplidosHoy', COALESCE(ah.cumplidos_hoy, 0),
+              'pendientesHoy', COALESCE(ah.pendientes_hoy, 0),
+              'atrasados', COALESCE(a.atrasados, 0),
+              'recaudadoHoy', COALESCE(pr.recaudo_hoy, 0)
+            )
+            ORDER BY COALESCE(ah.pendientes_hoy, 0) DESC,
+              COALESCE(a.atrasados, 0) DESC,
+              rc.nombre ASC
+          ) AS rutas
+        FROM rutas_creditos rc
+        LEFT JOIN agenda_hoy ah
+          ON ah.usuario_id = rc.usuario_id
+         AND ah.ruta_id IS NOT DISTINCT FROM rc.ruta_id
+        LEFT JOIN atrasos a
+          ON a.usuario_id = rc.usuario_id
+         AND a.ruta_id IS NOT DISTINCT FROM rc.ruta_id
+        LEFT JOIN pagos_resumen pr
+          ON pr.usuario_id = rc.usuario_id
+         AND pr.ruta_id IS NOT DISTINCT FROM rc.ruta_id
+        GROUP BY rc.usuario_id
+      ),
+      creditos_resumen AS (
+        SELECT
+          usuario_id,
+          COUNT(*)::int AS total_creditos,
+          COUNT(*) FILTER (
+            WHERE cre_fecha_inicio =
+              (now() AT TIME ZONE 'America/Bogota')::date
+          )::int AS creditos_hoy,
+          COUNT(*) FILTER (
+            WHERE date_trunc('month', cre_fecha_inicio::timestamp) =
+              date_trunc('month', now() AT TIME ZONE 'America/Bogota')
+          )::int AS creditos_mes,
+          COALESCE(SUM(cre_total), 0) AS valor_creditos_total,
+          MAX(cre_fecha_inicio::timestamp) AS ultima_actividad
+        FROM creditos_base
+        GROUP BY usuario_id
+      ),
+      agenda_resumen AS (
+        SELECT
+          usuario_id,
+          COALESCE(SUM(deberes_hoy), 0)::int AS deberes_hoy,
+          COALESCE(SUM(cumplidos_hoy), 0)::int AS cumplidos_hoy,
+          COALESCE(SUM(pendientes_hoy), 0)::int AS pendientes_hoy
+        FROM agenda_hoy
+        GROUP BY usuario_id
+      ),
+      atrasos_resumen AS (
+        SELECT
+          usuario_id,
+          COALESCE(SUM(atrasados), 0)::int AS atrasados
+        FROM atrasos
+        GROUP BY usuario_id
+      ),
+      pagos_totales AS (
+        SELECT
+          usuario_id,
+          COALESCE(SUM(recaudo_hoy), 0) AS recaudo_hoy,
+          COALESCE(SUM(recaudo_mes), 0) AS recaudo_mes,
+          COALESCE(SUM(pagos_hoy), 0)::int AS pagos_hoy,
+          MAX(ultima_actividad) AS ultima_actividad
+        FROM pagos_resumen
+        GROUP BY usuario_id
+      )
+      SELECT
+        e.usuario_id,
+        e.nombre_usuario AS usuario,
+        e.nombre_completo,
+        e.correo,
+        e.activo,
+        COALESCE(rj.rutas, '[]'::jsonb) AS rutas,
+        COALESCE(cr.total_creditos, 0) AS total_creditos,
+        COALESCE(cr.creditos_hoy, 0) AS creditos_hoy,
+        COALESCE(cr.creditos_mes, 0) AS creditos_mes,
+        COALESCE(cr.valor_creditos_total, 0) AS valor_creditos_total,
+        COALESCE(pt.recaudo_hoy, 0) AS recaudo_hoy,
+        COALESCE(pt.recaudo_mes, 0) AS recaudo_mes,
+        COALESCE(pt.pagos_hoy, 0) AS pagos_hoy,
+        COALESCE(ar.deberes_hoy, 0) AS deberes_hoy,
+        COALESCE(ar.cumplidos_hoy, 0) AS cumplidos_hoy,
+        COALESCE(ar.pendientes_hoy, 0) AS pendientes_hoy,
+        COALESCE(atrasos_total.atrasados, 0) AS atrasados,
+        CASE
+          WHEN cr.ultima_actividad IS NULL AND pt.ultima_actividad IS NULL
+            THEN NULL
+          ELSE GREATEST(
+            COALESCE(cr.ultima_actividad, '-infinity'::timestamp),
+            COALESCE(pt.ultima_actividad, '-infinity'::timestamp)
+          )
+        END AS ultima_actividad
+      FROM empleados e
+      LEFT JOIN rutas_json rj
+        ON rj.usuario_id = e.usuario_id
+      LEFT JOIN creditos_resumen cr
+        ON cr.usuario_id = e.usuario_id
+      LEFT JOIN agenda_resumen ar
+        ON ar.usuario_id = e.usuario_id
+      LEFT JOIN atrasos_resumen atrasos_total
+        ON atrasos_total.usuario_id = e.usuario_id
+      LEFT JOIN pagos_totales pt
+        ON pt.usuario_id = e.usuario_id
+      ORDER BY e.activo DESC, e.nombre_completo ASC
+    `);
+
+    return this.formatearActividadEmpleados(rows);
+  }
+
   async actualizarPermisosEmpleados(
     administrador: AuthenticatedUser,
     dto: ActualizarPermisosUsuariosDto,
   ): Promise<AuthUserResponse[]> {
     this.requerirAdministrador(administrador);
+
+    if (await this.usarEsquemaTbl()) {
+      return this.actualizarPermisosEmpleadosTbl(administrador, dto);
+    }
 
     const permisos = this.validarPermisos(dto.permisos);
     const usuariosObjetivo = await this.obtenerEmpleadosObjetivo(dto);
@@ -824,6 +1176,252 @@ export class AuthService {
     return this.listarEmpleados(administrador);
   }
 
+  private async actualizarPermisosEmpleadosTbl(
+    administrador: AuthenticatedUser,
+    dto: ActualizarPermisosUsuariosDto,
+  ): Promise<AuthUserResponse[]> {
+    const permisos = this.validarPermisos(dto.permisos);
+    const usuarioIdsDto = dto.usuarioIds?.filter((id) => id.trim()) ?? [];
+
+    if (!dto.todos && usuarioIdsDto.length === 0) {
+      throw new BadRequestException('Selecciona al menos un empleado');
+    }
+
+    if (usuarioIdsDto.some((id) => !this.esIdTbl(id))) {
+      throw new BadRequestException('Selecciona empleados validos');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      const orgId = await this.obtenerOrganizacionActivaAdministradorTbl(
+        tx,
+        administrador,
+      );
+      const filtroUsuarios = dto.todos
+        ? Prisma.empty
+        : Prisma.sql`AND tu.id_usu IN (${Prisma.join(
+            usuarioIdsDto.map((id) => BigInt(id)),
+          )})`;
+      const usuariosObjetivo = await tx.$queryRaw<
+        Array<{ usuario_id: string }>
+      >(Prisma.sql`
+        SELECT DISTINCT tu.id_usu::text AS usuario_id
+        FROM public.tbl_usuarios tu
+        JOIN public.tbl_usuarios_organizaciones uo
+          ON uo.usu_id = tu.id_usu
+         AND uo.urg_activo
+         AND uo.org_id = ${BigInt(orgId)}
+        JOIN public.tbl_roles rol ON rol.id_rol = uo.rol_id
+        WHERE rol.rol_tip::text = 'COBRADOR'
+          ${filtroUsuarios}
+      `);
+
+      if (usuariosObjetivo.length === 0) {
+        throw new BadRequestException('Selecciona al menos un empleado');
+      }
+
+      const usuarioIds = usuariosObjetivo.map((empleado) =>
+        BigInt(empleado.usuario_id),
+      );
+
+      await tx.$executeRaw(Prisma.sql`
+        DELETE FROM public.tbl_usuarios_organizaciones uo
+        USING public.tbl_roles rol
+        WHERE rol.id_rol = uo.rol_id
+          AND uo.org_id = ${BigInt(orgId)}
+          AND uo.usu_id IN (${Prisma.join(usuarioIds)})
+          AND rol.rol_tip::text IN (${Prisma.join(permisosEmpleadoCodigos)})
+      `);
+
+      if (permisos.length === 0) {
+        return;
+      }
+
+      const rolesPermiso = await tx.$queryRaw<Array<{ id: string }>>(
+        Prisma.sql`
+          SELECT id_rol::text AS id
+          FROM public.tbl_roles
+          WHERE rol_tip::text IN (${Prisma.join(permisos)})
+        `,
+      );
+
+      if (rolesPermiso.length !== permisos.length) {
+        throw new ConflictException(
+          'Faltan roles de permisos en el esquema tbl_*',
+        );
+      }
+
+      const usuariosValues = Prisma.join(
+        usuarioIds.map((id) => Prisma.sql`(${id}::bigint)`),
+      );
+
+      await tx.$executeRaw(Prisma.sql`
+        INSERT INTO public.tbl_usuarios_organizaciones (
+          rol_id,
+          usu_id,
+          org_id
+        )
+        SELECT rol.id_rol, usuarios.usuario_id, ${BigInt(orgId)}
+        FROM public.tbl_roles rol
+        CROSS JOIN (VALUES ${usuariosValues}) AS usuarios(usuario_id)
+        WHERE rol.rol_tip::text IN (${Prisma.join(permisos)})
+        ON CONFLICT (usu_id, org_id, rol_id) DO UPDATE
+        SET urg_activo = TRUE
+      `);
+    });
+
+    return this.listarEmpleados(administrador);
+  }
+
+  private async actualizarEmpleadoTbl(
+    administrador: AuthenticatedUser,
+    empleadoId: string,
+    dto: ActualizarUsuarioDto,
+  ): Promise<AuthUserResponse> {
+    if (!this.esIdTbl(empleadoId)) {
+      throw new NotFoundException('Empleado no encontrado');
+    }
+
+    const nombreUsuario = this.normalizarUsuario(dto.usuario);
+    const correo = dto.correo.trim().toLowerCase();
+    const nombre = this.separarNombre(dto.nombreCompleto);
+    const contrasena = dto.contrasena?.trim();
+    const passwordHash = contrasena
+      ? await this.passwords.hash(contrasena)
+      : null;
+
+    await this.prisma.$transaction(async (tx) => {
+      const orgId = await this.obtenerOrganizacionActivaAdministradorTbl(
+        tx,
+        administrador,
+      );
+      const [empleado] = await tx.$queryRaw<
+        Array<{ usuario_id: string; persona_id: string }>
+      >(Prisma.sql`
+        SELECT tu.id_usu::text AS usuario_id, tu.persona_id::text AS persona_id
+        FROM public.tbl_usuarios tu
+        JOIN public.tbl_usuarios_organizaciones uo
+          ON uo.usu_id = tu.id_usu
+         AND uo.urg_activo
+         AND uo.org_id = ${BigInt(orgId)}
+        JOIN public.tbl_roles rol ON rol.id_rol = uo.rol_id
+        WHERE tu.id_usu = ${BigInt(empleadoId)}
+          AND rol.rol_tip::text = 'COBRADOR'
+        LIMIT 1
+      `);
+
+      if (!empleado) {
+        throw new NotFoundException('Empleado no encontrado');
+      }
+
+      const [existenteUsuario, existenteCorreo] = await Promise.all([
+        tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+          SELECT id_usu::text AS id
+          FROM public.tbl_usuarios
+          WHERE lower(usu_usuario) = lower(${nombreUsuario})
+            AND id_usu <> ${BigInt(empleadoId)}
+          LIMIT 1
+        `),
+        tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+          SELECT id_usu::text AS id
+          FROM public.tbl_usuarios
+          WHERE lower(usu_email) = lower(${correo})
+            AND id_usu <> ${BigInt(empleadoId)}
+          LIMIT 1
+        `),
+      ]);
+
+      if (existenteUsuario[0]) {
+        throw new ConflictException('El usuario ya existe');
+      }
+
+      if (existenteCorreo[0]) {
+        throw new ConflictException('El correo ya esta registrado');
+      }
+
+      await tx.$executeRaw(Prisma.sql`
+        UPDATE public.tbl_personas
+        SET
+          per_primer_nombre = ${nombre.nombres},
+          per_apellido = ${nombre.apellidos || ' '},
+          per_email = ${correo}
+        WHERE id_per = ${BigInt(empleado.persona_id)}
+      `);
+
+      if (passwordHash) {
+        await tx.$executeRaw(Prisma.sql`
+          UPDATE public.tbl_usuarios
+          SET
+            usu_usuario = ${nombreUsuario},
+            usu_email = ${correo},
+            usu_password = ${passwordHash}
+          WHERE id_usu = ${BigInt(empleadoId)}
+        `);
+        return;
+      }
+
+      await tx.$executeRaw(Prisma.sql`
+        UPDATE public.tbl_usuarios
+        SET
+          usu_usuario = ${nombreUsuario},
+          usu_email = ${correo}
+        WHERE id_usu = ${BigInt(empleadoId)}
+      `);
+    });
+
+    const actualizado = await this.obtenerUsuarioTblPorId(empleadoId);
+    if (!actualizado) {
+      throw new NotFoundException('Empleado no encontrado');
+    }
+
+    return this.formatearUsuarioTbl(actualizado);
+  }
+
+  private async actualizarEstadoEmpleadoTbl(
+    administrador: AuthenticatedUser,
+    empleadoId: string,
+    dto: ActualizarEstadoUsuarioDto,
+  ): Promise<AuthUserResponse> {
+    if (!this.esIdTbl(empleadoId)) {
+      throw new NotFoundException('Empleado no encontrado');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      const orgId = await this.obtenerOrganizacionActivaAdministradorTbl(
+        tx,
+        administrador,
+      );
+      const empleados = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        SELECT tu.id_usu::text AS id
+        FROM public.tbl_usuarios tu
+        JOIN public.tbl_usuarios_organizaciones uo
+          ON uo.usu_id = tu.id_usu
+         AND uo.urg_activo
+         AND uo.org_id = ${BigInt(orgId)}
+        JOIN public.tbl_roles rol ON rol.id_rol = uo.rol_id
+        WHERE tu.id_usu = ${BigInt(empleadoId)}
+          AND rol.rol_tip::text = 'COBRADOR'
+        LIMIT 1
+      `);
+
+      if (!empleados[0]) {
+        throw new NotFoundException('Empleado no encontrado');
+      }
+
+      await tx.$executeRaw(Prisma.sql`
+        UPDATE public.tbl_usuarios
+        SET usu_activo = ${dto.activo}
+        WHERE id_usu = ${BigInt(empleadoId)}
+      `);
+    });
+
+    const actualizado = await this.obtenerUsuarioTblPorId(empleadoId);
+    if (!actualizado) {
+      throw new NotFoundException('Empleado no encontrado');
+    }
+
+    return this.formatearUsuarioTbl(actualizado);
+  }
+
   async actualizarEstadoEmpleado(
     administrador: AuthenticatedUser,
     empleadoId: string,
@@ -833,6 +1431,14 @@ export class AuthService {
 
     if (empleadoId === administrador.usuarioId) {
       throw new BadRequestException('No puedes desactivar tu propio usuario');
+    }
+
+    if (await this.usarEsquemaTbl()) {
+      return this.actualizarEstadoEmpleadoTbl(
+        administrador,
+        empleadoId,
+        dto,
+      );
     }
 
     const empleado = await this.prisma.usuario.findFirst({
@@ -984,6 +1590,10 @@ export class AuthService {
     rolCodigo: string,
     administrador?: AuthenticatedUser,
   ): Promise<AuthUserResponse> {
+    if (await this.usarEsquemaTbl()) {
+      return this.crearUsuarioTbl(dto, rolCodigo, administrador);
+    }
+
     const nombreUsuario = this.normalizarUsuario(dto.usuario);
     const correo = dto.correo.trim().toLowerCase();
     const nombre = this.separarNombre(dto.nombreCompleto);
@@ -1061,6 +1671,180 @@ export class AuthService {
     });
 
     return this.formatearUsuario(creado);
+  }
+
+  private async crearUsuarioTbl(
+    dto: CrearUsuarioDto,
+    rolCodigo: string,
+    administrador?: AuthenticatedUser,
+  ): Promise<AuthUserResponse> {
+    const nombreUsuario = this.normalizarUsuario(dto.usuario);
+    const correo = dto.correo.trim().toLowerCase();
+    const nombre = this.separarNombre(dto.nombreCompleto);
+    const passwordHash = await this.passwords.hash(dto.contrasena);
+    const rolNivel =
+      rolCodigo === 'ADMINISTRADOR' ? 1 : rolCodigo === 'AUDITOR' ? 3 : 2;
+
+    const creadoId = await this.prisma.$transaction(async (tx) => {
+      const orgId = await this.obtenerOrganizacionActivaAdministradorTbl(
+        tx,
+        administrador,
+      );
+
+      const [usuarioExiste, correoExiste] = await Promise.all([
+        this.existeUsuarioTbl(tx, nombreUsuario),
+        this.existeCorreoUsuarioTbl(tx, correo),
+      ]);
+
+      if (usuarioExiste) {
+        throw new ConflictException('El usuario ya existe');
+      }
+
+      if (correoExiste) {
+        throw new ConflictException('El correo ya esta registrado');
+      }
+
+      const [rol] = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        INSERT INTO public.tbl_roles (rol_tip, rol_nivel)
+        VALUES (${rolCodigo}::public.rol_tipo_enum, ${rolNivel})
+        ON CONFLICT (rol_tip) DO UPDATE
+        SET rol_nivel = EXCLUDED.rol_nivel
+        RETURNING id_rol::text AS id
+      `);
+
+      if (!rol) {
+        throw new ConflictException(`No existe el rol ${rolCodigo}`);
+      }
+
+      const documento = `empleado-${nombreUsuario}`;
+      const [persona] = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        INSERT INTO public.tbl_personas (
+          per_primer_nombre,
+          per_apellido,
+          per_documento,
+          per_email
+        )
+        VALUES (
+          ${nombre.nombres},
+          ${nombre.apellidos || ' '},
+          ${documento},
+          ${correo}
+        )
+        RETURNING id_per::text AS id
+      `);
+
+      const [usuarioCreado] = await tx.$queryRaw<Array<{ id: string }>>(
+        Prisma.sql`
+          INSERT INTO public.tbl_usuarios (
+            usu_usuario,
+            usu_password,
+            usu_email,
+            persona_id
+          )
+          VALUES (
+            ${nombreUsuario},
+            ${passwordHash},
+            ${correo},
+            ${persona.id}::bigint
+          )
+          RETURNING id_usu::text AS id
+        `,
+      );
+
+      await tx.$executeRaw(Prisma.sql`
+        INSERT INTO public.tbl_usuarios_organizaciones (
+          rol_id,
+          usu_id,
+          org_id
+        )
+        VALUES (
+          ${rol.id}::bigint,
+          ${usuarioCreado.id}::bigint,
+          ${orgId}::bigint
+        )
+      `);
+
+      if (rolCodigo === 'COBRADOR') {
+        const rolesEmpleado = await tx.$queryRaw<Array<{ id: string }>>(
+          Prisma.sql`
+            SELECT id_rol::text AS id
+            FROM public.tbl_roles
+            WHERE rol_tip::text IN (${Prisma.join(
+              permisosEmpleadoPredeterminadosCodigos,
+            )})
+          `,
+        );
+
+        if (
+          rolesEmpleado.length !== permisosEmpleadoPredeterminadosCodigos.length
+        ) {
+          throw new ConflictException(
+            'Faltan roles predeterminados de empleados en el esquema tbl_*',
+          );
+        }
+
+        await tx.$executeRaw(Prisma.sql`
+          INSERT INTO public.tbl_usuarios_organizaciones (
+            rol_id,
+            usu_id,
+            org_id
+          )
+          SELECT roles.id_rol, ${usuarioCreado.id}::bigint, ${orgId}::bigint
+          FROM public.tbl_roles roles
+          WHERE roles.rol_tip::text IN (${Prisma.join(
+            permisosEmpleadoPredeterminadosCodigos,
+          )})
+          ON CONFLICT (usu_id, org_id, rol_id) DO UPDATE
+          SET urg_activo = TRUE
+        `);
+      }
+
+      return usuarioCreado.id;
+    });
+
+    const creado = await this.obtenerUsuarioTblPorId(creadoId);
+    if (!creado) {
+      throw new ConflictException('No se pudo crear el usuario');
+    }
+
+    return this.formatearUsuarioTbl(creado);
+  }
+
+  private async obtenerOrganizacionActivaAdministradorTbl(
+    tx: Prisma.TransactionClient,
+    administrador?: AuthenticatedUser,
+  ) {
+    const [scope] = administrador
+      ? await tx.$queryRaw<Array<{ org_id: string }>>(Prisma.sql`
+          SELECT uo.org_id::text AS org_id
+          FROM public.tbl_usuarios tu
+          JOIN public.tbl_usuarios_organizaciones uo
+            ON uo.usu_id = tu.id_usu
+           AND uo.urg_activo
+          JOIN public.tbl_organizaciones org
+            ON org.id_org = uo.org_id
+           AND org.org_activo
+          WHERE tu.usu_activo
+            AND (
+              tu.id_usu::text = ${administrador.usuarioId}
+              OR lower(tu.usu_usuario) = lower(${administrador.usuario})
+            )
+          ORDER BY uo.id_urg ASC
+          LIMIT 1
+        `)
+      : await tx.$queryRaw<Array<{ org_id: string }>>(Prisma.sql`
+          SELECT id_org::text AS org_id
+          FROM public.tbl_organizaciones
+          WHERE org_activo
+          ORDER BY id_org ASC
+          LIMIT 1
+        `);
+
+    if (!scope) {
+      throw new ConflictException('No existe una organizacion activa');
+    }
+
+    return scope.org_id;
   }
 
   private crearSesion(usuario: UsuarioConRoles): AuthSessionResponse {
@@ -1265,13 +2049,20 @@ export class AuthService {
           array_agg(DISTINCT tr.rol_tip::text)
             FILTER (WHERE tr.rol_tip IS NOT NULL),
           ARRAY[]::text[]
-        ) AS roles
+        ) AS roles,
+        COALESCE(
+          array_agg(DISTINCT rec.nom)
+            FILTER (WHERE rec.nom IS NOT NULL),
+          ARRAY[]::text[]
+        ) AS permisos
       FROM public.tbl_usuarios tu
       JOIN public.tbl_personas p ON p.id_per = tu.persona_id
       LEFT JOIN public.tbl_usuarios_organizaciones uo
         ON uo.usu_id = tu.id_usu
        AND uo.urg_activo
       LEFT JOIN public.tbl_roles tr ON tr.id_rol = uo.rol_id
+      LEFT JOIN public.tbl_roles_recursos rr ON rr.rol_id = tr.id_rol
+      LEFT JOIN public.tbl_recursos rec ON rec.id_rec = rr.rec_id
       WHERE lower(tu.usu_usuario) = ${nombreUsuario}
       GROUP BY
         tu.id_usu,
@@ -1305,13 +2096,20 @@ export class AuthService {
           array_agg(DISTINCT tr.rol_tip::text)
             FILTER (WHERE tr.rol_tip IS NOT NULL),
           ARRAY[]::text[]
-        ) AS roles
+        ) AS roles,
+        COALESCE(
+          array_agg(DISTINCT rec.nom)
+            FILTER (WHERE rec.nom IS NOT NULL),
+          ARRAY[]::text[]
+        ) AS permisos
       FROM public.tbl_usuarios tu
       JOIN public.tbl_personas p ON p.id_per = tu.persona_id
       LEFT JOIN public.tbl_usuarios_organizaciones uo
         ON uo.usu_id = tu.id_usu
        AND uo.urg_activo
       LEFT JOIN public.tbl_roles tr ON tr.id_rol = uo.rol_id
+      LEFT JOIN public.tbl_roles_recursos rr ON rr.rol_id = tr.id_rol
+      LEFT JOIN public.tbl_recursos rec ON rec.id_rec = rr.rec_id
       WHERE tu.id_usu = ${BigInt(usuarioId)}
       GROUP BY
         tu.id_usu,
@@ -1331,10 +2129,26 @@ export class AuthService {
     return /^[1-9]\d{0,18}$/.test(value);
   }
 
+  private async usarEsquemaTbl() {
+    try {
+      const rows = await this.prisma.$queryRaw<Array<{ disponible: boolean }>>`
+        SELECT (
+          to_regclass('public.tbl_usuarios') IS NOT NULL
+          AND to_regclass('public.tbl_roles') IS NOT NULL
+          AND to_regclass('public.tbl_usuarios_organizaciones') IS NOT NULL
+        ) AS disponible
+      `;
+
+      return rows[0]?.disponible ?? false;
+    } catch {
+      return false;
+    }
+  }
+
   private esErrorEsquemaAuthFaltante(error: unknown) {
     return (
       error instanceof Prisma.PrismaClientKnownRequestError &&
-      ['P2021', 'P2022'].includes(error.code)
+      ['P2010', 'P2021', 'P2022'].includes(error.code)
     );
   }
 
@@ -1467,9 +2281,13 @@ export class AuthService {
   private formatearUsuarioTbl(usuario: UsuarioTblAuth): AuthUserResponse {
     const roles = usuario.roles.length > 0 ? usuario.roles : ['COBRADOR'];
     const esAdministrador = roles.includes('ADMINISTRADOR');
-    const permisos = permisosEmpleadoCodigos.filter((codigo) =>
-      roles.includes(codigo),
+    const permisosDesdeRecursos = usuario.permisos.filter((permiso) =>
+      esPermisoEmpleado(permiso),
     );
+    const permisos =
+      permisosDesdeRecursos.length > 0
+        ? permisosDesdeRecursos
+        : permisosEmpleadoCodigos.filter((codigo) => roles.includes(codigo));
 
     return {
       id: usuario.id,

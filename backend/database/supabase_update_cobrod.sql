@@ -46,7 +46,21 @@ CREATE TABLE IF NOT EXISTS public._prisma_migrations (
 
 DO $$
 BEGIN
-  CREATE TYPE rol_tipo_enum AS ENUM ('ADMINISTRADOR', 'COBRADOR', 'AUDITOR');
+  CREATE TYPE rol_tipo_enum AS ENUM (
+    'ADMINISTRADOR',
+    'COBRADOR',
+    'AUDITOR',
+    'VER_EMPLEADOS',
+    'CREAR_CAJA_MENOR',
+    'REGISTRAR_FLUJO_CAJA',
+    'CREAR_CREDITOS',
+    'REFINANCIAR_CREDITOS',
+    'MODIFICAR_CREDITOS',
+    'ELIMINAR_CREDITOS',
+    'AGREGAR_CUOTA',
+    'MODIFICAR_MOVIMIENTOS',
+    'ELIMINAR_MOVIMIENTOS'
+  );
 EXCEPTION
   WHEN duplicate_object THEN NULL;
 END;
@@ -743,6 +757,165 @@ INSERT INTO tbl_roles (rol_tip, rol_nivel) VALUES
   ('AUDITOR', 3)
 ON CONFLICT (rol_tip) DO NOTHING;
 
+DO $$
+DECLARE
+  enum_valores_pendientes BOOLEAN;
+BEGIN
+  ALTER TYPE rol_tipo_enum ADD VALUE IF NOT EXISTS 'VER_EMPLEADOS';
+  ALTER TYPE rol_tipo_enum ADD VALUE IF NOT EXISTS 'CREAR_CAJA_MENOR';
+  ALTER TYPE rol_tipo_enum ADD VALUE IF NOT EXISTS 'REGISTRAR_FLUJO_CAJA';
+  ALTER TYPE rol_tipo_enum ADD VALUE IF NOT EXISTS 'CREAR_CREDITOS';
+  ALTER TYPE rol_tipo_enum ADD VALUE IF NOT EXISTS 'REFINANCIAR_CREDITOS';
+  ALTER TYPE rol_tipo_enum ADD VALUE IF NOT EXISTS 'MODIFICAR_CREDITOS';
+  ALTER TYPE rol_tipo_enum ADD VALUE IF NOT EXISTS 'ELIMINAR_CREDITOS';
+  ALTER TYPE rol_tipo_enum ADD VALUE IF NOT EXISTS 'AGREGAR_CUOTA';
+  ALTER TYPE rol_tipo_enum ADD VALUE IF NOT EXISTS 'MODIFICAR_MOVIMIENTOS';
+  ALTER TYPE rol_tipo_enum ADD VALUE IF NOT EXISTS 'ELIMINAR_MOVIMIENTOS';
+
+  SELECT EXISTS (
+    SELECT 1
+    FROM pg_enum enum_value
+    JOIN pg_type enum_type
+      ON enum_type.oid = enum_value.enumtypid
+    WHERE enum_type.typname = 'rol_tipo_enum'
+      AND enum_value.enumlabel IN (
+        'VER_EMPLEADOS',
+        'CREAR_CAJA_MENOR',
+        'REGISTRAR_FLUJO_CAJA',
+        'CREAR_CREDITOS',
+        'REFINANCIAR_CREDITOS',
+        'MODIFICAR_CREDITOS',
+        'ELIMINAR_CREDITOS',
+        'AGREGAR_CUOTA',
+        'MODIFICAR_MOVIMIENTOS',
+        'ELIMINAR_MOVIMIENTOS'
+      )
+      AND enum_value.xmin::text = txid_current()::text
+  )
+  INTO enum_valores_pendientes;
+
+  IF enum_valores_pendientes THEN
+    RAISE NOTICE
+      'Valores nuevos de rol_tipo_enum agregados. Ejecuta nuevamente este script o backend/database/supabase_seed_roles_recursos.sql para sembrar roles y recursos de permisos.';
+    RETURN;
+  END IF;
+
+  INSERT INTO tbl_roles (rol_tip, rol_nivel)
+  SELECT rol.codigo::rol_tipo_enum, rol.nivel
+  FROM (
+    VALUES
+      ('VER_EMPLEADOS', 10),
+      ('CREAR_CAJA_MENOR', 20),
+      ('REGISTRAR_FLUJO_CAJA', 30),
+      ('CREAR_CREDITOS', 40),
+      ('REFINANCIAR_CREDITOS', 50),
+      ('MODIFICAR_CREDITOS', 60),
+      ('ELIMINAR_CREDITOS', 70),
+      ('AGREGAR_CUOTA', 80),
+      ('MODIFICAR_MOVIMIENTOS', 90),
+      ('ELIMINAR_MOVIMIENTOS', 100)
+  ) AS rol(codigo, nivel)
+  ON CONFLICT (rol_tip) DO UPDATE
+  SET rol_nivel = EXCLUDED.rol_nivel;
+
+  INSERT INTO tbl_recursos (
+    nom,
+    rec_orden,
+    rec_interface
+  )
+  SELECT
+    recurso.codigo,
+    recurso.orden,
+    'WEB'::recurso_interface_enum
+  FROM (
+    VALUES
+      ('VER_EMPLEADOS', 10),
+      ('CREAR_CAJA_MENOR', 20),
+      ('REGISTRAR_FLUJO_CAJA', 30),
+      ('CREAR_CREDITOS', 40),
+      ('REFINANCIAR_CREDITOS', 50),
+      ('MODIFICAR_CREDITOS', 60),
+      ('ELIMINAR_CREDITOS', 70),
+      ('AGREGAR_CUOTA', 80),
+      ('MODIFICAR_MOVIMIENTOS', 90),
+      ('ELIMINAR_MOVIMIENTOS', 100)
+  ) AS recurso(codigo, orden)
+  ON CONFLICT (rec_interface, nom) DO UPDATE
+  SET rec_orden = EXCLUDED.rec_orden;
+
+  INSERT INTO tbl_roles_recursos (rol_id, rec_id)
+  SELECT rol.id_rol, recurso.id_rec
+  FROM tbl_roles rol
+  JOIN tbl_recursos recurso
+    ON recurso.rec_interface = 'WEB'
+  WHERE rol.rol_tip::text = 'ADMINISTRADOR'
+    AND recurso.nom IN (
+      'VER_EMPLEADOS',
+      'CREAR_CAJA_MENOR',
+      'REGISTRAR_FLUJO_CAJA',
+      'CREAR_CREDITOS',
+      'REFINANCIAR_CREDITOS',
+      'MODIFICAR_CREDITOS',
+      'ELIMINAR_CREDITOS',
+      'AGREGAR_CUOTA',
+      'MODIFICAR_MOVIMIENTOS',
+      'ELIMINAR_MOVIMIENTOS'
+    )
+  ON CONFLICT (rec_id, rol_id) DO NOTHING;
+
+  INSERT INTO tbl_roles_recursos (rol_id, rec_id)
+  SELECT rol.id_rol, recurso.id_rec
+  FROM tbl_roles rol
+  JOIN tbl_recursos recurso
+    ON recurso.rec_interface = 'WEB'
+  WHERE rol.rol_tip::text = 'AUDITOR'
+    AND recurso.nom = 'VER_EMPLEADOS'
+  ON CONFLICT (rec_id, rol_id) DO NOTHING;
+
+  INSERT INTO tbl_roles_recursos (rol_id, rec_id)
+  SELECT rol.id_rol, recurso.id_rec
+  FROM tbl_roles rol
+  JOIN tbl_recursos recurso
+    ON recurso.rec_interface = 'WEB'
+   AND recurso.nom = rol.rol_tip::text
+  WHERE rol.rol_tip::text IN (
+    'VER_EMPLEADOS',
+    'CREAR_CAJA_MENOR',
+    'REGISTRAR_FLUJO_CAJA',
+    'CREAR_CREDITOS',
+    'REFINANCIAR_CREDITOS',
+    'MODIFICAR_CREDITOS',
+    'ELIMINAR_CREDITOS',
+    'AGREGAR_CUOTA',
+    'MODIFICAR_MOVIMIENTOS',
+    'ELIMINAR_MOVIMIENTOS'
+  )
+  ON CONFLICT (rec_id, rol_id) DO NOTHING;
+
+  INSERT INTO tbl_usuarios_organizaciones (rol_id, usu_id, org_id)
+  SELECT permiso.id_rol, usuario_org.usu_id, usuario_org.org_id
+  FROM tbl_usuarios_organizaciones usuario_org
+  JOIN tbl_roles rol_base
+    ON rol_base.id_rol = usuario_org.rol_id
+   AND rol_base.rol_tip::text = 'COBRADOR'
+  JOIN tbl_roles permiso
+    ON permiso.rol_tip::text IN (
+      'CREAR_CAJA_MENOR',
+      'REGISTRAR_FLUJO_CAJA',
+      'CREAR_CREDITOS',
+      'REFINANCIAR_CREDITOS',
+      'MODIFICAR_CREDITOS',
+      'ELIMINAR_CREDITOS',
+      'AGREGAR_CUOTA',
+      'MODIFICAR_MOVIMIENTOS',
+      'ELIMINAR_MOVIMIENTOS'
+    )
+  WHERE usuario_org.urg_activo
+  ON CONFLICT (usu_id, org_id, rol_id) DO UPDATE
+  SET urg_activo = TRUE;
+END;
+$$;
+
 INSERT INTO tbl_productos_creditos (
   pcr_nombre,
   pcr_frecuencia,
@@ -766,6 +939,29 @@ ON CONFLICT (org_id, pcr_nombre) DO UPDATE
 SET
   pcr_frecuencia = EXCLUDED.pcr_frecuencia,
   pcr_tasa_interes = EXCLUDED.pcr_tasa_interes;
+
+INSERT INTO tbl_medios_pagos (
+  med_nombre,
+  med_tipo,
+  org_id
+)
+SELECT
+  medio.nombre,
+  medio.tipo::medio_pago_tipo_enum,
+  organizacion.id_org
+FROM tbl_organizaciones organizacion
+CROSS JOIN (
+  VALUES
+    ('Efectivo', 'EFECTIVO'),
+    ('Transferencia', 'TRANSFERENCIA'),
+    ('Tarjeta', 'TARJETA'),
+    ('Billetera', 'BILLETERA'),
+    ('Otro', 'OTRO')
+) AS medio(nombre, tipo)
+ON CONFLICT (org_id, med_nombre) DO UPDATE
+SET
+  med_tipo = EXCLUDED.med_tipo,
+  med_activo = TRUE;
 
 INSERT INTO tbl_categorias_gastos (cga_nombre, cga_descripcion) VALUES
   ('TRANSPORTE', 'Gastos de transporte'),

@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Logger,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { Request, Response } from 'express';
 
 import { DomainError } from '../domain/domain-error';
@@ -24,8 +25,12 @@ export class DomainExceptionFilter implements ExceptionFilter<unknown> {
     if (statusCode >= 500) {
       const errorType =
         exception instanceof Error ? exception.name : typeof exception;
+      const prismaCode =
+        exception instanceof Prisma.PrismaClientKnownRequestError
+          ? ` code=${exception.code}`
+          : '';
       this.logger.error(
-        `Unhandled error requestId=${requestId} method=${request.method} path=${request.path} type=${errorType}`,
+        `Unhandled error requestId=${requestId} method=${request.method} path=${request.path} type=${errorType}${prismaCode}`,
       );
     }
 
@@ -55,6 +60,15 @@ export class DomainExceptionFilter implements ExceptionFilter<unknown> {
         statusCode,
         code: this.httpCode(statusCode, response),
         message: this.httpMessage(statusCode, response),
+      };
+    }
+
+    if (this.isDatabaseUnavailable(exception)) {
+      return {
+        statusCode: HttpStatus.SERVICE_UNAVAILABLE,
+        code: 'DATABASE_UNAVAILABLE',
+        message:
+          'No hay conexion con la base de datos. La accion puede guardarse para sincronizar luego.',
       };
     }
 
@@ -129,5 +143,23 @@ export class DomainExceptionFilter implements ExceptionFilter<unknown> {
       return rawMessage.slice(0, 500);
     }
     return 'Solicitud no valida';
+  }
+
+  private isDatabaseUnavailable(exception: unknown) {
+    if (exception instanceof Prisma.PrismaClientKnownRequestError) {
+      return ['P1001', 'P1002', 'P1008', 'P1017', 'P2024'].includes(
+        exception.code,
+      );
+    }
+
+    if (exception instanceof Prisma.PrismaClientInitializationError) {
+      return true;
+    }
+
+    if (exception instanceof Prisma.PrismaClientRustPanicError) {
+      return true;
+    }
+
+    return false;
   }
 }

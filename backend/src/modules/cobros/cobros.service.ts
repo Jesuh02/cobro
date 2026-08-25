@@ -7735,9 +7735,24 @@ export class CobrosService {
     const fechaHastaColombia = query.fechaHasta
       ? this.finDiaColombia(this.parsearFecha(query.fechaHasta, 'fechaHasta'))
       : null;
+    const condicionUsuario = this.esIdTbl(usuario.usuarioId)
+      ? Prisma.sql`tu_org.id_usu = ${usuario.usuarioId}::bigint`
+      : Prisma.sql`tu_org.usu_usuario = ${usuario.usuario}`;
+
     const condicionesCajas: Prisma.Sql[] = [
       Prisma.sql`c.caj_tipo::text = 'MENOR'`,
       Prisma.sql`c.caj_activa`,
+      Prisma.sql`
+        EXISTS (
+          SELECT 1
+          FROM public.tbl_usuarios_organizaciones uo_org
+          JOIN public.tbl_usuarios tu_org ON tu_org.id_usu = uo_org.usu_id
+          WHERE uo_org.org_id = c.org_id
+            AND uo_org.urg_activo
+            AND tu_org.usu_activo
+            AND ${condicionUsuario}
+        )
+      `,
     ];
     const filtrosFechaPagos: Prisma.Sql[] = [];
     const filtrosFechaGastos: Prisma.Sql[] = [];
@@ -7862,7 +7877,7 @@ export class CobrosService {
             ${fechaCreditosWhere}
         ) creditos ON TRUE
         WHERE ${
-          this.esAdministrador(usuario)
+          this.puedeVerDatosOrganizacion(usuario)
             ? Prisma.sql`TRUE`
             : Prisma.sql`EXISTS (
                 SELECT 1

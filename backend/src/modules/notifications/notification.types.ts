@@ -7,11 +7,18 @@ export type NotificationContact = {
   whatsapp: string | null;
 };
 
-export type CreditApprovedNotification = {
-  kind: 'credito_aprobado';
+export type BaseNotification = {
+  kind: NotificationKind;
   eventId: string;
+  orgId: string;
+  cliId: string;
+  creId: string;
   contact: NotificationContact;
   monedaCodigo: string;
+};
+
+export type CreditApprovedNotification = BaseNotification & {
+  kind: 'credito_aprobado';
   valorPrincipal: number;
   valorTotal: number;
   numeroCuotas: number;
@@ -19,11 +26,8 @@ export type CreditApprovedNotification = {
   primeraCuota: Date | null;
 };
 
-export type PaymentReceivedNotification = {
+export type PaymentReceivedNotification = BaseNotification & {
   kind: 'pago_recibido';
-  eventId: string;
-  contact: NotificationContact;
-  monedaCodigo: string;
   montoPagado: number;
   saldoPendiente: number;
   cuotasRestantes: number;
@@ -32,11 +36,8 @@ export type PaymentReceivedNotification = {
   proximaCuotaFecha: Date | null;
 };
 
-export type CreditCompletedNotification = {
+export type CreditCompletedNotification = BaseNotification & {
   kind: 'credito_finalizado';
-  eventId: string;
-  contact: NotificationContact;
-  monedaCodigo: string;
   valorPrincipal: number;
 };
 

@@ -141,9 +141,6 @@ type PresupuestoRow = {
   recaudado: Prisma.Decimal;
   gastos: Prisma.Decimal;
   creditos: Prisma.Decimal;
-  creditos_refinanciados: number | bigint;
-  clientes_creditos: number | bigint;
-  valor_refinanciado: Prisma.Decimal;
   presupuesto: Prisma.Decimal;
 };
 
@@ -398,9 +395,6 @@ type PresupuestoTblRow = {
   recaudado: Prisma.Decimal;
   gastos: Prisma.Decimal;
   creditos: Prisma.Decimal;
-  creditos_refinanciados: number | bigint;
-  clientes_creditos: number | bigint;
-  valor_refinanciado: Prisma.Decimal;
   presupuesto: Prisma.Decimal;
 };
 
@@ -620,7 +614,6 @@ const codigosMovimientoCajaTblBase = tiposMovimientoCajaTblBase.map(
 @Injectable()
 export class CobrosService {
   private esquemaTblDisponible?: boolean;
-  private refinanciacionTblDisponibleCache?: boolean;
   private readonly tablaExisteCache = new Map<string, boolean>();
 
   constructor(
@@ -2578,7 +2571,8 @@ export class CobrosService {
         );
 
         if (
-          this.decimalANumero(presupuesto?.presupuesto ?? null) < valorPrincipal
+          this.decimalANumero(presupuesto?.presupuesto ?? null) <
+          valorPrincipal
         ) {
           throw DomainError.conflict(
             'No se puede hacer credito sin caja suficiente',
@@ -4101,10 +4095,7 @@ export class CobrosService {
           );
         }
 
-        if (
-          !this.esAdministrador(usuario) &&
-          cuota.usuario !== usuario.usuario
-        ) {
+        if (!this.esAdministrador(usuario) && cuota.usuario !== usuario.usuario) {
           throw new ForbiddenException('No tienes acceso a este credito');
         }
 
@@ -5747,11 +5738,8 @@ export class CobrosService {
     const filtrosFechaPago: Prisma.Sql[] = [];
     const filtrosFechaGasto: Prisma.Sql[] = [];
     const filtrosFechaCredito: Prisma.Sql[] = [];
-    const filtrosFechaRefinanciacion: Prisma.Sql[] = [];
-    const usarDatosCobrador =
-      query.alcance === 'cobrador' || !this.puedeVerDatosOrganizacion(usuario);
 
-    if (usarDatosCobrador) {
+    if (!this.puedeVerDatosOrganizacion(usuario)) {
       condiciones.push(
         Prisma.sql`cm.responsable_usuario_id = ${usuario.usuarioId}::uuid`,
       );
@@ -5774,9 +5762,6 @@ export class CobrosService {
       );
       filtrosFechaGasto.push(Prisma.sql`g.fecha_gasto >= ${fechaDesde}`);
       filtrosFechaCredito.push(Prisma.sql`c.fecha_inicio >= ${fechaDesde}`);
-      filtrosFechaRefinanciacion.push(
-        Prisma.sql`cmm.fecha_movimiento >= ${fechaDesde}`,
-      );
     }
 
     if (fechaDesdePago) {
@@ -5789,9 +5774,6 @@ export class CobrosService {
       );
       filtrosFechaGasto.push(Prisma.sql`g.fecha_gasto <= ${fechaHasta}`);
       filtrosFechaCredito.push(Prisma.sql`c.fecha_inicio <= ${fechaHasta}`);
-      filtrosFechaRefinanciacion.push(
-        Prisma.sql`cmm.fecha_movimiento <= ${fechaHasta}`,
-      );
     }
 
     if (fechaHastaPago) {
@@ -5818,36 +5800,9 @@ export class CobrosService {
       filtrosFechaCredito.length > 0
         ? Prisma.sql`AND ${Prisma.join(filtrosFechaCredito, ' AND ')}`
         : Prisma.empty;
-    const fechaRefinanciacionWhere =
-      filtrosFechaRefinanciacion.length > 0
-        ? Prisma.sql`AND ${Prisma.join(filtrosFechaRefinanciacion, ' AND ')}`
-        : Prisma.empty;
     const condicionMostrarCreditos = query.cajaMenorId
       ? Prisma.sql`TRUE`
       : Prisma.sql`cr.caja_menor_id = cm.caja_menor_id`;
-    const filtroPagosCobrador =
-      query.alcance === 'cobrador'
-        ? Prisma.sql`AND p.cobrador_usuario_id = ${usuario.usuarioId}::uuid`
-        : Prisma.empty;
-    const filtroCreditosCobrador =
-      query.alcance === 'cobrador'
-        ? Prisma.sql`AND (
-            c.creado_por_usuario_id = ${usuario.usuarioId}::uuid
-            OR r.responsable_usuario_id = ${usuario.usuarioId}::uuid
-          )`
-        : Prisma.empty;
-    const filtroRefinanciadosCobrador =
-      query.alcance === 'cobrador'
-        ? Prisma.sql`AND (
-            c.creado_por_usuario_id = ${usuario.usuarioId}::uuid
-            OR EXISTS (
-              SELECT 1
-              FROM public.ruta r_ref
-              WHERE r_ref.ruta_id = c.ruta_id
-                AND r_ref.responsable_usuario_id = ${usuario.usuarioId}::uuid
-            )
-          )`
-        : Prisma.empty;
 
     const rows = await this.prisma.$queryRaw<PresupuestoRow[]>(Prisma.sql`
       WITH caja_recaudo AS (
@@ -5884,12 +5839,6 @@ export class CobrosService {
           WHEN ${condicionMostrarCreditos} THEN COALESCE(creditos.total_creditos, 0)
           ELSE 0
         END AS creditos,
-        CASE
-          WHEN ${condicionMostrarCreditos} THEN COALESCE(creditos.clientes_creditos, 0)
-          ELSE 0
-        END AS clientes_creditos,
-        COALESCE(refinanciados.creditos_refinanciados, 0) AS creditos_refinanciados,
-        COALESCE(refinanciados.valor_refinanciado, 0) AS valor_refinanciado,
         (
           COALESCE(saldo_caja.saldo_caja_menor, 0)
           + (
@@ -5929,7 +5878,6 @@ export class CobrosService {
         JOIN public.ruta r ON r.ruta_id = p.ruta_id
         WHERE r.responsable_usuario_id = cm.responsable_usuario_id
           AND p.moneda_codigo = cm.moneda_codigo
-          ${filtroPagosCobrador}
           ${fechaPagoWhere}
       ) pagos ON TRUE
       LEFT JOIN LATERAL (
@@ -5965,9 +5913,7 @@ export class CobrosService {
           ${fechaMovimientoWhere}
       ) gastos_caja ON TRUE
       LEFT JOIN LATERAL (
-        SELECT
-          SUM(c.valor_principal) AS total_creditos,
-          COUNT(DISTINCT c.cliente_id) AS clientes_creditos
+        SELECT SUM(c.valor_principal) AS total_creditos
         FROM public.credito c
         JOIN public.ruta r ON r.ruta_id = c.ruta_id
         JOIN public.estado_credito ec
@@ -5975,30 +5921,8 @@ export class CobrosService {
         WHERE r.responsable_usuario_id = cm.responsable_usuario_id
           AND c.moneda_codigo = cm.moneda_codigo
           AND ec.codigo <> 'ANULADO'
-          ${filtroCreditosCobrador}
           ${fechaCreditoWhere}
       ) creditos ON TRUE
-      LEFT JOIN LATERAL (
-        SELECT
-          COUNT(*) AS creditos_refinanciados,
-          SUM(ref.valor_refinanciado) AS valor_refinanciado
-        FROM (
-          SELECT DISTINCT
-            c.credito_id,
-            COALESCE(c.valor_principal_refinanciado, c.valor_principal) AS valor_refinanciado
-          FROM public.credito c
-          JOIN public.estado_credito ec
-            ON ec.estado_credito_id = c.estado_credito_id
-          JOIN public.caja_menor_movimiento cmm
-            ON cmm.referencia_id = c.credito_id
-           AND cmm.referencia_tabla = 'credito_refinanciacion'
-          WHERE cmm.caja_menor_id = cm.caja_menor_id
-            AND c.moneda_codigo = cm.moneda_codigo
-            AND ec.codigo <> 'ANULADO'
-            ${filtroRefinanciadosCobrador}
-            ${fechaRefinanciacionWhere}
-        ) ref
-      ) refinanciados ON TRUE
       ${where}
       ORDER BY cm.activa DESC, cm.nombre ASC, cm.caja_menor_id ASC
     `);
@@ -6012,9 +5936,6 @@ export class CobrosService {
       recaudado: this.decimalANumero(row.recaudado),
       gastos: this.decimalANumero(row.gastos),
       creditos: this.decimalANumero(row.creditos),
-      creditosRefinanciados: Number(row.creditos_refinanciados ?? 0),
-      clientesCreditos: Number(row.clientes_creditos ?? 0),
-      valorRefinanciado: this.decimalANumero(row.valor_refinanciado),
       presupuesto: this.decimalANumero(row.presupuesto),
     }));
 
@@ -6032,17 +5953,6 @@ export class CobrosService {
         ),
         creditos: this.redondear(
           items.reduce((total, item) => total + item.creditos, 0),
-        ),
-        creditosRefinanciados: items.reduce(
-          (total, item) => total + item.creditosRefinanciados,
-          0,
-        ),
-        clientesCreditos: items.reduce(
-          (total, item) => total + item.clientesCreditos,
-          0,
-        ),
-        valorRefinanciado: this.redondear(
-          items.reduce((total, item) => total + item.valorRefinanciado, 0),
         ),
         presupuesto: this.redondear(
           items.reduce((total, item) => total + item.presupuesto, 0),
@@ -6070,31 +5980,6 @@ export class CobrosService {
     }
 
     return this.esquemaTblDisponible;
-  }
-
-  private async refinanciacionTblDisponible() {
-    if (this.refinanciacionTblDisponibleCache !== undefined) {
-      return this.refinanciacionTblDisponibleCache;
-    }
-
-    try {
-      const rows = await this.prisma.$queryRaw<Array<{ disponible: boolean }>>`
-        SELECT COUNT(*) = 3 AS disponible
-        FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND table_name = 'tbl_creditos'
-          AND column_name IN (
-            'cre_refinanciado_en',
-            'cre_valor_principal_anterior',
-            'cre_valor_principal_refinanciado'
-          )
-      `;
-      this.refinanciacionTblDisponibleCache = rows[0]?.disponible ?? false;
-    } catch {
-      this.refinanciacionTblDisponibleCache = false;
-    }
-
-    return this.refinanciacionTblDisponibleCache;
   }
 
   private async obtenerCatalogosTbl(usuario: AuthenticatedUser) {
@@ -7076,20 +6961,12 @@ export class CobrosService {
     const conditions: Prisma.Sql[] = [Prisma.sql`1 = 1`];
 
     if (!this.esAdministrador(usuario)) {
-      conditions.push(
-        this.condicionOrganizacionUsuarioTbl(usuario, Prisma.sql`cl.org_id`),
-      );
+      conditions.push(Prisma.sql`tu.usu_usuario = ${usuario.usuario}`);
     }
 
     if (query.rutaId) {
       conditions.push(
         Prisma.sql`ruta_credito.ruta_id = ${query.rutaId}::bigint`,
-      );
-    }
-
-    if (query.cajaMenorId) {
-      conditions.push(
-        Prisma.sql`caja_credito.caja_menor_id::text = ${query.cajaMenorId}`,
       );
     }
 
@@ -7267,20 +7144,12 @@ export class CobrosService {
     const fechaConditions: Prisma.Sql[] = [Prisma.sql`1 = 1`];
 
     if (!this.esAdministrador(usuario)) {
-      conditions.push(
-        this.condicionOrganizacionUsuarioTbl(usuario, Prisma.sql`cl.org_id`),
-      );
+      conditions.push(Prisma.sql`tu.usu_usuario = ${usuario.usuario}`);
     }
 
     if (query.rutaId) {
       conditions.push(
         Prisma.sql`ruta_credito.ruta_id = ${query.rutaId}::bigint`,
-      );
-    }
-
-    if (query.cajaMenorId) {
-      conditions.push(
-        Prisma.sql`caja_credito.caja_menor_id::text = ${query.cajaMenorId}`,
       );
     }
 
@@ -7367,17 +7236,6 @@ export class CobrosService {
           ORDER BY (r.usu_id = cr.usu_id) DESC, r.rut_activa DESC, r.rut_nombre ASC
           LIMIT 1
         ) ruta_credito ON TRUE
-        LEFT JOIN LATERAL (
-          SELECT c.id_caj AS caja_menor_id
-          FROM public.tbl_movimientos_cajas mc
-          JOIN public.tbl_sesiones_cajas sc ON sc.id_sca = mc.sca_id
-          JOIN public.tbl_cajas c ON c.id_caj = sc.caj_id
-          WHERE mc.mca_referencia_tipo::text = 'CREDITO'
-            AND mc.mca_referencia_id = cr.id_cre
-            AND mc.mca_tipo::text = 'DESEMBOLSO_CREDITO'
-          ORDER BY mc.id_mca DESC
-          LIMIT 1
-        ) caja_credito ON TRUE
         WHERE ${Prisma.join(conditions, ' AND ')}
       ),
       creditos_filtrados AS (
@@ -7610,9 +7468,7 @@ export class CobrosService {
     }
 
     if (!this.esAdministrador(usuario)) {
-      conditions.push(
-        this.condicionOrganizacionUsuarioTbl(usuario, Prisma.sql`org_id`),
-      );
+      conditions.push(Prisma.sql`usuario = ${usuario.usuario}`);
     }
 
     if (search) {
@@ -7654,7 +7510,6 @@ export class CobrosService {
       WITH base AS (
         SELECT
           CONCAT('mov-', m.id_mca::text) AS id,
-          m.org_id::text AS org_id,
           c.id_caj::text AS caja_menor_id,
           COALESCE(c.caj_nombre, o.org_nombre) AS caja_menor,
           NULL::text AS cliente,
@@ -7687,7 +7542,6 @@ export class CobrosService {
         UNION ALL
         SELECT
           CONCAT('pago-', pa.id_pag::text),
-          cl.org_id::text,
           c.id_caj::text,
           COALESCE(c.caj_nombre, r.rut_nombre, o.org_nombre),
           TRIM(CONCAT_WS(' ', per.per_primer_nombre, per.per_apellido)),
@@ -7734,7 +7588,6 @@ export class CobrosService {
         UNION ALL
         SELECT
           CONCAT('gasto-', g.id_gas::text),
-          c.org_id::text,
           c.id_caj::text,
           c.caj_nombre,
           NULL::text,
@@ -7904,9 +7757,6 @@ export class CobrosService {
     const filtrosFechaPagos: Prisma.Sql[] = [];
     const filtrosFechaGastos: Prisma.Sql[] = [];
     const filtrosFechaCreditos: Prisma.Sql[] = [];
-    const filtrosFechaRefinanciacion: Prisma.Sql[] = [];
-    const usarDatosCobrador =
-      query.alcance === 'cobrador' || !this.esAdministrador(usuario);
 
     if (query.cajaMenorId) {
       condicionesCajas.push(Prisma.sql`c.id_caj::text = ${query.cajaMenorId}`);
@@ -7920,9 +7770,6 @@ export class CobrosService {
     if (fechaDesdeColombia) {
       filtrosFechaPagos.push(Prisma.sql`pa.pag_fecha >= ${fechaDesdeColombia}`);
       filtrosFechaGastos.push(Prisma.sql`g.gas_fecha >= ${fechaDesdeColombia}`);
-      filtrosFechaRefinanciacion.push(
-        Prisma.sql`cr.cre_refinanciado_en >= ${fechaDesdeColombia}`,
-      );
     }
 
     if (fechaDesde) {
@@ -7934,9 +7781,6 @@ export class CobrosService {
     if (fechaHastaColombia) {
       filtrosFechaPagos.push(Prisma.sql`pa.pag_fecha <= ${fechaHastaColombia}`);
       filtrosFechaGastos.push(Prisma.sql`g.gas_fecha <= ${fechaHastaColombia}`);
-      filtrosFechaRefinanciacion.push(
-        Prisma.sql`cr.cre_refinanciado_en <= ${fechaHastaColombia}`,
-      );
     }
 
     if (fechaHasta) {
@@ -7960,37 +7804,6 @@ export class CobrosService {
       filtrosFechaCreditos.length > 0
         ? Prisma.sql`AND ${Prisma.join(filtrosFechaCreditos, ' AND ')}`
         : Prisma.empty;
-    const fechaRefinanciacionWhere =
-      filtrosFechaRefinanciacion.length > 0
-        ? Prisma.sql`AND ${Prisma.join(filtrosFechaRefinanciacion, ' AND ')}`
-        : Prisma.empty;
-    const refinanciacionDisponible = await this.refinanciacionTblDisponible();
-    const refinanciacionResumenSelect = refinanciacionDisponible
-      ? Prisma.sql`,
-          MAX(COALESCE(refinanciados.creditos_refinanciados, 0)) AS creditos_refinanciados,
-          MAX(COALESCE(refinanciados.valor_refinanciado, 0)) AS valor_refinanciado`
-      : Prisma.sql`,
-          0::bigint AS creditos_refinanciados,
-          0::numeric AS valor_refinanciado`;
-    const refinanciacionJoin = refinanciacionDisponible
-      ? Prisma.sql`
-        LEFT JOIN LATERAL (
-          SELECT
-            COUNT(*) AS creditos_refinanciados,
-            SUM(COALESCE(cr.cre_valor_principal_refinanciado, cr.cre_total)) AS valor_refinanciado
-          FROM public.tbl_creditos cr
-          JOIN public.tbl_clientes cl ON cl.id_cli = cr.cli_id
-          WHERE cl.org_id = c.org_id
-            ${
-              usarDatosCobrador
-                ? Prisma.sql`AND cr.usu_id = c.responsable_id`
-                : Prisma.empty
-            }
-            AND cr.cre_refinanciado_en IS NOT NULL
-            AND UPPER(cr.cre_estado::text) NOT IN ('ANULADO')
-            ${fechaRefinanciacionWhere}
-        ) refinanciados ON TRUE`
-      : Prisma.empty;
 
     const rows = await this.prisma.$queryRaw<PresupuestoTblRow[]>(Prisma.sql`
       WITH cajas AS (
@@ -8035,9 +7848,7 @@ export class CobrosService {
             ), 0) AS caja_menor,
           COALESCE(pagos.recaudado, 0) AS recaudado,
           COALESCE(gastos.gastos, 0) AS gastos,
-          COALESCE(creditos.creditos, 0) AS creditos,
-          COALESCE(creditos.clientes_creditos, 0) AS clientes_creditos
-          ${refinanciacionResumenSelect}
+          COALESCE(creditos.creditos, 0) AS creditos
         FROM cajas c
         LEFT JOIN public.tbl_sesiones_cajas sc ON sc.caj_id = c.id_caj
         LEFT JOIN public.tbl_movimientos_cajas m
@@ -8049,11 +7860,6 @@ export class CobrosService {
           JOIN public.tbl_creditos cr ON cr.id_cre = pa.cre_id
           JOIN public.tbl_clientes cl ON cl.id_cli = cr.cli_id
           WHERE cl.org_id = c.org_id
-            ${
-              usarDatosCobrador
-                ? Prisma.sql`AND cr.usu_id = c.responsable_id`
-                : Prisma.empty
-            }
             ${fechaPagosWhere}
         ) pagos ON TRUE
         LEFT JOIN LATERAL (
@@ -8063,21 +7869,13 @@ export class CobrosService {
             ${fechaGastosWhere}
         ) gastos ON TRUE
         LEFT JOIN LATERAL (
-          SELECT
-            SUM(cr.cre_total) AS creditos,
-            COUNT(DISTINCT cr.cli_id) AS clientes_creditos
+          SELECT SUM(cr.cre_total) AS creditos
           FROM public.tbl_creditos cr
           JOIN public.tbl_clientes cl ON cl.id_cli = cr.cli_id
           WHERE cl.org_id = c.org_id
-            ${
-              usarDatosCobrador
-                ? Prisma.sql`AND cr.usu_id = c.responsable_id`
-                : Prisma.empty
-            }
             AND UPPER(cr.cre_estado::text) NOT IN ('ANULADO')
             ${fechaCreditosWhere}
         ) creditos ON TRUE
-        ${refinanciacionJoin}
         WHERE ${
           this.puedeVerDatosOrganizacion(usuario)
             ? Prisma.sql`TRUE`
@@ -8088,7 +7886,7 @@ export class CobrosService {
                   AND u.usu_usuario = ${usuario.usuario}
               )`
         }
-        GROUP BY c.id_caj, c.caj_nombre, c.responsable_id, pagos.recaudado, gastos.gastos, creditos.creditos, creditos.clientes_creditos
+        GROUP BY c.id_caj, c.caj_nombre, c.responsable_id, pagos.recaudado, gastos.gastos, creditos.creditos
       )
       SELECT
         caja_menor_id,
@@ -8099,9 +7897,6 @@ export class CobrosService {
         recaudado,
         gastos,
         creditos,
-        clientes_creditos,
-        creditos_refinanciados,
-        valor_refinanciado,
         caja_menor + recaudado - gastos AS presupuesto
       FROM resumen
       ORDER BY moneda_codigo ASC, caja_menor_id ASC
@@ -8116,9 +7911,6 @@ export class CobrosService {
       recaudado: this.decimalANumero(row.recaudado),
       gastos: this.decimalANumero(row.gastos),
       creditos: this.decimalANumero(row.creditos),
-      creditosRefinanciados: Number(row.creditos_refinanciados ?? 0),
-      clientesCreditos: Number(row.clientes_creditos ?? 0),
-      valorRefinanciado: this.decimalANumero(row.valor_refinanciado),
       presupuesto: this.decimalANumero(row.presupuesto),
     }));
 
@@ -8136,17 +7928,6 @@ export class CobrosService {
         ),
         creditos: this.redondear(
           items.reduce((total, item) => total + item.creditos, 0),
-        ),
-        creditosRefinanciados: items.reduce(
-          (total, item) => total + item.creditosRefinanciados,
-          0,
-        ),
-        clientesCreditos: items.reduce(
-          (total, item) => total + item.clientesCreditos,
-          0,
-        ),
-        valorRefinanciado: this.redondear(
-          items.reduce((total, item) => total + item.valorRefinanciado, 0),
         ),
         presupuesto: this.redondear(
           items.reduce((total, item) => total + item.presupuesto, 0),
@@ -9501,24 +9282,6 @@ export class CobrosService {
     );
   }
 
-  private condicionOrganizacionUsuarioTbl(
-    usuario: AuthenticatedUser,
-    orgId: Prisma.Sql,
-  ) {
-    return Prisma.sql`EXISTS (
-      SELECT 1
-      FROM public.tbl_usuarios_organizaciones uo_scope
-      JOIN public.tbl_usuarios tu_scope
-        ON tu_scope.id_usu = uo_scope.usu_id
-      JOIN public.tbl_organizaciones org_scope
-        ON org_scope.id_org = uo_scope.org_id
-      WHERE uo_scope.org_id = ${orgId}::bigint
-        AND uo_scope.urg_activo
-        AND org_scope.org_activo
-        AND tu_scope.usu_usuario = ${usuario.usuario}
-    )`;
-  }
-
   private esAdministrador(usuario: AuthenticatedUser) {
     return usuario.roles.includes('ADMINISTRADOR');
   }
@@ -10378,77 +10141,6 @@ export class CobrosService {
     search: string | null,
     limit = 100,
   ): Promise<AuditoriaMovimientoCajaRow[]> {
-    if (
-      await this.tablaExiste(
-        this.prisma,
-        'public.caja_menor_movimiento_auditoria',
-      )
-    ) {
-      const condiciones: Prisma.Sql[] = [Prisma.sql`1 = 1`];
-
-      if (query.cajaMenorId) {
-        condiciones.push(
-          Prisma.sql`cma.caja_menor_id = ${query.cajaMenorId}::uuid`,
-        );
-      }
-
-      if (!this.puedeVerDatosOrganizacion(usuario)) {
-        condiciones.push(
-          Prisma.sql`cm.responsable_usuario_id = ${usuario.usuarioId}::uuid`,
-        );
-      }
-
-      if (query.fechaDesde) {
-        const fechaDesde = this.inicioDiaColombia(
-          this.parsearFecha(query.fechaDesde, 'fechaDesde'),
-        );
-        condiciones.push(Prisma.sql`cma.creado_en >= ${fechaDesde}`);
-      }
-
-      if (query.fechaHasta) {
-        const fechaHasta = this.finDiaColombia(
-          this.parsearFecha(query.fechaHasta, 'fechaHasta'),
-        );
-        condiciones.push(Prisma.sql`cma.creado_en <= ${fechaHasta}`);
-      }
-
-      if (search) {
-        const patron = `%${search}%`;
-        condiciones.push(Prisma.sql`(
-          cma.detalle ILIKE ${patron}
-          OR cma.accion ILIKE ${patron}
-          OR cm.nombre ILIKE ${patron}
-          OR u.nombres ILIKE ${patron}
-          OR u.apellidos ILIKE ${patron}
-          OR u.nombre_usuario ILIKE ${patron}
-        )`);
-      }
-
-      return this.prisma.$queryRaw<AuditoriaMovimientoCajaRow[]>(Prisma.sql`
-        SELECT
-          cma.caja_menor_movimiento_auditoria_id AS auditoria_id,
-          cma.caja_menor_id,
-          cm.nombre AS caja_menor,
-          cma.caja_menor_movimiento_id::text AS registro_id,
-          cma.accion,
-          cma.detalle AS descripcion,
-          cma.creado_en,
-          u.usuario_id,
-          u.nombre_usuario,
-          u.nombres,
-          u.apellidos,
-          u.correo,
-          u.telefono
-        FROM public.caja_menor_movimiento_auditoria cma
-        JOIN public.caja_menor cm
-          ON cm.caja_menor_id = cma.caja_menor_id
-        LEFT JOIN public.usuario u ON u.usuario_id = cma.usuario_id
-        WHERE ${Prisma.join(condiciones, ' AND ')}
-        ORDER BY cma.creado_en DESC
-        LIMIT ${limit}
-      `);
-    }
-
     if (!(await this.tablaExiste(this.prisma, 'public.auditoria'))) {
       return [];
     }

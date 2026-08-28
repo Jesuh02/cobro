@@ -1,11 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { EmailNotificationService } from './email-notification.service';
 import { NotificationTemplatesService } from './notification-templates.service';
 import { CustomerNotification, NotificationContact } from './notification.types';
 import { WhatsappNotificationService } from './whatsapp-notification.service';
-import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class NotificationsService {
@@ -161,6 +161,45 @@ export class NotificationsService {
     }
   }
 
+  async notifyCollectorOverdueCollections(collectorId: string) {
+    if (!this.enabled()) {
+      return;
+    }
+
+    try {
+      const rows = /^\d+$/.test(collectorId)
+        ? await this.overdueCollectionsTbl(collectorId)
+        : this.isUuid(collectorId)
+          ? await this.overdueCollections(collectorId)
+          : [];
+
+      if (rows.length === 0) {
+        return;
+      }
+
+      const collector = rows[0];
+      await this.deliver({
+        kind: 'cobros_atrasados_cobrador',
+        eventId: `${collectorId}-${this.todayKey()}`,
+        contact: this.contact(
+          collector.cobrador_nombre,
+          collector.cobrador_correo,
+          collector.cobrador_telefono,
+        ),
+        totalAtrasados: rows.length,
+        cobros: rows.map((row) => ({
+          cliente: row.cliente,
+          ruta: row.ruta,
+          fechaVencimiento: row.fecha_vencimiento,
+          saldoCuota: this.number(row.saldo_cuota),
+          monedaCodigo: row.moneda_codigo,
+        })),
+      });
+    } catch (error) {
+      this.logUnexpected('cobros atrasados cobrador', collectorId, error);
+    }
+  }
+
   private async deliver(notification: CustomerNotification) {
     const rendered = this.templates.render(notification);
     const jobs: Array<Promise<void>> = [];
@@ -204,35 +243,47 @@ export class NotificationsService {
 
     const results = await Promise.allSettled(jobs);
     
-    // Guardar el registro en la base de datos
-    for (const result of results) {
-      const canal = notification.contact.correo && result === results[0] ? 'CORREO' : 'WHATSAPP';
-      const estado = result.status === 'fulfilled' ? 'ENVIADA' : 'FALLIDA';
-      const errorMsg = result.status === 'rejected' ? this.errorMessage(result.reason) : null;
-      const destinatario = canal === 'CORREO' ? notification.contact.correo : notification.contact.whatsapp;
-      const pagId = notification.kind === 'pago_recibido' ? notification.eventId : null;
-      const creId = notification.creId;
-      
-      if (destinatario) {
-        try {
-          await this.prisma.$executeRaw`
-            INSERT INTO tbl_notificaciones (
-              org_id, cli_id, cre_id, pag_id, not_tipo, not_canal, not_estado, not_destinatario, not_error, not_envio
-            ) VALUES (
-              ${BigInt(notification.orgId)}, 
-              ${BigInt(notification.cliId)}, 
-              ${creId ? BigInt(creId) : null}, 
-              ${pagId ? BigInt(pagId) : null}, 
-              ${notification.kind.toUpperCase()}::notificacion_tipo_enum, 
-              ${canal}::notificacion_canal_enum, 
-              ${estado}::notificacion_estado_enum, 
-              ${destinatario}, 
-              ${errorMsg}, 
-              ${estado === 'ENVIADA' ? new Date() : null}
-            )
-          `;
-        } catch (dbError) {
-          this.logger.error(`No se pudo guardar el log de notificacion: ${this.errorMessage(dbError)}`);
+    if (this.isPersistableNotification(notification)) {
+      // Guardar el registro en la base de datos
+      for (const result of results) {
+        const canal =
+          notification.contact.correo && result === results[0]
+            ? 'CORREO'
+            : 'WHATSAPP';
+        const estado = result.status === 'fulfilled' ? 'ENVIADA' : 'FALLIDA';
+        const errorMsg =
+          result.status === 'rejected' ? this.errorMessage(result.reason) : null;
+        const destinatario =
+          canal === 'CORREO'
+            ? notification.contact.correo
+            : notification.contact.whatsapp;
+        const pagId =
+          notification.kind === 'pago_recibido' ? notification.eventId : null;
+        const creId = notification.creId;
+
+        if (destinatario) {
+          try {
+            await this.prisma.$executeRaw`
+              INSERT INTO tbl_notificaciones (
+                org_id, cli_id, cre_id, pag_id, not_tipo, not_canal, not_estado, not_destinatario, not_error, not_envio
+              ) VALUES (
+                ${BigInt(notification.orgId)},
+                ${BigInt(notification.cliId)},
+                ${creId ? BigInt(creId) : null},
+                ${pagId ? BigInt(pagId) : null},
+                ${notification.kind.toUpperCase()}::notificacion_tipo_enum,
+                ${canal}::notificacion_canal_enum,
+                ${estado}::notificacion_estado_enum,
+                ${destinatario},
+                ${errorMsg},
+                ${estado === 'ENVIADA' ? new Date() : null}
+              )
+            `;
+          } catch (dbError) {
+            this.logger.error(
+              `No se pudo guardar el log de notificacion: ${this.errorMessage(dbError)}`,
+            );
+          }
         }
       }
     }
@@ -268,10 +319,16 @@ export class NotificationsService {
     return this.config.get<boolean>('NOTIFICATIONS_ENABLED') ?? false;
   }
 
-  private number(value: Prisma.Decimal | string | number | bigint) {
+  private number(
+    value: Prisma.Decimal | string | number | bigint | null | undefined,
+  ) {
     if (value === null || value === undefined) return 0;
     if (value instanceof Prisma.Decimal) return value.toNumber();
     return Number(value);
+  }
+
+  private isPersistableNotification(notification: CustomerNotification) {
+    return notification.kind !== 'cobros_atrasados_cobrador';
   }
 
   private round(value: number) {

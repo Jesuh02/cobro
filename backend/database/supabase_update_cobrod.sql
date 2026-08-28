@@ -50,17 +50,7 @@ BEGIN
     'SUPER_ADMIN',
     'ADMINISTRADOR',
     'COBRADOR',
-    'AUDITOR',
-    'VER_EMPLEADOS',
-    'CREAR_CAJA_MENOR',
-    'REGISTRAR_FLUJO_CAJA',
-    'CREAR_CREDITOS',
-    'REFINANCIAR_CREDITOS',
-    'MODIFICAR_CREDITOS',
-    'ELIMINAR_CREDITOS',
-    'AGREGAR_CUOTA',
-    'MODIFICAR_MOVIMIENTOS',
-    'ELIMINAR_MOVIMIENTOS'
+    'AUDITOR'
   );
 EXCEPTION
   WHEN duplicate_object THEN NULL;
@@ -801,67 +791,61 @@ ON CONFLICT (rol_tip) DO NOTHING;
 
 DO $$
 DECLARE
-  enum_valores_pendientes BOOLEAN;
+  super_admin_existia BOOLEAN;
 BEGIN
-  ALTER TYPE rol_tipo_enum ADD VALUE IF NOT EXISTS 'SUPER_ADMIN';
-  ALTER TYPE rol_tipo_enum ADD VALUE IF NOT EXISTS 'VER_EMPLEADOS';
-  ALTER TYPE rol_tipo_enum ADD VALUE IF NOT EXISTS 'CREAR_CAJA_MENOR';
-  ALTER TYPE rol_tipo_enum ADD VALUE IF NOT EXISTS 'REGISTRAR_FLUJO_CAJA';
-  ALTER TYPE rol_tipo_enum ADD VALUE IF NOT EXISTS 'CREAR_CREDITOS';
-  ALTER TYPE rol_tipo_enum ADD VALUE IF NOT EXISTS 'REFINANCIAR_CREDITOS';
-  ALTER TYPE rol_tipo_enum ADD VALUE IF NOT EXISTS 'MODIFICAR_CREDITOS';
-  ALTER TYPE rol_tipo_enum ADD VALUE IF NOT EXISTS 'ELIMINAR_CREDITOS';
-  ALTER TYPE rol_tipo_enum ADD VALUE IF NOT EXISTS 'AGREGAR_CUOTA';
-  ALTER TYPE rol_tipo_enum ADD VALUE IF NOT EXISTS 'MODIFICAR_MOVIMIENTOS';
-  ALTER TYPE rol_tipo_enum ADD VALUE IF NOT EXISTS 'ELIMINAR_MOVIMIENTOS';
-
   SELECT EXISTS (
     SELECT 1
     FROM pg_enum enum_value
     JOIN pg_type enum_type
       ON enum_type.oid = enum_value.enumtypid
     WHERE enum_type.typname = 'rol_tipo_enum'
-      AND enum_value.enumlabel IN (
-        'SUPER_ADMIN',
-        'VER_EMPLEADOS',
-        'CREAR_CAJA_MENOR',
-        'REGISTRAR_FLUJO_CAJA',
-        'CREAR_CREDITOS',
-        'REFINANCIAR_CREDITOS',
-        'MODIFICAR_CREDITOS',
-        'ELIMINAR_CREDITOS',
-        'AGREGAR_CUOTA',
-        'MODIFICAR_MOVIMIENTOS',
-        'ELIMINAR_MOVIMIENTOS'
-      )
-      AND enum_value.xmin::text = txid_current()::text
+      AND enum_value.enumlabel = 'SUPER_ADMIN'
   )
-  INTO enum_valores_pendientes;
+  INTO super_admin_existia;
 
-  IF enum_valores_pendientes THEN
+  ALTER TYPE rol_tipo_enum ADD VALUE IF NOT EXISTS 'SUPER_ADMIN';
+
+  IF NOT super_admin_existia THEN
     RAISE NOTICE
-      'Valores nuevos de rol_tipo_enum agregados. Ejecuta nuevamente este script para sembrar roles y recursos de permisos.';
-    RETURN;
-  END IF;
+      'Valor SUPER_ADMIN agregado a rol_tipo_enum. Ejecuta nuevamente este script para sembrar el rol de soporte.';
+  ELSE
+    UPDATE tbl_roles
+    SET rol_nivel = 4
+    WHERE rol_tip::text = 'SUPER_ADMIN';
 
-  INSERT INTO tbl_roles (rol_tip, rol_nivel)
-  SELECT rol.codigo::rol_tipo_enum, rol.nivel
-  FROM (
-    VALUES
-      ('SUPER_ADMIN', 1),
-      ('VER_EMPLEADOS', 10),
-      ('CREAR_CAJA_MENOR', 20),
-      ('REGISTRAR_FLUJO_CAJA', 30),
-      ('CREAR_CREDITOS', 40),
-      ('REFINANCIAR_CREDITOS', 50),
-      ('MODIFICAR_CREDITOS', 60),
-      ('ELIMINAR_CREDITOS', 70),
-      ('AGREGAR_CUOTA', 80),
-      ('MODIFICAR_MOVIMIENTOS', 90), 
-      ('ELIMINAR_MOVIMIENTOS', 100)
-  ) AS rol(codigo, nivel)
-  ON CONFLICT (rol_tip) DO UPDATE
-  SET rol_nivel = EXCLUDED.rol_nivel;
+    WITH super_admin_preferido AS (
+      INSERT INTO tbl_roles (id_rol, rol_tip, rol_nivel)
+      OVERRIDING SYSTEM VALUE
+      SELECT 4, 'SUPER_ADMIN'::rol_tipo_enum, 4
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM tbl_roles
+        WHERE rol_tip::text = 'SUPER_ADMIN'
+      )
+      AND NOT EXISTS (
+        SELECT 1
+        FROM tbl_roles
+        WHERE id_rol = 4
+      )
+      RETURNING id_rol
+    )
+    INSERT INTO tbl_roles (rol_tip, rol_nivel)
+    SELECT 'SUPER_ADMIN'::rol_tipo_enum, 4
+    WHERE NOT EXISTS (SELECT 1 FROM super_admin_preferido)
+      AND NOT EXISTS (
+        SELECT 1
+        FROM tbl_roles
+        WHERE rol_tip::text = 'SUPER_ADMIN'
+      )
+    ON CONFLICT (rol_tip) DO UPDATE
+    SET rol_nivel = EXCLUDED.rol_nivel;
+
+    PERFORM setval(
+      pg_get_serial_sequence('tbl_roles', 'id_rol'),
+      GREATEST((SELECT COALESCE(MAX(id_rol), 1) FROM tbl_roles), 4),
+      TRUE
+    );
+  END IF;
 
   INSERT INTO tbl_recursos (
     nom,
@@ -887,6 +871,52 @@ BEGIN
   ) AS recurso(codigo, orden)
   ON CONFLICT (rec_interface, nom) DO UPDATE
   SET rec_orden = EXCLUDED.rec_orden;
+
+  DELETE FROM tbl_usuarios_organizaciones usuario_org
+  USING tbl_roles rol
+  WHERE rol.id_rol = usuario_org.rol_id
+    AND rol.rol_tip::text IN (
+      'VER_EMPLEADOS',
+      'CREAR_CAJA_MENOR',
+      'REGISTRAR_FLUJO_CAJA',
+      'CREAR_CREDITOS',
+      'REFINANCIAR_CREDITOS',
+      'MODIFICAR_CREDITOS',
+      'ELIMINAR_CREDITOS',
+      'AGREGAR_CUOTA',
+      'MODIFICAR_MOVIMIENTOS',
+      'ELIMINAR_MOVIMIENTOS'
+    );
+
+  DELETE FROM tbl_roles_recursos rol_recurso
+  USING tbl_roles rol
+  WHERE rol.id_rol = rol_recurso.rol_id
+    AND rol.rol_tip::text IN (
+      'VER_EMPLEADOS',
+      'CREAR_CAJA_MENOR',
+      'REGISTRAR_FLUJO_CAJA',
+      'CREAR_CREDITOS',
+      'REFINANCIAR_CREDITOS',
+      'MODIFICAR_CREDITOS',
+      'ELIMINAR_CREDITOS',
+      'AGREGAR_CUOTA',
+      'MODIFICAR_MOVIMIENTOS',
+      'ELIMINAR_MOVIMIENTOS'
+    );
+
+  DELETE FROM tbl_roles rol
+  WHERE rol.rol_tip::text IN (
+    'VER_EMPLEADOS',
+    'CREAR_CAJA_MENOR',
+    'REGISTRAR_FLUJO_CAJA',
+    'CREAR_CREDITOS',
+    'REFINANCIAR_CREDITOS',
+    'MODIFICAR_CREDITOS',
+    'ELIMINAR_CREDITOS',
+    'AGREGAR_CUOTA',
+    'MODIFICAR_MOVIMIENTOS',
+    'ELIMINAR_MOVIMIENTOS'
+  );
 
   INSERT INTO tbl_roles_recursos (rol_id, rec_id)
   SELECT rol.id_rol, recurso.id_rec
@@ -922,29 +952,8 @@ BEGIN
   FROM tbl_roles rol
   JOIN tbl_recursos recurso
     ON recurso.rec_interface = 'WEB'
-   AND recurso.nom = rol.rol_tip::text
-  WHERE rol.rol_tip::text IN (
-    'VER_EMPLEADOS',
-    'CREAR_CAJA_MENOR',
-    'REGISTRAR_FLUJO_CAJA',
-    'CREAR_CREDITOS',
-    'REFINANCIAR_CREDITOS',
-    'MODIFICAR_CREDITOS',
-    'ELIMINAR_CREDITOS',
-    'AGREGAR_CUOTA',
-    'MODIFICAR_MOVIMIENTOS',
-    'ELIMINAR_MOVIMIENTOS'
-  )
-  ON CONFLICT (rec_id, rol_id) DO NOTHING;
-
-  INSERT INTO tbl_usuarios_organizaciones (rol_id, usu_id, org_id)
-  SELECT permiso.id_rol, usuario_org.usu_id, usuario_org.org_id
-  FROM tbl_usuarios_organizaciones usuario_org
-  JOIN tbl_roles rol_base
-    ON rol_base.id_rol = usuario_org.rol_id
-   AND rol_base.rol_tip::text = 'COBRADOR'
-  JOIN tbl_roles permiso
-    ON permiso.rol_tip::text IN (
+  WHERE rol.rol_tip::text = 'COBRADOR'
+    AND recurso.nom IN (
       'CREAR_CAJA_MENOR',
       'REGISTRAR_FLUJO_CAJA',
       'CREAR_CREDITOS',
@@ -955,9 +964,7 @@ BEGIN
       'MODIFICAR_MOVIMIENTOS',
       'ELIMINAR_MOVIMIENTOS'
     )
-  WHERE usuario_org.urg_activo
-  ON CONFLICT (usu_id, org_id, rol_id) DO UPDATE
-  SET urg_activo = TRUE;
+  ON CONFLICT (rec_id, rol_id) DO NOTHING;
 END;
 $$;
 

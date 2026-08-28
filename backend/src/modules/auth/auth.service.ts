@@ -1604,16 +1604,17 @@ export class AuthService {
       throw new BadRequestException('Selecciona empleados validos');
     }
 
+    if (!dto.todos) {
+      throw new ConflictException(
+        'El esquema tbl_* actual administra permisos por rol, no por empleado',
+      );
+    }
+
     await this.prisma.$transaction(async (tx) => {
       const orgId = await this.obtenerOrganizacionActivaAdministradorTbl(
         tx,
         administrador,
       );
-      const filtroUsuarios = dto.todos
-        ? Prisma.empty
-        : Prisma.sql`AND tu.id_usu IN (${Prisma.join(
-            usuarioIdsDto.map((id) => BigInt(id)),
-          )})`;
       const usuariosObjetivo = await tx.$queryRaw<
         Array<{ usuario_id: string }>
       >(Prisma.sql`
@@ -1625,60 +1626,63 @@ export class AuthService {
          AND uo.org_id = ${BigInt(orgId)}
         JOIN public.tbl_roles rol ON rol.id_rol = uo.rol_id
         WHERE rol.rol_tip::text = 'COBRADOR'
-          ${filtroUsuarios}
       `);
 
       if (usuariosObjetivo.length === 0) {
         throw new BadRequestException('Selecciona al menos un empleado');
       }
 
-      const usuarioIds = usuariosObjetivo.map((empleado) =>
-        BigInt(empleado.usuario_id),
+      const [rolCobrador] = await tx.$queryRaw<Array<{ id: string }>>(
+        Prisma.sql`
+          SELECT id_rol::text AS id
+          FROM public.tbl_roles
+          WHERE rol_tip::text = 'COBRADOR'
+          LIMIT 1
+        `,
       );
 
+      if (!rolCobrador) {
+        throw new ConflictException(
+          'No existe el rol COBRADOR en el esquema tbl_*',
+        );
+      }
+
       await tx.$executeRaw(Prisma.sql`
-        DELETE FROM public.tbl_usuarios_organizaciones uo
-        USING public.tbl_roles rol
-        WHERE rol.id_rol = uo.rol_id
-          AND uo.org_id = ${BigInt(orgId)}
-          AND uo.usu_id IN (${Prisma.join(usuarioIds)})
-          AND rol.rol_tip::text IN (${Prisma.join(permisosEmpleadoCodigos)})
+        DELETE FROM public.tbl_roles_recursos rol_recurso
+        USING public.tbl_roles rol, public.tbl_recursos recurso
+        WHERE rol.id_rol = rol_recurso.rol_id
+          AND recurso.id_rec = rol_recurso.rec_id
+          AND rol.rol_tip::text = 'COBRADOR'
+          AND recurso.rec_interface = 'WEB'
+          AND recurso.nom IN (${Prisma.join(permisosEmpleadoCodigos)})
       `);
 
       if (permisos.length === 0) {
         return;
       }
 
-      const rolesPermiso = await tx.$queryRaw<Array<{ id: string }>>(
+      const recursosPermiso = await tx.$queryRaw<Array<{ id: string }>>(
         Prisma.sql`
-          SELECT id_rol::text AS id
-          FROM public.tbl_roles
-          WHERE rol_tip::text IN (${Prisma.join(permisos)})
+          SELECT id_rec::text AS id
+          FROM public.tbl_recursos
+          WHERE rec_interface = 'WEB'
+            AND nom IN (${Prisma.join(permisos)})
         `,
       );
 
-      if (rolesPermiso.length !== permisos.length) {
+      if (recursosPermiso.length !== permisos.length) {
         throw new ConflictException(
-          'Faltan roles de permisos en el esquema tbl_*',
+          'Faltan recursos de permisos en el esquema tbl_*',
         );
       }
 
-      const usuariosValues = Prisma.join(
-        usuarioIds.map((id) => Prisma.sql`(${id}::bigint)`),
-      );
-
       await tx.$executeRaw(Prisma.sql`
-        INSERT INTO public.tbl_usuarios_organizaciones (
-          rol_id,
-          usu_id,
-          org_id
-        )
-        SELECT rol.id_rol, usuarios.usuario_id, ${BigInt(orgId)}
-        FROM public.tbl_roles rol
-        CROSS JOIN (VALUES ${usuariosValues}) AS usuarios(usuario_id)
-        WHERE rol.rol_tip::text IN (${Prisma.join(permisos)})
-        ON CONFLICT (usu_id, org_id, rol_id) DO UPDATE
-        SET urg_activo = TRUE
+        INSERT INTO public.tbl_roles_recursos (rol_id, rec_id)
+        SELECT ${rolCobrador.id}::bigint, recurso.id_rec
+        FROM public.tbl_recursos recurso
+        WHERE recurso.rec_interface = 'WEB'
+          AND recurso.nom IN (${Prisma.join(permisos)})
+        ON CONFLICT (rec_id, rol_id) DO NOTHING
       `);
     });
 
@@ -2195,41 +2199,6 @@ export class AuthService {
         )
       `);
 
-      if (rolCodigo === 'COBRADOR') {
-        const rolesEmpleado = await tx.$queryRaw<Array<{ id: string }>>(
-          Prisma.sql`
-            SELECT id_rol::text AS id
-            FROM public.tbl_roles
-            WHERE rol_tip::text IN (${Prisma.join(
-              permisosEmpleadoPredeterminadosCodigos,
-            )})
-          `,
-        );
-
-        if (
-          rolesEmpleado.length !== permisosEmpleadoPredeterminadosCodigos.length
-        ) {
-          throw new ConflictException(
-            'Faltan roles predeterminados de empleados en el esquema tbl_*',
-          );
-        }
-
-        await tx.$executeRaw(Prisma.sql`
-          INSERT INTO public.tbl_usuarios_organizaciones (
-            rol_id,
-            usu_id,
-            org_id
-          )
-          SELECT roles.id_rol, ${usuarioCreado.id}::bigint, ${orgId}::bigint
-          FROM public.tbl_roles roles
-          WHERE roles.rol_tip::text IN (${Prisma.join(
-            permisosEmpleadoPredeterminadosCodigos,
-          )})
-          ON CONFLICT (usu_id, org_id, rol_id) DO UPDATE
-          SET urg_activo = TRUE
-        `);
-      }
-
       return usuarioCreado.id;
     });
 
@@ -2718,16 +2687,13 @@ export class AuthService {
   }
 
   private formatearUsuarioTbl(usuario: UsuarioTblAuth): AuthUserResponse {
-    const roles = usuario.roles;
+    const roles = usuario.roles.filter((rol) => !esPermisoEmpleado(rol));
     const esAdministrador = roles.includes('ADMINISTRADOR');
     const esSuperAdmin = roles.includes('SUPER_ADMIN');
     const permisosDesdeRecursos = usuario.permisos.filter((permiso) =>
       esPermisoEmpleado(permiso),
     );
-    const permisos =
-      permisosDesdeRecursos.length > 0
-        ? permisosDesdeRecursos
-        : permisosEmpleadoCodigos.filter((codigo) => roles.includes(codigo));
+    const permisos = permisosDesdeRecursos;
 
     return {
       id: usuario.id,
@@ -2742,7 +2708,8 @@ export class AuthService {
         codigo: usuario.activo ? 'ACTIVO' : 'INACTIVO',
         nombre: usuario.activo ? 'Activo' : 'Inactivo',
       },
-      permisos: esAdministrador ? permisosEmpleadoCodigos : permisos,
+      permisos:
+        esAdministrador || esSuperAdmin ? permisosEmpleadoCodigos : permisos,
     };
   }
 

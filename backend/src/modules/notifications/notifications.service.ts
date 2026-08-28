@@ -1,16 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Prisma } from '@prisma/client';
-
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { EmailNotificationService } from './email-notification.service';
 import { NotificationTemplatesService } from './notification-templates.service';
-import {
-  CollectorOverdueCollection,
-  CustomerNotification,
-  NotificationContact,
-} from './notification.types';
+import { CustomerNotification, NotificationContact } from './notification.types';
 import { WhatsappNotificationService } from './whatsapp-notification.service';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class NotificationsService {
@@ -24,188 +19,145 @@ export class NotificationsService {
     private readonly whatsapp: WhatsappNotificationService,
   ) {}
 
-  async notifyCreditApproved(creditId: string) {
+  async notifyCreditApproved(creditId: string | number) {
     if (!this.enabled()) {
       return;
     }
 
     try {
-      const credit = await this.prisma.credito.findUnique({
-        where: { creditoId: creditId },
-        include: {
-          cliente: {
-            include: {
-              contactos: { include: { tipoContacto: true } },
-            },
-          },
-          planPago: {
-            include: {
-              cuotas: { orderBy: { numeroCuota: 'asc' }, take: 1 },
-            },
-          },
-        },
-      });
+      const [credit] = await this.prisma.$queryRaw<any[]>`
+        SELECT
+          c.id_cre,
+          c.cre_total,
+          c.cre_total_pagar,
+          m.mon_codigo,
+          cli.id_cli,
+          cli.org_id,
+          per.per_primer_nombre || ' ' || per.per_apellido AS nombre,
+          per.per_email,
+          per.per_num_celular,
+          (SELECT COUNT(*) FROM tbl_cuotas cuo WHERE cuo.cre_id = c.id_cre AND cuo.cuo_estado != 'ANULADA') AS numero_cuotas,
+          (SELECT cuo_valor FROM tbl_cuotas cuo WHERE cuo.cre_id = c.id_cre AND cuo.cuo_estado != 'ANULADA' ORDER BY cuo.cuo_numero ASC LIMIT 1) AS valor_cuota,
+          (SELECT cuo_fecha_vencimiento FROM tbl_cuotas cuo WHERE cuo.cre_id = c.id_cre AND cuo.cuo_estado != 'ANULADA' ORDER BY cuo.cuo_numero ASC LIMIT 1) AS primera_cuota
+        FROM tbl_creditos c
+        JOIN tbl_clientes cli ON cli.id_cli = c.cli_id
+        JOIN tbl_personas per ON per.id_per = cli.cli_persona
+        JOIN tbl_monedas m ON m.id_mon = c.mon_id
+        WHERE c.id_cre = ${BigInt(creditId)}
+      `;
 
-      if (!credit?.planPago) {
-        throw new Error(`No se encontro el plan del credito ${creditId}`);
+      if (!credit) {
+        throw new Error(`No se encontro el credito ${creditId}`);
       }
 
       await this.deliver({
         kind: 'credito_aprobado',
-        eventId: credit.creditoId,
-        contact: this.contact(credit.cliente),
-        monedaCodigo: credit.monedaCodigo,
-        valorPrincipal: this.number(credit.valorPrincipal),
-        valorTotal: this.number(credit.planPago.valorTotal),
-        numeroCuotas: credit.planPago.numeroCuotas,
-        valorCuota: this.number(credit.planPago.valorCuota),
-        primeraCuota: credit.planPago.cuotas[0]?.fechaVencimiento ?? null,
+        eventId: String(credit.id_cre),
+        orgId: String(credit.org_id),
+        cliId: String(credit.id_cli),
+        creId: String(credit.id_cre),
+        contact: this.contact(credit.nombre, credit.per_email, credit.per_num_celular),
+        monedaCodigo: credit.mon_codigo,
+        valorPrincipal: this.number(credit.cre_total),
+        valorTotal: this.number(credit.cre_total_pagar),
+        numeroCuotas: Number(credit.numero_cuotas),
+        valorCuota: this.number(credit.valor_cuota),
+        primeraCuota: credit.primera_cuota ?? null,
       });
     } catch (error) {
-      this.logUnexpected('credito aprobado', creditId, error);
+      this.logUnexpected('credito aprobado', String(creditId), error);
     }
   }
 
-  async notifyPaymentReceived(paymentId: string) {
+  async notifyPaymentReceived(paymentId: string | number) {
     if (!this.enabled()) {
       return;
     }
 
     try {
-      const payment = await this.prisma.pago.findUnique({
-        where: { pagoId: paymentId },
-        include: {
-          aplicaciones: {
-            include: {
-              creditoCuota: {
-                include: {
-                  planPago: {
-                    include: {
-                      credito: {
-                        include: {
-                          estadoCredito: true,
-                          cliente: {
-                            include: {
-                              contactos: { include: { tipoContacto: true } },
-                            },
-                          },
-                        },
-                      },
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-      });
+      const [payment] = await this.prisma.$queryRaw<any[]>`
+        SELECT 
+          p.id_pag,
+          p.pag_monto,
+          m.mon_codigo,
+          c.id_cre,
+          c.cre_total,
+          c.cre_estado,
+          cli.id_cli,
+          cli.org_id,
+          per.per_primer_nombre || ' ' || per.per_apellido AS nombre,
+          per.per_email,
+          per.per_num_celular
+        FROM tbl_pagos p
+        JOIN tbl_monedas m ON m.id_mon = p.mon_id
+        JOIN tbl_creditos c ON c.id_cre = p.cre_id
+        JOIN tbl_clientes cli ON cli.id_cli = c.cli_id
+        JOIN tbl_personas per ON per.id_per = cli.cli_persona
+        WHERE p.id_pag = ${BigInt(paymentId)}
+      `;
 
-      const credit =
-        payment?.aplicaciones[0]?.creditoCuota.planPago.credito ?? null;
-
-      if (!payment || !credit) {
-        throw new Error(`No se encontro el credito del pago ${paymentId}`);
+      if (!payment) {
+        throw new Error(`No se encontro el pago ${paymentId}`);
       }
 
-      const installments = await this.prisma.creditoCuota.findMany({
-        where: {
-          planPago: { creditoId: credit.creditoId },
-          estadoCuota: { codigo: { not: 'ANULADA' } },
-        },
-        include: {
-          aplicaciones: true,
-        },
-        orderBy: { numeroCuota: 'asc' },
-      });
+      const installments = await this.prisma.$queryRaw<any[]>`
+        SELECT 
+          cuo.id_cuo,
+          cuo.cuo_numero,
+          cuo.cuo_valor,
+          cuo.cuo_total_pagado,
+          cuo.cuo_fecha_vencimiento,
+          (cuo.cuo_valor - cuo.cuo_total_pagado) AS saldo_pendiente
+        FROM tbl_cuotas cuo
+        WHERE cuo.cre_id = ${payment.id_cre}
+          AND cuo.cuo_estado != 'ANULADA'
+        ORDER BY cuo.cuo_numero ASC
+      `;
 
       const pending = installments
-        .map((installment) => {
-          const paid = installment.aplicaciones.reduce(
-            (total, application) =>
-              total +
-              this.number(application.montoCapital) +
-              this.number(application.montoInteres) +
-              this.number(application.montoMora) -
-              this.number(application.montoDescuento),
-            0,
-          );
-          return {
-            installment,
-            balance: this.round(this.number(installment.valorTotal) - paid),
-          };
-        })
+        .map((installment) => ({
+          installment,
+          balance: this.round(this.number(installment.saldo_pendiente)),
+        }))
         .filter((item) => item.balance > 0);
+        
       const next = pending[0] ?? null;
-      const contact = this.contact(credit.cliente);
+      const contact = this.contact(payment.nombre, payment.per_email, payment.per_num_celular);
+      
       const paymentNotification: CustomerNotification = {
         kind: 'pago_recibido',
-        eventId: payment.pagoId,
+        eventId: String(payment.id_pag),
+        orgId: String(payment.org_id),
+        cliId: String(payment.id_cli),
+        creId: String(payment.id_cre),
         contact,
-        monedaCodigo: payment.monedaCodigo,
-        montoPagado: this.number(payment.totalPagado),
+        monedaCodigo: payment.mon_codigo,
+        montoPagado: this.number(payment.pag_monto),
         saldoPendiente: this.round(
           pending.reduce((total, item) => total + item.balance, 0),
         ),
         cuotasRestantes: pending.length,
-        proximaCuotaNumero: next?.installment.numeroCuota ?? null,
+        proximaCuotaNumero: next ? Number(next.installment.cuo_numero) : null,
         proximaCuotaValor: next?.balance ?? null,
-        proximaCuotaFecha: next?.installment.fechaVencimiento ?? null,
+        proximaCuotaFecha: next?.installment.cuo_fecha_vencimiento ?? null,
       };
 
       await this.deliver(paymentNotification);
 
-      if (credit.estadoCredito.codigo === 'PAGADO' || pending.length === 0) {
+      if (payment.cre_estado === 'PAGADO' || pending.length === 0) {
         await this.deliver({
           kind: 'credito_finalizado',
-          eventId: credit.creditoId,
+          eventId: String(payment.id_cre),
+          orgId: String(payment.org_id),
+          cliId: String(payment.id_cli),
+          creId: String(payment.id_cre),
           contact,
-          monedaCodigo: credit.monedaCodigo,
-          valorPrincipal: this.number(credit.valorPrincipal),
+          monedaCodigo: payment.mon_codigo,
+          valorPrincipal: this.number(payment.cre_total),
         });
       }
     } catch (error) {
-      this.logUnexpected('pago recibido', paymentId, error);
-    }
-  }
-
-  async notifyCollectorOverdueCollections(collectorId: string) {
-    if (!this.enabled()) {
-      return;
-    }
-
-    try {
-      const rows = this.isUuid(collectorId)
-        ? await this.overdueCollections(collectorId)
-        : await this.overdueCollectionsTbl(collectorId);
-
-      if (rows.length === 0) {
-        return;
-      }
-
-      const first = rows[0];
-      const cobros: CollectorOverdueCollection[] = rows.map((row) => ({
-        cliente: row.cliente,
-        ruta: row.ruta,
-        fechaVencimiento: row.fecha_vencimiento,
-        saldoCuota: this.numberLike(row.saldo_cuota),
-        monedaCodigo: row.moneda_codigo,
-      }));
-
-      await this.deliver({
-        kind: 'cobros_atrasados_cobrador',
-        eventId: `${collectorId}-${this.todayKey()}`,
-        contact: {
-          nombre: first.cobrador_nombre,
-          correo: this.normalizeEmail(first.cobrador_correo),
-          whatsapp: this.normalizeText(first.cobrador_telefono),
-        },
-        totalAtrasados: rows.length,
-        cobros,
-      });
-    } catch (error) {
-      this.logger.error(
-        `No se pudo preparar la alerta de cobros atrasados (${collectorId}): ${this.errorMessage(error)}`,
-      );
+      this.logUnexpected('pago recibido', String(paymentId), error);
     }
   }
 
@@ -249,8 +201,44 @@ export class NotificationsService {
       );
     }
 
+
     const results = await Promise.allSettled(jobs);
+    
+    // Guardar el registro en la base de datos
+    for (const result of results) {
+      const canal = notification.contact.correo && result === results[0] ? 'CORREO' : 'WHATSAPP';
+      const estado = result.status === 'fulfilled' ? 'ENVIADA' : 'FALLIDA';
+      const errorMsg = result.status === 'rejected' ? this.errorMessage(result.reason) : null;
+      const destinatario = canal === 'CORREO' ? notification.contact.correo : notification.contact.whatsapp;
+      const pagId = notification.kind === 'pago_recibido' ? notification.eventId : null;
+      const creId = notification.creId;
+      
+      if (destinatario) {
+        try {
+          await this.prisma.$executeRaw`
+            INSERT INTO tbl_notificaciones (
+              org_id, cli_id, cre_id, pag_id, not_tipo, not_canal, not_estado, not_destinatario, not_error, not_envio
+            ) VALUES (
+              ${BigInt(notification.orgId)}, 
+              ${BigInt(notification.cliId)}, 
+              ${creId ? BigInt(creId) : null}, 
+              ${pagId ? BigInt(pagId) : null}, 
+              ${notification.kind.toUpperCase()}::notificacion_tipo_enum, 
+              ${canal}::notificacion_canal_enum, 
+              ${estado}::notificacion_estado_enum, 
+              ${destinatario}, 
+              ${errorMsg}, 
+              ${estado === 'ENVIADA' ? new Date() : null}
+            )
+          `;
+        } catch (dbError) {
+          this.logger.error(`No se pudo guardar el log de notificacion: ${this.errorMessage(dbError)}`);
+        }
+      }
+    }
+
     results.forEach((result) => {
+
       if (result.status === 'rejected') {
         this.logger.error(
           `Fallo el envio de ${notification.kind}: ${this.errorMessage(result.reason)}`,
@@ -259,33 +247,19 @@ export class NotificationsService {
     });
   }
 
-  private contact(cliente: {
-    nombreCompleto: string;
-    contactos: Array<{
-      valor: string;
-      esPrincipal: boolean;
-      tipoContacto: { codigo: string };
-    }>;
-  }): NotificationContact {
-    const find = (code: string) =>
-      cliente.contactos.find(
-        (item) => item.tipoContacto.codigo === code && item.esPrincipal,
-      ) ?? cliente.contactos.find((item) => item.tipoContacto.codigo === code);
-
+  private contact(nombre: string, correo: string | null, telefono: string | null): NotificationContact {
     return {
-      nombre: cliente.nombreCompleto,
-      correo: this.normalizeEmail(find('CORREO')?.valor),
-      whatsapp: this.normalizeText(
-        find('WHATSAPP')?.valor ?? find('TELEFONO')?.valor,
-      ),
+      nombre: nombre,
+      correo: this.normalizeEmail(correo),
+      whatsapp: this.normalizeText(telefono),
     };
   }
 
-  private normalizeEmail(value: string | null | undefined) {
+  private normalizeEmail(value: string | undefined | null) {
     return this.normalizeText(value)?.toLowerCase() ?? null;
   }
 
-  private normalizeText(value: string | null | undefined) {
+  private normalizeText(value: string | undefined | null) {
     const normalized = value?.trim();
     return normalized ? normalized : null;
   }
@@ -294,21 +268,10 @@ export class NotificationsService {
     return this.config.get<boolean>('NOTIFICATIONS_ENABLED') ?? false;
   }
 
-  private number(value: Prisma.Decimal) {
-    return value.toNumber();
-  }
-
-  private numberLike(value: Prisma.Decimal | number | string | null) {
-    if (value instanceof Prisma.Decimal) {
-      return value.toNumber();
-    }
-    if (typeof value === 'number') {
-      return Number.isFinite(value) ? value : 0;
-    }
-    if (typeof value === 'string') {
-      return Number.parseFloat(value) || 0;
-    }
-    return 0;
+  private number(value: Prisma.Decimal | string | number | bigint) {
+    if (value === null || value === undefined) return 0;
+    if (value instanceof Prisma.Decimal) return value.toNumber();
+    return Number(value);
   }
 
   private round(value: number) {

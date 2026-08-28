@@ -53,6 +53,12 @@ CREATE TABLE public.tbl_organizaciones (
   org_telefono character varying,
   org_email character varying CHECK (org_email IS NULL OR POSITION(('@'::text) IN (org_email)) > 1),
   org_activo boolean NOT NULL DEFAULT true,
+  org_monto_plan numeric NOT NULL DEFAULT 0 CHECK (org_monto_plan >= 0::numeric),
+  org_moneda_plan character(3) NOT NULL DEFAULT 'COP'::bpchar CHECK (org_moneda_plan::text = upper(org_moneda_plan::text)),
+  org_acceso_hasta date,
+  org_suspendida_en timestamp with time zone,
+  org_motivo_suspension character varying,
+  org_es_sistema boolean NOT NULL DEFAULT false,
   org_creacion timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT tbl_organizaciones_pkey PRIMARY KEY (id_org)
 );
@@ -179,6 +185,9 @@ CREATE TABLE public.tbl_creditos (
   cre_total_pagar numeric NOT NULL,
   cre_fecha_inicio date NOT NULL,
   cre_fecha_fin date NOT NULL,
+  cre_refinanciado_en timestamp with time zone,
+  cre_valor_principal_anterior numeric,
+  cre_valor_principal_refinanciado numeric,
   usu_id bigint NOT NULL,
   pcr_id bigint NOT NULL,
   cli_id bigint NOT NULL,

@@ -4,11 +4,16 @@ import {
   IsEmail,
   IsArray,
   IsBoolean,
+  IsDateString,
+  IsIn,
+  IsInt,
+  IsNumber,
   IsOptional,
   IsString,
   Matches,
   MaxLength,
   MinLength,
+  Min,
 } from 'class-validator';
 
 import { resourceIdPattern } from '../../common/validation/resource-id';
@@ -170,4 +175,38 @@ export class ActualizarPermisosUsuariosDto {
 export class ActualizarEstadoUsuarioDto {
   @IsBoolean()
   activo!: boolean;
+}
+
+export class ActualizarOrganizacionSuperAdminDto {
+  @IsOptional()
+  @IsBoolean()
+  activo?: boolean;
+
+  @IsOptional()
+  @IsDateString()
+  accesoHasta?: string | null;
+
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  montoPlan?: number;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['COP', 'USD'])
+  monedaPlan?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(220)
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  motivoSuspension?: string | null;
+}
+
+export class ExtenderAccesoOrganizacionDto {
+  @IsInt()
+  @Min(1)
+  dias!: number;
 }

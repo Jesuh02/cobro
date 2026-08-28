@@ -11,11 +11,14 @@ import { Prisma } from '@prisma/client';
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import {
+  ActualizarOrganizacionSuperAdminDto,
   ActualizarUsuarioDto,
   ActualizarEstadoUsuarioDto,
   ActualizarPermisosUsuariosDto,
   CrearUsuarioDto,
+  ExtenderAccesoOrganizacionDto,
   LoginDto,
   RegistrarInstitucionDto,
 } from './dto';
@@ -55,6 +58,27 @@ type UsuarioTblAuth = {
   activo: boolean;
   roles: string[];
   permisos: string[];
+  tieneAccesoOrganizacion: boolean;
+  organizacionSuspendida: boolean;
+};
+
+type OrganizacionSuperAdminRow = {
+  id: string;
+  nombre: string;
+  telefono: string | null;
+  correo: string | null;
+  activo: boolean;
+  es_sistema: boolean;
+  monto_plan: Prisma.Decimal | number | string | null;
+  moneda_plan: string | null;
+  acceso_hasta: Date | string | null;
+  suspendida_en: Date | string | null;
+  motivo_suspension: string | null;
+  usuarios_total: number | bigint | null;
+  usuarios_activos: number | bigint | null;
+  administradores: string[] | null;
+  suspendida: boolean;
+  dias_restantes: number | null;
 };
 
 type TokenPayload = {
@@ -89,6 +113,7 @@ type ActividadEmpleadoRow = {
   total_creditos: number | bigint | null;
   creditos_hoy: number | bigint | null;
   creditos_mes: number | bigint | null;
+  valor_creditos_hoy: Prisma.Decimal | number | string | null;
   valor_creditos_total: Prisma.Decimal | number | string | null;
   recaudo_hoy: Prisma.Decimal | number | string | null;
   recaudo_mes: Prisma.Decimal | number | string | null;
@@ -100,6 +125,18 @@ type ActividadEmpleadoRow = {
   ultima_actividad: Date | null;
 };
 
+type ActividadEmpleadosFiltros = {
+  inicio?: string;
+  fin?: string;
+  empleadoId?: string;
+};
+
+type RangoActividadEmpleados = {
+  fechaInicio: string;
+  fechaFin: string;
+  empleadoId: string | null;
+};
+
 const tokenClockToleranceSeconds = 30;
 const maxTokenLength = 2_048;
 
@@ -109,6 +146,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly passwords: PasswordService,
     private readonly config: ConfigService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async login(dto: LoginDto): Promise<AuthSessionResponse> {
@@ -260,9 +298,259 @@ export class AuthService {
           activo: true,
           roles: ['ADMINISTRADOR'],
           permisos: permisosEmpleadoCodigos,
+          tieneAccesoOrganizacion: true,
+          organizacionSuspendida: false,
         }),
       );
     });
+  }
+
+  async listarOrganizacionesSuperAdmin(usuario: AuthenticatedUser) {
+    this.requerirSuperAdmin(usuario);
+    await this.requerirEsquemaTblSuperAdmin();
+
+    const rows = await this.prisma.$queryRaw<
+      OrganizacionSuperAdminRow[]
+    >(Prisma.sql`
+      SELECT
+        org.id_org::text AS id,
+        org.org_nombre AS nombre,
+        org.org_telefono AS telefono,
+        org.org_email AS correo,
+        org.org_activo AS activo,
+        COALESCE(org.org_es_sistema, FALSE) AS es_sistema,
+        org.org_monto_plan AS monto_plan,
+        org.org_moneda_plan AS moneda_plan,
+        org.org_acceso_hasta AS acceso_hasta,
+        org.org_suspendida_en AS suspendida_en,
+        org.org_motivo_suspension AS motivo_suspension,
+        COUNT(DISTINCT uo.usu_id)::int AS usuarios_total,
+        COUNT(DISTINCT uo.usu_id) FILTER (WHERE tu.usu_activo)::int
+          AS usuarios_activos,
+        COALESCE(
+          array_agg(DISTINCT tu.usu_usuario)
+            FILTER (
+              WHERE rol.rol_tip::text = 'ADMINISTRADOR'
+                AND tu.usu_usuario IS NOT NULL
+            ),
+          ARRAY[]::text[]
+        ) AS administradores,
+        (
+          NOT org.org_activo
+          OR (
+            org.org_acceso_hasta IS NOT NULL
+            AND org.org_acceso_hasta < CURRENT_DATE
+          )
+        ) AS suspendida,
+        CASE
+          WHEN org.org_acceso_hasta IS NULL THEN NULL
+          ELSE (org.org_acceso_hasta - CURRENT_DATE)::int
+        END AS dias_restantes
+      FROM public.tbl_organizaciones org
+      LEFT JOIN public.tbl_usuarios_organizaciones uo
+        ON uo.org_id = org.id_org
+       AND uo.urg_activo
+      LEFT JOIN public.tbl_usuarios tu ON tu.id_usu = uo.usu_id
+      LEFT JOIN public.tbl_roles rol ON rol.id_rol = uo.rol_id
+      WHERE NOT COALESCE(org.org_es_sistema, FALSE)
+      GROUP BY org.id_org
+      ORDER BY suspendida DESC, org.org_acceso_hasta ASC NULLS LAST, org.org_nombre ASC
+    `);
+
+    return rows.map((row) => this.formatearOrganizacionSuperAdmin(row));
+  }
+
+  async actualizarOrganizacionSuperAdmin(
+    usuario: AuthenticatedUser,
+    organizacionId: string,
+    dto: ActualizarOrganizacionSuperAdminDto,
+  ) {
+    this.requerirSuperAdmin(usuario);
+    await this.requerirEsquemaTblSuperAdmin();
+    this.requerirIdTbl(organizacionId, 'Institucion no encontrada');
+
+    const setters: Prisma.Sql[] = [];
+
+    if (dto.activo !== undefined) {
+      setters.push(Prisma.sql`org_activo = ${dto.activo}`);
+      setters.push(
+        dto.activo
+          ? Prisma.sql`org_suspendida_en = NULL`
+          : Prisma.sql`org_suspendida_en = COALESCE(org_suspendida_en, now())`,
+      );
+
+      if (dto.activo && dto.motivoSuspension === undefined) {
+        setters.push(Prisma.sql`org_motivo_suspension = NULL`);
+      }
+    }
+
+    if (dto.accesoHasta !== undefined) {
+      setters.push(Prisma.sql`org_acceso_hasta = ${dto.accesoHasta}::date`);
+    }
+
+    if (dto.montoPlan !== undefined) {
+      setters.push(Prisma.sql`org_monto_plan = ${dto.montoPlan}`);
+    }
+
+    if (dto.monedaPlan !== undefined) {
+      setters.push(Prisma.sql`org_moneda_plan = ${dto.monedaPlan}`);
+    }
+
+    if (dto.motivoSuspension !== undefined) {
+      setters.push(Prisma.sql`org_motivo_suspension = ${dto.motivoSuspension}`);
+    } else if (dto.activo === false) {
+      setters.push(
+        Prisma.sql`org_motivo_suspension = 'Suspendido por falta de pagos'`,
+      );
+    }
+
+    if (setters.length === 0) {
+      throw new BadRequestException('No hay cambios para guardar');
+    }
+
+    const actualizado = await this.prisma.$queryRaw<
+      OrganizacionSuperAdminRow[]
+    >(
+      Prisma.sql`
+        WITH actualizada AS (
+          UPDATE public.tbl_organizaciones
+          SET ${Prisma.join(setters, ', ')}
+          WHERE id_org = ${BigInt(organizacionId)}
+            AND NOT COALESCE(org_es_sistema, FALSE)
+          RETURNING *
+        )
+        SELECT
+          org.id_org::text AS id,
+          org.org_nombre AS nombre,
+          org.org_telefono AS telefono,
+          org.org_email AS correo,
+          org.org_activo AS activo,
+          COALESCE(org.org_es_sistema, FALSE) AS es_sistema,
+          org.org_monto_plan AS monto_plan,
+          org.org_moneda_plan AS moneda_plan,
+          org.org_acceso_hasta AS acceso_hasta,
+          org.org_suspendida_en AS suspendida_en,
+          org.org_motivo_suspension AS motivo_suspension,
+          COUNT(DISTINCT uo.usu_id)::int AS usuarios_total,
+          COUNT(DISTINCT uo.usu_id) FILTER (WHERE tu.usu_activo)::int
+            AS usuarios_activos,
+          COALESCE(
+            array_agg(DISTINCT tu.usu_usuario)
+              FILTER (
+                WHERE rol.rol_tip::text = 'ADMINISTRADOR'
+                  AND tu.usu_usuario IS NOT NULL
+              ),
+            ARRAY[]::text[]
+          ) AS administradores,
+          (
+            NOT org.org_activo
+            OR (
+              org.org_acceso_hasta IS NOT NULL
+              AND org.org_acceso_hasta < CURRENT_DATE
+            )
+          ) AS suspendida,
+          CASE
+            WHEN org.org_acceso_hasta IS NULL THEN NULL
+            ELSE (org.org_acceso_hasta - CURRENT_DATE)::int
+          END AS dias_restantes
+        FROM actualizada org
+        LEFT JOIN public.tbl_usuarios_organizaciones uo
+          ON uo.org_id = org.id_org
+         AND uo.urg_activo
+        LEFT JOIN public.tbl_usuarios tu ON tu.id_usu = uo.usu_id
+        LEFT JOIN public.tbl_roles rol ON rol.id_rol = uo.rol_id
+        GROUP BY org.id_org, org.org_nombre, org.org_telefono, org.org_email,
+          org.org_activo, org.org_es_sistema, org.org_monto_plan,
+          org.org_moneda_plan, org.org_acceso_hasta, org.org_suspendida_en,
+          org.org_motivo_suspension
+      `,
+    );
+
+    if (!actualizado[0]) {
+      throw new NotFoundException('Institucion no encontrada');
+    }
+
+    return this.formatearOrganizacionSuperAdmin(actualizado[0]);
+  }
+
+  async extenderAccesoOrganizacion(
+    usuario: AuthenticatedUser,
+    organizacionId: string,
+    dto: ExtenderAccesoOrganizacionDto,
+  ) {
+    this.requerirSuperAdmin(usuario);
+    await this.requerirEsquemaTblSuperAdmin();
+    this.requerirIdTbl(organizacionId, 'Institucion no encontrada');
+
+    const actualizado = await this.prisma.$queryRaw<
+      OrganizacionSuperAdminRow[]
+    >(
+      Prisma.sql`
+        WITH actualizada AS (
+          UPDATE public.tbl_organizaciones
+          SET
+            org_activo = TRUE,
+            org_acceso_hasta =
+              GREATEST(CURRENT_DATE, COALESCE(org_acceso_hasta, CURRENT_DATE))
+              + ${dto.dias}::integer,
+            org_suspendida_en = NULL,
+            org_motivo_suspension = NULL
+          WHERE id_org = ${BigInt(organizacionId)}
+            AND NOT COALESCE(org_es_sistema, FALSE)
+          RETURNING *
+        )
+        SELECT
+          org.id_org::text AS id,
+          org.org_nombre AS nombre,
+          org.org_telefono AS telefono,
+          org.org_email AS correo,
+          org.org_activo AS activo,
+          COALESCE(org.org_es_sistema, FALSE) AS es_sistema,
+          org.org_monto_plan AS monto_plan,
+          org.org_moneda_plan AS moneda_plan,
+          org.org_acceso_hasta AS acceso_hasta,
+          org.org_suspendida_en AS suspendida_en,
+          org.org_motivo_suspension AS motivo_suspension,
+          COUNT(DISTINCT uo.usu_id)::int AS usuarios_total,
+          COUNT(DISTINCT uo.usu_id) FILTER (WHERE tu.usu_activo)::int
+            AS usuarios_activos,
+          COALESCE(
+            array_agg(DISTINCT tu.usu_usuario)
+              FILTER (
+                WHERE rol.rol_tip::text = 'ADMINISTRADOR'
+                  AND tu.usu_usuario IS NOT NULL
+              ),
+            ARRAY[]::text[]
+          ) AS administradores,
+          (
+            NOT org.org_activo
+            OR (
+              org.org_acceso_hasta IS NOT NULL
+              AND org.org_acceso_hasta < CURRENT_DATE
+            )
+          ) AS suspendida,
+          CASE
+            WHEN org.org_acceso_hasta IS NULL THEN NULL
+            ELSE (org.org_acceso_hasta - CURRENT_DATE)::int
+          END AS dias_restantes
+        FROM actualizada org
+        LEFT JOIN public.tbl_usuarios_organizaciones uo
+          ON uo.org_id = org.id_org
+         AND uo.urg_activo
+        LEFT JOIN public.tbl_usuarios tu ON tu.id_usu = uo.usu_id
+        LEFT JOIN public.tbl_roles rol ON rol.id_rol = uo.rol_id
+        GROUP BY org.id_org, org.org_nombre, org.org_telefono, org.org_email,
+          org.org_activo, org.org_es_sistema, org.org_monto_plan,
+          org.org_moneda_plan, org.org_acceso_hasta, org.org_suspendida_en,
+          org.org_motivo_suspension
+      `,
+    );
+
+    if (!actualizado[0]) {
+      throw new NotFoundException('Institucion no encontrada');
+    }
+
+    return this.formatearOrganizacionSuperAdmin(actualizado[0]);
   }
 
   async crearEmpleado(
@@ -282,6 +570,8 @@ export class AuthService {
       if (!usuarioTbl || !usuarioTbl.activo) {
         throw new UnauthorizedException('Sesion invalida');
       }
+
+      this.validarAccesoUsuarioTbl(usuarioTbl);
 
       return this.formatearUsuarioTbl(usuarioTbl);
     }
@@ -316,6 +606,8 @@ export class AuthService {
       if (!usuarioTbl || !usuarioTbl.activo) {
         throw new UnauthorizedException('Sesion invalida');
       }
+
+      this.validarAccesoUsuarioTbl(usuarioTbl);
 
       const formateado = this.formatearUsuarioTbl(usuarioTbl);
 
@@ -465,15 +757,76 @@ export class AuthService {
     return this.formatearUsuario(actualizado);
   }
 
-  async listarActividadEmpleados(usuario: AuthenticatedUser) {
+  private normalizarRangoActividad(
+    filtros: ActividadEmpleadosFiltros,
+  ): RangoActividadEmpleados {
+    const hoy = this.fechaActualColombia();
+    const fechaInicio = filtros.inicio
+      ? this.validarFechaActividad(filtros.inicio, 'inicio')
+      : hoy;
+    const fechaFin = filtros.fin
+      ? this.validarFechaActividad(filtros.fin, 'fin')
+      : fechaInicio;
+
+    if (fechaInicio > fechaFin) {
+      throw new BadRequestException(
+        'La fecha de inicio no puede ser posterior a la fecha de fin',
+      );
+    }
+
+    const empleadoId = filtros.empleadoId?.trim() || null;
+
+    return {
+      fechaInicio,
+      fechaFin,
+      empleadoId,
+    };
+  }
+
+  private validarFechaActividad(value: string, campo: string) {
+    const fecha = value.trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+      throw new BadRequestException(
+        `La fecha ${campo} debe tener formato YYYY-MM-DD`,
+      );
+    }
+
+    const parsed = new Date(`${fecha}T00:00:00.000Z`);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new BadRequestException(`La fecha ${campo} no es valida`);
+    }
+
+    const reconstruida = parsed.toISOString().slice(0, 10);
+    if (reconstruida !== fecha) {
+      throw new BadRequestException(`La fecha ${campo} no es valida`);
+    }
+
+    return fecha;
+  }
+
+  private fechaActualColombia() {
+    return new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  }
+
+  async listarActividadEmpleados(
+    usuario: AuthenticatedUser,
+    filtros: ActividadEmpleadosFiltros = {},
+  ) {
     this.requerirVerEmpleados(usuario);
+    const rango = this.normalizarRangoActividad(filtros);
 
     if (await this.usarEsquemaTbl()) {
-      return this.listarActividadEmpleadosTbl();
+      return this.listarActividadEmpleadosTbl(rango);
     }
 
     const rows = await this.prisma.$queryRaw<ActividadEmpleadoRow[]>(Prisma.sql`
-      WITH empleados AS (
+      WITH parametros AS (
+        SELECT
+          ${rango.fechaInicio}::date AS fecha_inicio,
+          ${rango.fechaFin}::date AS fecha_fin,
+          ${rango.empleadoId}::text AS empleado_id
+      ),
+      empleados AS (
         SELECT
           u.usuario_id,
           u.nombre_usuario,
@@ -488,6 +841,9 @@ export class AuthService {
         JOIN public.rol r
           ON r.rol_id = ur.rol_id
          AND r.codigo = 'COBRADOR'
+        CROSS JOIN parametros params
+        WHERE params.empleado_id IS NULL
+          OR u.usuario_id::text = params.empleado_id
       ),
       abonos_cuota AS (
         SELECT
@@ -545,8 +901,9 @@ export class AuthService {
         FROM public.pago_aplicacion pa
         JOIN public.pago p
           ON p.pago_id = pa.pago_id
-        WHERE (p.fecha_pago AT TIME ZONE 'America/Bogota')::date =
-          (now() AT TIME ZONE 'America/Bogota')::date
+        WHERE (p.fecha_pago AT TIME ZONE 'America/Bogota')::date
+          BETWEEN (SELECT fecha_inicio FROM parametros)
+          AND (SELECT fecha_fin FROM parametros)
       ),
       agenda_hoy AS (
         SELECT
@@ -562,8 +919,9 @@ export class AuthService {
         FROM cuotas_estado ce
         LEFT JOIN pagos_hoy_cuota phc
           ON phc.credito_cuota_id = ce.credito_cuota_id
-        WHERE ce.fecha_vencimiento =
-          (now() AT TIME ZONE 'America/Bogota')::date
+        WHERE ce.fecha_vencimiento
+          BETWEEN (SELECT fecha_inicio FROM parametros)
+          AND (SELECT fecha_fin FROM parametros)
         GROUP BY ce.usuario_id, ce.ruta_id
       ),
       proxima_cuota AS (
@@ -582,7 +940,7 @@ export class AuthService {
           ruta_id,
           COUNT(*)::int AS atrasados
         FROM proxima_cuota
-        WHERE fecha_vencimiento < (now() AT TIME ZONE 'America/Bogota')::date
+        WHERE fecha_vencimiento < (SELECT fecha_inicio FROM parametros)
         GROUP BY usuario_id, ruta_id
       ),
       pagos_resumen AS (
@@ -590,18 +948,27 @@ export class AuthService {
           p.cobrador_usuario_id AS usuario_id,
           p.ruta_id,
           COALESCE(SUM(p.total_pagado) FILTER (
-            WHERE (p.fecha_pago AT TIME ZONE 'America/Bogota')::date =
-              (now() AT TIME ZONE 'America/Bogota')::date
+            WHERE (p.fecha_pago AT TIME ZONE 'America/Bogota')::date
+              BETWEEN (SELECT fecha_inicio FROM parametros)
+              AND (SELECT fecha_fin FROM parametros)
           ), 0) AS recaudo_hoy,
           COALESCE(SUM(p.total_pagado) FILTER (
             WHERE date_trunc('month', p.fecha_pago AT TIME ZONE 'America/Bogota') =
-              date_trunc('month', now() AT TIME ZONE 'America/Bogota')
+              date_trunc(
+                'month',
+                (SELECT fecha_fin FROM parametros)::timestamp
+              )
           ), 0) AS recaudo_mes,
           COUNT(*) FILTER (
-            WHERE (p.fecha_pago AT TIME ZONE 'America/Bogota')::date =
-              (now() AT TIME ZONE 'America/Bogota')::date
+            WHERE (p.fecha_pago AT TIME ZONE 'America/Bogota')::date
+              BETWEEN (SELECT fecha_inicio FROM parametros)
+              AND (SELECT fecha_fin FROM parametros)
           )::int AS pagos_hoy,
-          MAX(p.fecha_pago) AS ultima_actividad
+          MAX(p.fecha_pago) FILTER (
+            WHERE (p.fecha_pago AT TIME ZONE 'America/Bogota')::date
+              BETWEEN (SELECT fecha_inicio FROM parametros)
+              AND (SELECT fecha_fin FROM parametros)
+          ) AS ultima_actividad
         FROM public.pago p
         WHERE p.cobrador_usuario_id IS NOT NULL
         GROUP BY p.cobrador_usuario_id, p.ruta_id
@@ -654,15 +1021,28 @@ export class AuthService {
           usuario_id,
           COUNT(*)::int AS total_creditos,
           COUNT(*) FILTER (
-            WHERE (creado_en AT TIME ZONE 'America/Bogota')::date =
-              (now() AT TIME ZONE 'America/Bogota')::date
+            WHERE (creado_en AT TIME ZONE 'America/Bogota')::date
+              BETWEEN (SELECT fecha_inicio FROM parametros)
+              AND (SELECT fecha_fin FROM parametros)
           )::int AS creditos_hoy,
           COUNT(*) FILTER (
             WHERE date_trunc('month', creado_en AT TIME ZONE 'America/Bogota') =
-              date_trunc('month', now() AT TIME ZONE 'America/Bogota')
+              date_trunc(
+                'month',
+                (SELECT fecha_fin FROM parametros)::timestamp
+              )
           )::int AS creditos_mes,
+          COALESCE(SUM(valor_principal) FILTER (
+            WHERE (creado_en AT TIME ZONE 'America/Bogota')::date
+              BETWEEN (SELECT fecha_inicio FROM parametros)
+              AND (SELECT fecha_fin FROM parametros)
+          ), 0) AS valor_creditos_hoy,
           COALESCE(SUM(valor_principal), 0) AS valor_creditos_total,
-          MAX(creado_en) AS ultima_actividad
+          MAX(creado_en) FILTER (
+            WHERE (creado_en AT TIME ZONE 'America/Bogota')::date
+              BETWEEN (SELECT fecha_inicio FROM parametros)
+              AND (SELECT fecha_fin FROM parametros)
+          ) AS ultima_actividad
         FROM creditos_base
         GROUP BY usuario_id
       ),
@@ -702,6 +1082,7 @@ export class AuthService {
         COALESCE(cr.total_creditos, 0) AS total_creditos,
         COALESCE(cr.creditos_hoy, 0) AS creditos_hoy,
         COALESCE(cr.creditos_mes, 0) AS creditos_mes,
+        COALESCE(cr.valor_creditos_hoy, 0) AS valor_creditos_hoy,
         COALESCE(cr.valor_creditos_total, 0) AS valor_creditos_total,
         COALESCE(pt.recaudo_hoy, 0) AS recaudo_hoy,
         COALESCE(pt.recaudo_mes, 0) AS recaudo_mes,
@@ -759,6 +1140,7 @@ export class AuthService {
           totalCreditos: this.entero(row.total_creditos),
           creditosHoy: this.entero(row.creditos_hoy),
           creditosMes: this.entero(row.creditos_mes),
+          valorCreditosHoy: this.numero(row.valor_creditos_hoy),
           valorCreditosTotal: this.numero(row.valor_creditos_total),
           recaudoHoy: this.numero(row.recaudo_hoy),
           recaudoMes: this.numero(row.recaudo_mes),
@@ -824,9 +1206,15 @@ export class AuthService {
     return usuarios.map((usuario) => this.formatearUsuarioTbl(usuario));
   }
 
-  private async listarActividadEmpleadosTbl() {
+  private async listarActividadEmpleadosTbl(rango: RangoActividadEmpleados) {
     const rows = await this.prisma.$queryRaw<ActividadEmpleadoRow[]>(Prisma.sql`
-      WITH empleados AS (
+      WITH parametros AS (
+        SELECT
+          ${rango.fechaInicio}::date AS fecha_inicio,
+          ${rango.fechaFin}::date AS fecha_fin,
+          ${rango.empleadoId}::text AS empleado_id
+      ),
+      empleados AS (
         SELECT DISTINCT
           tu.id_usu::text AS usuario_id,
           tu.usu_usuario AS nombre_usuario,
@@ -841,6 +1229,9 @@ export class AuthService {
         JOIN public.tbl_roles r
           ON r.id_rol = uo.rol_id
          AND r.rol_tip::text = 'COBRADOR'
+        CROSS JOIN parametros params
+        WHERE params.empleado_id IS NULL
+          OR tu.id_usu::text = params.empleado_id
       ),
       creditos_base AS (
         SELECT
@@ -897,8 +1288,9 @@ export class AuthService {
         SELECT DISTINCT cp.cuo_id
         FROM public.tbl_cuotas_pagos cp
         JOIN public.tbl_pagos p ON p.id_pag = cp.pagos_id
-        WHERE (p.pag_fecha AT TIME ZONE 'America/Bogota')::date =
-          (now() AT TIME ZONE 'America/Bogota')::date
+        WHERE (p.pag_fecha AT TIME ZONE 'America/Bogota')::date
+          BETWEEN (SELECT fecha_inicio FROM parametros)
+          AND (SELECT fecha_fin FROM parametros)
       ),
       agenda_hoy AS (
         SELECT
@@ -913,8 +1305,9 @@ export class AuthService {
           )::int AS pendientes_hoy
         FROM cuotas_estado ce
         LEFT JOIN pagos_hoy_cuota phc ON phc.cuo_id = ce.id_cuo
-        WHERE ce.cuo_fecha_vencimiento =
-          (now() AT TIME ZONE 'America/Bogota')::date
+        WHERE ce.cuo_fecha_vencimiento
+          BETWEEN (SELECT fecha_inicio FROM parametros)
+          AND (SELECT fecha_fin FROM parametros)
         GROUP BY ce.usuario_id, ce.ruta_id
       ),
       proxima_cuota AS (
@@ -933,8 +1326,7 @@ export class AuthService {
           ruta_id,
           COUNT(*)::int AS atrasados
         FROM proxima_cuota
-        WHERE cuo_fecha_vencimiento <
-          (now() AT TIME ZONE 'America/Bogota')::date
+        WHERE cuo_fecha_vencimiento < (SELECT fecha_inicio FROM parametros)
         GROUP BY usuario_id, ruta_id
       ),
       pagos_resumen AS (
@@ -942,18 +1334,27 @@ export class AuthService {
           cr.usu_id::text AS usuario_id,
           ruta_credito.ruta_id::text AS ruta_id,
           COALESCE(SUM(p.pag_monto) FILTER (
-            WHERE (p.pag_fecha AT TIME ZONE 'America/Bogota')::date =
-              (now() AT TIME ZONE 'America/Bogota')::date
+            WHERE (p.pag_fecha AT TIME ZONE 'America/Bogota')::date
+              BETWEEN (SELECT fecha_inicio FROM parametros)
+              AND (SELECT fecha_fin FROM parametros)
           ), 0) AS recaudo_hoy,
           COALESCE(SUM(p.pag_monto) FILTER (
             WHERE date_trunc('month', p.pag_fecha AT TIME ZONE 'America/Bogota') =
-              date_trunc('month', now() AT TIME ZONE 'America/Bogota')
+              date_trunc(
+                'month',
+                (SELECT fecha_fin FROM parametros)::timestamp
+              )
           ), 0) AS recaudo_mes,
           COUNT(*) FILTER (
-            WHERE (p.pag_fecha AT TIME ZONE 'America/Bogota')::date =
-              (now() AT TIME ZONE 'America/Bogota')::date
+            WHERE (p.pag_fecha AT TIME ZONE 'America/Bogota')::date
+              BETWEEN (SELECT fecha_inicio FROM parametros)
+              AND (SELECT fecha_fin FROM parametros)
           )::int AS pagos_hoy,
-          MAX(p.pag_fecha) AS ultima_actividad
+          MAX(p.pag_fecha) FILTER (
+            WHERE (p.pag_fecha AT TIME ZONE 'America/Bogota')::date
+              BETWEEN (SELECT fecha_inicio FROM parametros)
+              AND (SELECT fecha_fin FROM parametros)
+          ) AS ultima_actividad
         FROM public.tbl_pagos p
         JOIN public.tbl_creditos cr ON cr.id_cre = p.cre_id
         JOIN public.tbl_clientes cl ON cl.id_cli = cr.cli_id
@@ -1015,15 +1416,28 @@ export class AuthService {
           usuario_id,
           COUNT(*)::int AS total_creditos,
           COUNT(*) FILTER (
-            WHERE cre_fecha_inicio =
-              (now() AT TIME ZONE 'America/Bogota')::date
+            WHERE cre_fecha_inicio
+              BETWEEN (SELECT fecha_inicio FROM parametros)
+              AND (SELECT fecha_fin FROM parametros)
           )::int AS creditos_hoy,
           COUNT(*) FILTER (
             WHERE date_trunc('month', cre_fecha_inicio::timestamp) =
-              date_trunc('month', now() AT TIME ZONE 'America/Bogota')
+              date_trunc(
+                'month',
+                (SELECT fecha_fin FROM parametros)::timestamp
+              )
           )::int AS creditos_mes,
+          COALESCE(SUM(cre_total) FILTER (
+            WHERE cre_fecha_inicio
+              BETWEEN (SELECT fecha_inicio FROM parametros)
+              AND (SELECT fecha_fin FROM parametros)
+          ), 0) AS valor_creditos_hoy,
           COALESCE(SUM(cre_total), 0) AS valor_creditos_total,
-          MAX(cre_fecha_inicio::timestamp) AS ultima_actividad
+          MAX(cre_fecha_inicio::timestamp) FILTER (
+            WHERE cre_fecha_inicio
+              BETWEEN (SELECT fecha_inicio FROM parametros)
+              AND (SELECT fecha_fin FROM parametros)
+          ) AS ultima_actividad
         FROM creditos_base
         GROUP BY usuario_id
       ),
@@ -1063,6 +1477,7 @@ export class AuthService {
         COALESCE(cr.total_creditos, 0) AS total_creditos,
         COALESCE(cr.creditos_hoy, 0) AS creditos_hoy,
         COALESCE(cr.creditos_mes, 0) AS creditos_mes,
+        COALESCE(cr.valor_creditos_hoy, 0) AS valor_creditos_hoy,
         COALESCE(cr.valor_creditos_total, 0) AS valor_creditos_total,
         COALESCE(pt.recaudo_hoy, 0) AS recaudo_hoy,
         COALESCE(pt.recaudo_mes, 0) AS recaudo_mes,
@@ -1434,11 +1849,7 @@ export class AuthService {
     }
 
     if (await this.usarEsquemaTbl()) {
-      return this.actualizarEstadoEmpleadoTbl(
-        administrador,
-        empleadoId,
-        dto,
-      );
+      return this.actualizarEstadoEmpleadoTbl(administrador, empleadoId, dto);
     }
 
     const empleado = await this.prisma.usuario.findFirst({
@@ -1571,6 +1982,28 @@ export class AuthService {
       throw new ForbiddenException(
         'Solo el administrador puede gestionar empleados',
       );
+    }
+  }
+
+  private requerirSuperAdmin(usuario: AuthenticatedUser) {
+    if (!usuario.roles.includes('SUPER_ADMIN')) {
+      throw new ForbiddenException(
+        'Solo soporte puede administrar instituciones',
+      );
+    }
+  }
+
+  private async requerirEsquemaTblSuperAdmin() {
+    if (!(await this.usarEsquemaTbl())) {
+      throw new ConflictException(
+        'La administracion de instituciones requiere el esquema tbl_*',
+      );
+    }
+  }
+
+  private requerirIdTbl(value: string, mensaje: string) {
+    if (!this.esIdTbl(value)) {
+      throw new NotFoundException(mensaje);
     }
   }
 
@@ -1856,7 +2289,7 @@ export class AuthService {
   ): AuthSessionResponse {
     const issuedAt = Math.floor(Date.now() / 1000);
 
-    return {
+    const session = {
       token: this.firmarToken({
         aud: 'cobro-app',
         exp: this.expiracion(issuedAt),
@@ -1868,6 +2301,16 @@ export class AuthService {
       }),
       usuario: usuarioResponse,
     };
+    this.notificarCobrosAtrasadosCobrador(usuarioResponse);
+    return session;
+  }
+
+  private notificarCobrosAtrasadosCobrador(usuario: AuthUserResponse) {
+    if (usuario.esAdministrador || !usuario.roles.includes('COBRADOR')) {
+      return;
+    }
+
+    void this.notifications.notifyCollectorOverdueCollections(usuario.id);
   }
 
   private firmarToken(payload: TokenPayload) {
@@ -2022,6 +2465,8 @@ export class AuthService {
       throw new UnauthorizedException('El usuario no esta activo');
     }
 
+    this.validarAccesoUsuarioTbl(usuarioTbl);
+
     if (this.passwords.needsRehash(usuarioTbl.passwordHash)) {
       const upgradedHash = await this.passwords.hash(contrasena);
       await this.prisma.$executeRaw`
@@ -2045,6 +2490,47 @@ export class AuthService {
         p.per_apellido AS apellidos,
         tu.usu_email AS correo,
         tu.usu_activo AS activo,
+        (
+          EXISTS (
+            SELECT 1
+            FROM public.tbl_usuarios_organizaciones acceso_uo
+            JOIN public.tbl_roles acceso_rol
+              ON acceso_rol.id_rol = acceso_uo.rol_id
+            LEFT JOIN public.tbl_organizaciones acceso_org
+              ON acceso_org.id_org = acceso_uo.org_id
+            WHERE acceso_uo.usu_id = tu.id_usu
+              AND acceso_uo.urg_activo
+              AND (
+                acceso_rol.rol_tip::text = 'SUPER_ADMIN'
+                OR (
+                  NOT COALESCE(acceso_org.org_es_sistema, FALSE)
+                  AND acceso_org.org_activo
+                  AND (
+                    acceso_org.org_acceso_hasta IS NULL
+                    OR acceso_org.org_acceso_hasta >= CURRENT_DATE
+                  )
+                )
+              )
+          )
+        ) AS "tieneAccesoOrganizacion",
+        (
+          EXISTS (
+            SELECT 1
+            FROM public.tbl_usuarios_organizaciones susp_uo
+            JOIN public.tbl_organizaciones susp_org
+              ON susp_org.id_org = susp_uo.org_id
+            WHERE susp_uo.usu_id = tu.id_usu
+              AND susp_uo.urg_activo
+              AND NOT COALESCE(susp_org.org_es_sistema, FALSE)
+              AND (
+                NOT susp_org.org_activo
+                OR (
+                  susp_org.org_acceso_hasta IS NOT NULL
+                  AND susp_org.org_acceso_hasta < CURRENT_DATE
+                )
+              )
+          )
+        ) AS "organizacionSuspendida",
         COALESCE(
           array_agg(DISTINCT tr.rol_tip::text)
             FILTER (WHERE tr.rol_tip IS NOT NULL),
@@ -2060,7 +2546,20 @@ export class AuthService {
       LEFT JOIN public.tbl_usuarios_organizaciones uo
         ON uo.usu_id = tu.id_usu
        AND uo.urg_activo
-      LEFT JOIN public.tbl_roles tr ON tr.id_rol = uo.rol_id
+      LEFT JOIN public.tbl_organizaciones org ON org.id_org = uo.org_id
+      LEFT JOIN public.tbl_roles tr
+        ON tr.id_rol = uo.rol_id
+       AND (
+         tr.rol_tip::text = 'SUPER_ADMIN'
+         OR (
+           NOT COALESCE(org.org_es_sistema, FALSE)
+           AND org.org_activo
+           AND (
+             org.org_acceso_hasta IS NULL
+             OR org.org_acceso_hasta >= CURRENT_DATE
+           )
+         )
+       )
       LEFT JOIN public.tbl_roles_recursos rr ON rr.rol_id = tr.id_rol
       LEFT JOIN public.tbl_recursos rec ON rec.id_rec = rr.rec_id
       WHERE lower(tu.usu_usuario) = ${nombreUsuario}
@@ -2092,6 +2591,47 @@ export class AuthService {
         p.per_apellido AS apellidos,
         tu.usu_email AS correo,
         tu.usu_activo AS activo,
+        (
+          EXISTS (
+            SELECT 1
+            FROM public.tbl_usuarios_organizaciones acceso_uo
+            JOIN public.tbl_roles acceso_rol
+              ON acceso_rol.id_rol = acceso_uo.rol_id
+            LEFT JOIN public.tbl_organizaciones acceso_org
+              ON acceso_org.id_org = acceso_uo.org_id
+            WHERE acceso_uo.usu_id = tu.id_usu
+              AND acceso_uo.urg_activo
+              AND (
+                acceso_rol.rol_tip::text = 'SUPER_ADMIN'
+                OR (
+                  NOT COALESCE(acceso_org.org_es_sistema, FALSE)
+                  AND acceso_org.org_activo
+                  AND (
+                    acceso_org.org_acceso_hasta IS NULL
+                    OR acceso_org.org_acceso_hasta >= CURRENT_DATE
+                  )
+                )
+              )
+          )
+        ) AS "tieneAccesoOrganizacion",
+        (
+          EXISTS (
+            SELECT 1
+            FROM public.tbl_usuarios_organizaciones susp_uo
+            JOIN public.tbl_organizaciones susp_org
+              ON susp_org.id_org = susp_uo.org_id
+            WHERE susp_uo.usu_id = tu.id_usu
+              AND susp_uo.urg_activo
+              AND NOT COALESCE(susp_org.org_es_sistema, FALSE)
+              AND (
+                NOT susp_org.org_activo
+                OR (
+                  susp_org.org_acceso_hasta IS NOT NULL
+                  AND susp_org.org_acceso_hasta < CURRENT_DATE
+                )
+              )
+          )
+        ) AS "organizacionSuspendida",
         COALESCE(
           array_agg(DISTINCT tr.rol_tip::text)
             FILTER (WHERE tr.rol_tip IS NOT NULL),
@@ -2107,7 +2647,20 @@ export class AuthService {
       LEFT JOIN public.tbl_usuarios_organizaciones uo
         ON uo.usu_id = tu.id_usu
        AND uo.urg_activo
-      LEFT JOIN public.tbl_roles tr ON tr.id_rol = uo.rol_id
+      LEFT JOIN public.tbl_organizaciones org ON org.id_org = uo.org_id
+      LEFT JOIN public.tbl_roles tr
+        ON tr.id_rol = uo.rol_id
+       AND (
+         tr.rol_tip::text = 'SUPER_ADMIN'
+         OR (
+           NOT COALESCE(org.org_es_sistema, FALSE)
+           AND org.org_activo
+           AND (
+             org.org_acceso_hasta IS NULL
+             OR org.org_acceso_hasta >= CURRENT_DATE
+           )
+         )
+       )
       LEFT JOIN public.tbl_roles_recursos rr ON rr.rol_id = tr.id_rol
       LEFT JOIN public.tbl_recursos rec ON rec.id_rec = rr.rec_id
       WHERE tu.id_usu = ${BigInt(usuarioId)}
@@ -2258,6 +2811,7 @@ export class AuthService {
   private formatearUsuario(usuario: UsuarioConRoles): AuthUserResponse {
     const roles = usuario.roles.map((rol) => rol.rol.codigo);
     const esAdministrador = roles.includes('ADMINISTRADOR');
+    const esSuperAdmin = roles.includes('SUPER_ADMIN');
     const permisos = permisosEmpleadoCodigos.filter((codigo) =>
       roles.includes(codigo),
     );
@@ -2269,6 +2823,7 @@ export class AuthService {
       correo: usuario.correo,
       roles,
       esAdministrador,
+      esSuperAdmin,
       activo: usuario.estadoUsuario.codigo === 'ACTIVO',
       estado: {
         codigo: usuario.estadoUsuario.codigo,
@@ -2279,8 +2834,9 @@ export class AuthService {
   }
 
   private formatearUsuarioTbl(usuario: UsuarioTblAuth): AuthUserResponse {
-    const roles = usuario.roles.length > 0 ? usuario.roles : ['COBRADOR'];
+    const roles = usuario.roles;
     const esAdministrador = roles.includes('ADMINISTRADOR');
+    const esSuperAdmin = roles.includes('SUPER_ADMIN');
     const permisosDesdeRecursos = usuario.permisos.filter((permiso) =>
       esPermisoEmpleado(permiso),
     );
@@ -2296,6 +2852,7 @@ export class AuthService {
       correo: usuario.correo,
       roles,
       esAdministrador,
+      esSuperAdmin,
       activo: usuario.activo,
       estado: {
         codigo: usuario.activo ? 'ACTIVO' : 'INACTIVO',
@@ -2303,6 +2860,69 @@ export class AuthService {
       },
       permisos: esAdministrador ? permisosEmpleadoCodigos : permisos,
     };
+  }
+
+  private validarAccesoUsuarioTbl(usuario: UsuarioTblAuth) {
+    if (usuario.roles.includes('SUPER_ADMIN')) {
+      return;
+    }
+
+    if (usuario.tieneAccesoOrganizacion) {
+      return;
+    }
+
+    if (usuario.organizacionSuspendida) {
+      throw new UnauthorizedException(
+        'La institucion esta suspendida por falta de pagos',
+      );
+    }
+
+    throw new UnauthorizedException('No tienes una institucion activa');
+  }
+
+  private formatearOrganizacionSuperAdmin(row: OrganizacionSuperAdminRow) {
+    return {
+      id: row.id,
+      nombre: row.nombre,
+      telefono: row.telefono,
+      correo: row.correo,
+      activo: row.activo,
+      esSistema: row.es_sistema,
+      montoPlan: this.numero(row.monto_plan),
+      monedaPlan: row.moneda_plan ?? 'COP',
+      accesoHasta: this.fechaIsoCorta(row.acceso_hasta),
+      suspendidaEn: this.fechaIso(row.suspendida_en),
+      motivoSuspension: row.motivo_suspension,
+      suspendida: row.suspendida,
+      diasRestantes: row.dias_restantes,
+      usuariosTotal: this.entero(row.usuarios_total),
+      usuariosActivos: this.entero(row.usuarios_activos),
+      administradores: row.administradores ?? [],
+    };
+  }
+
+  private fechaIsoCorta(value: Date | string | null) {
+    if (!value) {
+      return null;
+    }
+
+    if (value instanceof Date) {
+      return value.toISOString().slice(0, 10);
+    }
+
+    return value.slice(0, 10);
+  }
+
+  private fechaIso(value: Date | string | null) {
+    if (!value) {
+      return null;
+    }
+
+    if (value instanceof Date) {
+      return value.toISOString();
+    }
+
+    return value;
   }
 
   private permisosUsuario(usuario: UsuarioConRoles): string[] {

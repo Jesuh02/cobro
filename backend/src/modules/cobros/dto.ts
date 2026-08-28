@@ -225,6 +225,10 @@ export class ListarCreditosQueryDto extends ListarCobrosRutaQueryDto {
 
 export class ObtenerPresupuestoQueryDto {
   @IsOptional()
+  @IsIn(['cobrador'])
+  alcance?: 'cobrador';
+
+  @IsOptional()
   @IsString()
   @MaxLength(64)
   @Matches(resourceIdPattern, { message: resourceIdMessage() })

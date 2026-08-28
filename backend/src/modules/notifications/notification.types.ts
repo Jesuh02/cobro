@@ -1,5 +1,8 @@
 export type NotificationKind =
-  'credito_aprobado' | 'pago_recibido' | 'credito_finalizado';
+  | 'credito_aprobado'
+  | 'pago_recibido'
+  | 'credito_finalizado'
+  | 'cobros_atrasados_cobrador';
 
 export type NotificationContact = {
   nombre: string;
@@ -40,10 +43,27 @@ export type CreditCompletedNotification = {
   valorPrincipal: number;
 };
 
+export type CollectorOverdueCollection = {
+  cliente: string;
+  ruta: string;
+  fechaVencimiento: Date | null;
+  saldoCuota: number;
+  monedaCodigo: string;
+};
+
+export type CollectorOverdueNotification = {
+  kind: 'cobros_atrasados_cobrador';
+  eventId: string;
+  contact: NotificationContact;
+  totalAtrasados: number;
+  cobros: CollectorOverdueCollection[];
+};
+
 export type CustomerNotification =
   | CreditApprovedNotification
   | PaymentReceivedNotification
-  | CreditCompletedNotification;
+  | CreditCompletedNotification
+  | CollectorOverdueNotification;
 
 export type RenderedNotification = {
   subject: string;

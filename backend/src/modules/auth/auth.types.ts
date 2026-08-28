@@ -12,6 +12,7 @@ export type AuthUserResponse = {
   correo: string;
   roles: string[];
   esAdministrador: boolean;
+  esSuperAdmin: boolean;
   activo: boolean;
   estado: {
     codigo: string;

@@ -44,6 +44,9 @@ void main() {
       expect(find.text('TOTAL PRESUPUESTO'), findsOneWidget);
       expect(find.text(r'$100.000'), findsWidgets);
       expect(find.text(r'-$100.000'), findsNothing);
+      expect(find.text('Refinanciados'), findsOneWidget);
+      expect(find.text(r'$300.000'), findsWidgets);
+      expect(find.text('2 creditos'), findsWidgets);
       expect(find.text('Inicio'), findsWidgets);
       expect(find.text('Ruta'), findsOneWidget);
       expect(find.text('Credito'), findsOneWidget);
@@ -1025,6 +1028,8 @@ Future<http.Response> _responderApi(http.Request request) async {
           'recaudado': 500000,
           'gastos': -100000,
           'creditos': 250000,
+          'creditosRefinanciados': 2,
+          'valorRefinanciado': 300000,
           'presupuesto': 850000,
         },
       ],
@@ -1033,6 +1038,8 @@ Future<http.Response> _responderApi(http.Request request) async {
         'recaudado': 500000,
         'gastos': -100000,
         'creditos': 250000,
+        'creditosRefinanciados': 2,
+        'valorRefinanciado': 300000,
         'presupuesto': 850000,
       },
     });

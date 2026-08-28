@@ -10,6 +10,7 @@ import 'package:mapcn_flutter/mapcn_flutter.dart';
 
 import '../../../app/app_theme.dart';
 import '../../../app/session_cache.dart';
+import '../../../core/map/map_tiles.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/network/api_exception.dart';
 import '../../../core/network/offline_mutation.dart';
@@ -191,6 +192,8 @@ class _HomePageState extends State<HomePage> {
   List<CobroRuta> _cobrosRuta = const <CobroRuta>[];
   List<CreditoRegistro> _creditos = const <CreditoRegistro>[];
   List<MovimientoCaja> _movimientosCaja = const <MovimientoCaja>[];
+  List<OrganizacionAdmin> _organizacionesAdmin =
+      const <OrganizacionAdmin>[];
   _ConteoCreditosInicio _conteoCreditosInicio =
       const _ConteoCreditosInicio.vacio();
   int _siguienteOffsetCreditos = 0;
@@ -477,21 +480,25 @@ class _HomePageState extends State<HomePage> {
           ),
           child: Row(
             children: <Widget>[
-              if (!esMovil) ...<Widget>[
+              if (!esMovil && !usuarioSesion.esSuperAdmin) ...<Widget>[
                 _construirMenuLateral(context),
                 VerticalDivider(width: 1, color: context.clay.border),
               ],
               Expanded(
                 child: _cargando && _catalogos == null
                     ? const Center(child: CircularProgressIndicator())
-                    : _construirVistaActual(context),
+                    : usuarioSesion.esSuperAdmin
+                        ? _construirSuperAdmin(context)
+                        : _construirVistaActual(context),
               ),
             ],
           ),
         ),
       ),
       bottomNavigationBar:
-          esMovil ? _construirNavegacionInferior(context) : null,
+          esMovil && !usuarioSesion.esSuperAdmin
+              ? _construirNavegacionInferior(context)
+              : null,
     );
   }
 
@@ -1017,7 +1024,7 @@ class _HomePageState extends State<HomePage> {
         ? const <PresupuestoItem>[]
         : _filtrarItemsPresupuestoInicio(cajaInicioSeleccionada);
     final PresupuestoTotales totales = _totalesPresupuesto(itemsInicio);
-    final int clientesActivos = _clientes.length;
+    final int clientesCreditos = totales.clientesCreditos;
     final double cartera = _cobrosRuta.fold<double>(
       0,
       (double total, CobroRuta cobro) => total + cobro.saldo,
@@ -1037,7 +1044,7 @@ class _HomePageState extends State<HomePage> {
 
     return _PaginaInicioPresupuesto(
       totales: totales,
-      clientesActivos: clientesActivos,
+      clientesActivos: clientesCreditos,
       cartera: cartera,
       conteoCreditos: _conteoCreditosInicio,
       creditosAtrasados: creditosAtrasados,
@@ -1140,6 +1147,18 @@ class _HomePageState extends State<HomePage> {
       creditos: items.fold<double>(
         0,
         (double total, PresupuestoItem item) => total + item.creditos,
+      ),
+      creditosRefinanciados: items.fold<int>(
+        0,
+        (int total, PresupuestoItem item) => total + item.creditosRefinanciados,
+      ),
+      clientesCreditos: items.fold<int>(
+        0,
+        (int total, PresupuestoItem item) => total + item.clientesCreditos,
+      ),
+      valorRefinanciado: items.fold<double>(
+        0,
+        (double total, PresupuestoItem item) => total + item.valorRefinanciado,
       ),
       presupuesto: items.fold<double>(
         0,
@@ -2272,6 +2291,7 @@ class _HomePageState extends State<HomePage> {
         _presupuesto = null;
         _clientes = const <Cliente>[];
         _cobrosRuta = const <CobroRuta>[];
+        _organizacionesAdmin = const <OrganizacionAdmin>[];
         _movimientosCaja = const <MovimientoCaja>[];
         _cajaMenorFiltroId = null;
         _aplicarFechaInicioHoy();
@@ -2349,6 +2369,7 @@ class _HomePageState extends State<HomePage> {
         _presupuesto = null;
         _clientes = const <Cliente>[];
         _cobrosRuta = const <CobroRuta>[];
+        _organizacionesAdmin = const <OrganizacionAdmin>[];
         _movimientosCaja = const <MovimientoCaja>[];
         _cajaMenorFiltroId = null;
         _aplicarFechaInicioHoy();
@@ -2384,8 +2405,13 @@ class _HomePageState extends State<HomePage> {
         .toList(growable: false);
   }
 
-  Future<List<ActividadEmpleado>> _obtenerActividadEmpleadosGestion() async {
-    return (await _apiClient.getList('/usuarios/actividad'))
+  Future<List<ActividadEmpleado>> _obtenerActividadEmpleadosGestion(
+    ActividadEmpleadosFiltros filtros,
+  ) async {
+    return (await _apiClient.getList(
+      '/usuarios/actividad',
+      query: filtros.toQuery(),
+    ))
         .map(
           (dynamic item) =>
               ActividadEmpleado.fromJson(item as Map<String, dynamic>),
@@ -2721,6 +2747,7 @@ class _HomePageState extends State<HomePage> {
       _cobrosRuta = const <CobroRuta>[];
       _creditos = const <CreditoRegistro>[];
       _movimientosCaja = const <MovimientoCaja>[];
+      _organizacionesAdmin = const <OrganizacionAdmin>[];
       _siguienteOffsetCreditos = 0;
       _siguienteOffsetMovimientosCaja = 0;
       _hayMasCreditos = false;
@@ -2846,6 +2873,11 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
+    if (_usuarioSesion!.esSuperAdmin) {
+      await _cargarOrganizacionesSuperAdmin();
+      return;
+    }
+
     final int cargaActual = ++_cargaSerial;
     setState(() {
       _cargando = true;
@@ -2906,6 +2938,319 @@ class _HomePageState extends State<HomePage> {
         });
       }
     }
+  }
+
+  Future<void> _cargarOrganizacionesSuperAdmin() async {
+    final int cargaActual = ++_cargaSerial;
+    setState(() {
+      _cargando = true;
+      _cargandoCreditos = false;
+      _cargandoMovimientosCaja = false;
+      _error = null;
+    });
+
+    try {
+      final List<OrganizacionAdmin> organizaciones =
+          await _obtenerOrganizacionesSuperAdmin();
+      if (!mounted || cargaActual != _cargaSerial) {
+        return;
+      }
+      setState(() => _organizacionesAdmin = organizaciones);
+    } catch (error) {
+      if (!mounted || cargaActual != _cargaSerial) {
+        return;
+      }
+      _manejarErrorCarga(error);
+    } finally {
+      if (mounted && cargaActual == _cargaSerial) {
+        setState(() => _cargando = false);
+      }
+    }
+  }
+
+  Future<List<OrganizacionAdmin>> _obtenerOrganizacionesSuperAdmin() async {
+    return (await _apiClient.getList('/super-admin/organizaciones'))
+        .map(
+          (dynamic item) =>
+              OrganizacionAdmin.fromJson(item as Map<String, dynamic>),
+        )
+        .toList(growable: false);
+  }
+
+  Future<void> _actualizarOrganizacionAdmin(
+    OrganizacionAdmin organizacion,
+    Map<String, dynamic> body,
+    String mensaje,
+  ) async {
+    if (_guardando) {
+      return;
+    }
+
+    setState(() => _guardando = true);
+    try {
+      final OrganizacionAdmin actualizada = OrganizacionAdmin.fromJson(
+        await _apiClient.patchObject(
+          '/super-admin/organizaciones/${organizacion.id}',
+          body,
+        ),
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _organizacionesAdmin = _organizacionesAdmin
+            .map(
+              (OrganizacionAdmin item) =>
+                  item.id == actualizada.id ? actualizada : item,
+            )
+            .toList(growable: false);
+      });
+      _mostrarMensaje(mensaje);
+    } catch (error) {
+      _mostrarMensaje(_mensajeError(error));
+    } finally {
+      if (mounted) {
+        setState(() => _guardando = false);
+      }
+    }
+  }
+
+  Future<void> _extenderAccesoOrganizacion(
+    OrganizacionAdmin organizacion,
+    int dias,
+  ) async {
+    if (_guardando) {
+      return;
+    }
+
+    setState(() => _guardando = true);
+    try {
+      final OrganizacionAdmin actualizada = OrganizacionAdmin.fromJson(
+        await _apiClient.postObject(
+          '/super-admin/organizaciones/${organizacion.id}/plazo',
+          <String, dynamic>{'dias': dias},
+        ),
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _organizacionesAdmin = _organizacionesAdmin
+            .map(
+              (OrganizacionAdmin item) =>
+                  item.id == actualizada.id ? actualizada : item,
+            )
+            .toList(growable: false);
+      });
+      _mostrarMensaje('Plazo extendido $dias dia${dias == 1 ? '' : 's'}');
+    } catch (error) {
+      _mostrarMensaje(_mensajeError(error));
+    } finally {
+      if (mounted) {
+        setState(() => _guardando = false);
+      }
+    }
+  }
+
+  Future<void> _editarOrganizacionAdmin(
+    OrganizacionAdmin organizacion,
+  ) async {
+    final TextEditingController montoController = TextEditingController(
+      text: _numero(organizacion.montoPlan),
+    );
+    final TextEditingController accesoController = TextEditingController(
+      text: organizacion.accesoHasta ?? '',
+    );
+    String moneda = organizacion.monedaPlan;
+
+    final Map<String, dynamic>? datos = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setDialogState) =>
+              AlertDialog(
+            title: Text(organizacion.nombre),
+            content: SingleChildScrollView(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    TextField(
+                      controller: montoController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: const InputDecoration(
+                        labelText: 'Cuanto pagan',
+                        prefixIcon: Icon(Icons.payments_rounded),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      value: moneda,
+                      decoration: const InputDecoration(
+                        labelText: 'Moneda',
+                        prefixIcon: Icon(Icons.attach_money_rounded),
+                      ),
+                      items: const <DropdownMenuItem<String>>[
+                        DropdownMenuItem<String>(
+                          value: 'COP',
+                          child: Text('COP'),
+                        ),
+                        DropdownMenuItem<String>(
+                          value: 'USD',
+                          child: Text('USD'),
+                        ),
+                      ],
+                      onChanged: (String? value) {
+                        if (value != null) {
+                          setDialogState(() => moneda = value);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: accesoController,
+                      decoration: const InputDecoration(
+                        labelText: 'Acceso hasta',
+                        hintText: 'YYYY-MM-DD',
+                        prefixIcon: Icon(Icons.event_available_rounded),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton.icon(
+                onPressed: () {
+                  final double? monto = _parseNumero(montoController.text);
+                  final String acceso = accesoController.text.trim();
+
+                  if (monto == null || monto < 0) {
+                    _mostrarMensaje('Ingresa un monto valido');
+                    return;
+                  }
+
+                  if (acceso.isNotEmpty &&
+                      !RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(acceso)) {
+                    _mostrarMensaje('La fecha debe tener formato YYYY-MM-DD');
+                    return;
+                  }
+
+                  Navigator.of(dialogContext).pop(<String, dynamic>{
+                    'montoPlan': monto,
+                    'monedaPlan': moneda,
+                    'accesoHasta': acceso.isEmpty ? null : acceso,
+                  });
+                },
+                icon: const Icon(Icons.check_rounded),
+                label: const Text('Guardar'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    montoController.dispose();
+    accesoController.dispose();
+
+    if (datos == null) {
+      return;
+    }
+
+    await _actualizarOrganizacionAdmin(
+      organizacion,
+      datos,
+      'Institucion actualizada',
+    );
+  }
+
+  Widget _construirSuperAdmin(BuildContext context) {
+    final int suspendidas = _organizacionesAdmin
+        .where((OrganizacionAdmin organizacion) => organizacion.suspendida)
+        .length;
+    final int activas = _organizacionesAdmin.length - suspendidas;
+
+    return _Pagina(
+      titulo: 'Instituciones',
+      subtitulo: 'Administracion global de accesos y pagos',
+      error: _error,
+      onRefresh: _cargar,
+      acciones: <Widget>[
+        IconButton.filledTonal(
+          onPressed: _cargando ? null : _cargar,
+          icon: const Icon(Icons.refresh_rounded),
+          tooltip: 'Recargar',
+        ),
+      ],
+      children: <Widget>[
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: <Widget>[
+            _EmpleadoGestionMetrica(
+              icono: Icons.apartment_rounded,
+              etiqueta: 'Instituciones',
+              valor: _organizacionesAdmin.length.toString(),
+            ),
+            _EmpleadoGestionMetrica(
+              icono: Icons.check_circle_rounded,
+              etiqueta: 'Activas',
+              valor: activas.toString(),
+              color: CobroAppTheme.success,
+            ),
+            _EmpleadoGestionMetrica(
+              icono: Icons.pause_circle_rounded,
+              etiqueta: 'Suspendidas',
+              valor: suspendidas.toString(),
+              color: CobroAppTheme.danger,
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        if (_organizacionesAdmin.isEmpty)
+          const _EstadoVacio(
+            icono: Icons.apartment_outlined,
+            titulo: 'Sin instituciones',
+            mensaje: 'No hay instituciones registradas.',
+          )
+        else
+          ..._organizacionesAdmin.map(
+            (OrganizacionAdmin organizacion) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _OrganizacionAdminItem(
+                organizacion: organizacion,
+                guardando: _guardando,
+                onEditar: () => _editarOrganizacionAdmin(organizacion),
+                onExtenderUno: () =>
+                    _extenderAccesoOrganizacion(organizacion, 1),
+                onExtenderDos: () =>
+                    _extenderAccesoOrganizacion(organizacion, 2),
+                onActivoChanged: (bool activo) =>
+                    _actualizarOrganizacionAdmin(
+                  organizacion,
+                  <String, dynamic>{
+                    'activo': activo,
+                    if (!activo)
+                      'motivoSuspension':
+                          'Suspendido por falta de pagos',
+                  },
+                  activo
+                      ? 'Institucion reactivada'
+                      : 'Institucion suspendida',
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
   }
 
   Future<Catalogos> _obtenerCatalogos() async {
@@ -2995,7 +3340,12 @@ class _HomePageState extends State<HomePage> {
 
   Map<String, String?> _queryPresupuesto() {
     final String search = _buscarCajaInicioController.text.trim();
+    final SesionUsuario? usuario = _usuarioSesion;
+    final bool usarDatosCobrador = usuario != null &&
+        !usuario.esAdministrador &&
+        usuario.roles.contains('COBRADOR');
     return <String, String?>{
+      'alcance': usarDatosCobrador ? 'cobrador' : null,
       'cajaMenorId': _cajaInicioFiltroId == _todasLasCajasFiltro
           ? null
           : _cajaInicioFiltroId,
@@ -8423,6 +8773,13 @@ class _ComposicionPresupuesto extends StatelessWidget {
         valor: _dinero(totales.creditos),
         color: CobroAppTheme.danger,
       ),
+      _DatoPresupuesto(
+        icono: Icons.currency_exchange_rounded,
+        etiqueta: 'Refinanciados',
+        valor: _dinero(totales.valorRefinanciado),
+        detalle: _textoCreditos(totales.creditosRefinanciados),
+        color: const Color(0xFF0E7490),
+      ),
     ];
 
     return ClaySurface(
@@ -8463,6 +8820,8 @@ class _ComposicionPresupuesto extends StatelessWidget {
                   ],
                 ),
               ),
+              const Divider(height: 28),
+              _LineaDatoPresupuesto(dato: datos[4]),
             ],
           );
         },
@@ -8515,6 +8874,19 @@ class _LineaDatoPresupuesto extends StatelessWidget {
                       ),
                 ),
               ),
+              if (dato.detalle != null) ...<Widget>[
+                const SizedBox(height: 3),
+                Text(
+                  dato.detalle!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: context.clay.subtleText,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0,
+                      ),
+                ),
+              ],
             ],
           ),
         ),
@@ -8537,7 +8909,7 @@ class _ActividadPresupuesto extends StatelessWidget {
     final List<Widget> tarjetas = <Widget>[
       _TarjetaActividadPresupuesto(
         icono: Icons.groups_rounded,
-        etiqueta: 'Clientes activos',
+        etiqueta: 'Clientes con credito',
         valor: '$clientesActivos',
         color: const Color(0xFF0E7490),
       ),
@@ -8645,12 +9017,14 @@ class _DatoPresupuesto {
     required this.etiqueta,
     required this.valor,
     required this.color,
+    this.detalle,
   });
 
   final IconData icono;
   final String etiqueta;
   final String valor;
   final Color color;
+  final String? detalle;
 }
 
 class _Pagina extends StatelessWidget {
@@ -8860,6 +9234,11 @@ class _PresupuestoItem extends StatelessWidget {
           _LineaMonto(label: 'Recaudado', value: item.recaudado),
           _LineaMonto(label: 'Gastos', value: item.gastos),
           _LineaMonto(label: 'Creditos', value: item.creditos),
+          _LineaMonto(
+            label:
+                'Refinanciado (${_textoCreditos(item.creditosRefinanciados)})',
+            value: item.valorRefinanciado,
+          ),
           const Divider(height: 20),
           _LineaMonto(
             label: 'Presupuesto',
@@ -12033,6 +12412,8 @@ class _ClienteUbicacionPickerState extends State<_ClienteUbicacionPicker>
                         initialCenter: center,
                         initialZoom: _value == null ? 13.5 : 16,
                         style: MapcnStyle.dark,
+                        tileUrlTemplate: CobroMapTiles.routeLightUrlTemplate,
+                        attributionText: CobroMapTiles.attribution,
                         points: _value == null
                             ? const <LatLng>[]
                             : <LatLng>[_value!],
@@ -12317,6 +12698,207 @@ class _MovimientoCajaItem extends StatelessWidget {
   }
 }
 
+class _OrganizacionAdminItem extends StatelessWidget {
+  const _OrganizacionAdminItem({
+    required this.organizacion,
+    required this.guardando,
+    required this.onEditar,
+    required this.onExtenderUno,
+    required this.onExtenderDos,
+    required this.onActivoChanged,
+  });
+
+  final OrganizacionAdmin organizacion;
+  final bool guardando;
+  final VoidCallback onEditar;
+  final VoidCallback onExtenderUno;
+  final VoidCallback onExtenderDos;
+  final ValueChanged<bool> onActivoChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color estadoColor =
+        organizacion.suspendida ? CobroAppTheme.danger : CobroAppTheme.success;
+    final String administradores = organizacion.administradores.isEmpty
+        ? 'Sin administrador'
+        : organizacion.administradores.join(', ');
+
+    return ClaySurface(
+      radius: 14,
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              CircleAvatar(
+                backgroundColor: estadoColor.withValues(alpha: 0.12),
+                foregroundColor: estadoColor,
+                child: Icon(
+                  organizacion.suspendida
+                      ? Icons.block_rounded
+                      : Icons.apartment_rounded,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      organizacion.nombre,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w900,
+                          ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      [
+                        if ((organizacion.correo ?? '').isNotEmpty)
+                          organizacion.correo!,
+                        administradores,
+                      ].join(' · '),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: context.clay.subtleText,
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                organizacion.estadoTexto,
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      color: estadoColor,
+                      fontWeight: FontWeight.w900,
+                    ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: <Widget>[
+              _OrganizacionDato(
+                icono: Icons.payments_rounded,
+                texto:
+                    '${_dinero(organizacion.montoPlan)} ${organizacion.monedaPlan}',
+              ),
+              _OrganizacionDato(
+                icono: Icons.event_available_rounded,
+                texto: organizacion.accesoTexto,
+              ),
+              _OrganizacionDato(
+                icono: Icons.group_rounded,
+                texto:
+                    '${organizacion.usuariosActivos}/${organizacion.usuariosTotal} usuarios',
+              ),
+              if ((organizacion.motivoSuspension ?? '').isNotEmpty)
+                _OrganizacionDato(
+                  icono: Icons.info_outline_rounded,
+                  texto: organizacion.motivoSuspension!,
+                  color: CobroAppTheme.danger,
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            alignment: WrapAlignment.end,
+            children: <Widget>[
+              OutlinedButton.icon(
+                onPressed: guardando ? null : onExtenderUno,
+                icon: const Icon(Icons.plus_one_rounded),
+                label: const Text('1 dia'),
+              ),
+              OutlinedButton.icon(
+                onPressed: guardando ? null : onExtenderDos,
+                icon: const Icon(Icons.exposure_plus_2_rounded),
+                label: const Text('2 dias'),
+              ),
+              OutlinedButton.icon(
+                onPressed: guardando ? null : onEditar,
+                icon: const Icon(Icons.edit_outlined),
+                label: const Text('Editar'),
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Text(
+                    organizacion.activo ? 'Activa' : 'Suspendida',
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                          color: context.clay.subtleText,
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                  const SizedBox(width: 6),
+                  Switch(
+                    value: organizacion.activo,
+                    onChanged: guardando ? null : onActivoChanged,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _OrganizacionDato extends StatelessWidget {
+  const _OrganizacionDato({
+    required this.icono,
+    required this.texto,
+    this.color,
+  });
+
+  final IconData icono;
+  final String texto;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color acento = color ?? Theme.of(context).colorScheme.primary;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: acento.withValues(alpha: context.clay.isDark ? 0.14 : 0.08),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(icono, size: 16, color: acento),
+            const SizedBox(width: 6),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 260),
+              child: Text(
+                texto,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: context.clay.text,
+                      fontWeight: FontWeight.w800,
+                    ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _ClienteItem extends StatelessWidget {
   const _ClienteItem({
     required this.cliente,
@@ -12462,7 +13044,8 @@ class _GestionEmpleadosPage extends StatefulWidget {
 
   final ApiClient apiClient;
   final Future<List<EmpleadoGestion>> Function() cargarEmpleados;
-  final Future<List<ActividadEmpleado>> Function() cargarActividadEmpleados;
+  final Future<List<ActividadEmpleado>> Function(ActividadEmpleadosFiltros filtros)
+      cargarActividadEmpleados;
   final Future<bool> Function() crearEmpleado;
   final Future<EmpleadoGestion?> Function(EmpleadoGestion empleado)
       modificarEmpleado;
@@ -12478,19 +13061,36 @@ class _GestionEmpleadosPage extends StatefulWidget {
 class _GestionEmpleadosPageState extends State<_GestionEmpleadosPage> {
   List<EmpleadoGestion> _empleados = const <EmpleadoGestion>[];
   List<ActividadEmpleado> _actividades = const <ActividadEmpleado>[];
+  late DateTime _actividadFechaInicio;
+  late DateTime _actividadFechaFin;
+  final TextEditingController _buscarActividadEmpleadoController =
+      TextEditingController();
   String? _empleadoSeleccionadoId;
   Set<String> _permisosSeleccionados = Set<String>.of(
     _permisosEmpleadoCodigos,
   );
   bool _aplicarATodos = false;
   bool _cargando = true;
+  bool _cargandoActividad = false;
   bool _guardando = false;
   String? _error;
 
   @override
   void initState() {
     super.initState();
+    final DateTime hoy = _hoyColombia();
+    _actividadFechaInicio = hoy;
+    _actividadFechaFin = hoy;
+    _buscarActividadEmpleadoController.addListener(_actualizarFiltroActividad);
     unawaited(_recargarEmpleados());
+  }
+
+  @override
+  void dispose() {
+    _buscarActividadEmpleadoController
+        .removeListener(_actualizarFiltroActividad);
+    _buscarActividadEmpleadoController.dispose();
+    super.dispose();
   }
 
   EmpleadoGestion? _empleadoPorId(String? empleadoId) {
@@ -12500,6 +13100,68 @@ class _GestionEmpleadosPageState extends State<_GestionEmpleadosPage> {
       }
     }
     return null;
+  }
+
+  DateTime _hoyColombia() {
+    final DateTime ahora = _fechaHoraColombia();
+    return DateTime(ahora.year, ahora.month, ahora.day);
+  }
+
+  bool get _actividadHoyActiva {
+    final DateTime hoy = _hoyColombia();
+    return _mismaFecha(_actividadFechaInicio, hoy) &&
+        _mismaFecha(_actividadFechaFin, hoy);
+  }
+
+  bool get _actividadFiltrosActivos {
+    return !_actividadHoyActiva ||
+        _buscarActividadEmpleadoController.text.trim().isNotEmpty;
+  }
+
+  bool _mismaFecha(DateTime izquierda, DateTime derecha) {
+    return izquierda.year == derecha.year &&
+        izquierda.month == derecha.month &&
+        izquierda.day == derecha.day;
+  }
+
+  ActividadEmpleadosFiltros _filtrosActividad() {
+    return ActividadEmpleadosFiltros(
+      fechaInicio: _actividadFechaInicio,
+      fechaFin: _actividadFechaFin,
+    );
+  }
+
+  List<ActividadEmpleado> get _actividadesFiltradas {
+    final String consulta =
+        _buscarActividadEmpleadoController.text.trim().toLowerCase();
+    if (consulta.isEmpty) {
+      return _actividades;
+    }
+
+    return _actividades.where((ActividadEmpleado actividad) {
+      return actividad.nombreCompleto.toLowerCase().contains(consulta) ||
+          actividad.usuario.toLowerCase().contains(consulta) ||
+          actividad.correo.toLowerCase().contains(consulta);
+    }).toList(growable: false);
+  }
+
+  String get _actividadPeriodoTexto {
+    if (_actividadHoyActiva) {
+      return 'Actividad de hoy';
+    }
+
+    if (_mismaFecha(_actividadFechaInicio, _actividadFechaFin)) {
+      return 'Actividad del ${_fechaEtiqueta(_actividadFechaInicio)}';
+    }
+
+    return 'Actividad del ${_fechaEtiqueta(_actividadFechaInicio)} al '
+        '${_fechaEtiqueta(_actividadFechaFin)}';
+  }
+
+  void _actualizarFiltroActividad() {
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   Future<void> _recargarEmpleados() async {
@@ -12514,7 +13176,7 @@ class _GestionEmpleadosPageState extends State<_GestionEmpleadosPage> {
     try {
       final List<dynamic> resultados = await Future.wait<dynamic>([
         widget.cargarEmpleados(),
-        widget.cargarActividadEmpleados(),
+        widget.cargarActividadEmpleados(_filtrosActividad()),
       ]);
       final List<EmpleadoGestion> empleados =
           resultados[0] as List<EmpleadoGestion>;
@@ -12537,6 +13199,77 @@ class _GestionEmpleadosPageState extends State<_GestionEmpleadosPage> {
         setState(() => _cargando = false);
       }
     }
+  }
+
+  Future<void> _recargarActividadEmpleados() async {
+    if (!mounted) {
+      return;
+    }
+    setState(() => _cargandoActividad = true);
+
+    try {
+      final List<ActividadEmpleado> actividades =
+          await widget.cargarActividadEmpleados(_filtrosActividad());
+      if (!mounted) {
+        return;
+      }
+      setState(() => _actividades = actividades);
+    } catch (error) {
+      widget.mostrarMensaje(widget.mensajeError(error));
+    } finally {
+      if (mounted) {
+        setState(() => _cargandoActividad = false);
+      }
+    }
+  }
+
+  Future<void> _seleccionarFechaActividad({required bool esInicio}) async {
+    final DateTime actual =
+        esInicio ? _actividadFechaInicio : _actividadFechaFin;
+    final DateTime? selected = await showDatePicker(
+      context: context,
+      initialDate: actual,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+
+    if (selected == null || !mounted) {
+      return;
+    }
+
+    setState(() {
+      if (esInicio) {
+        _actividadFechaInicio = selected;
+        if (_actividadFechaFin.isBefore(selected)) {
+          _actividadFechaFin = selected;
+        }
+      } else {
+        _actividadFechaFin = selected;
+        if (_actividadFechaInicio.isAfter(selected)) {
+          _actividadFechaInicio = selected;
+        }
+      }
+    });
+    await _recargarActividadEmpleados();
+  }
+
+  Future<void> _mostrarActividadHoy() async {
+    final DateTime hoy = _hoyColombia();
+    setState(() {
+      _actividadFechaInicio = hoy;
+      _actividadFechaFin = hoy;
+    });
+    await _recargarActividadEmpleados();
+  }
+
+  Future<void> _limpiarFiltrosActividad() async {
+    final DateTime hoy = _hoyColombia();
+    setState(() {
+      _actividadFechaInicio = hoy;
+      _actividadFechaFin = hoy;
+      _buscarActividadEmpleadoController.clear();
+    });
+    await _recargarActividadEmpleados();
   }
 
   void _sincronizarSeleccion({required bool resetPermisos}) {
@@ -13149,6 +13882,8 @@ class _GestionEmpleadosPageState extends State<_GestionEmpleadosPage> {
   }
 
   Widget _construirPanelActividad(bool esMovil) {
+    final List<ActividadEmpleado> actividades = _actividadesFiltradas;
+
     return ClaySurface(
       radius: 18,
       padding: EdgeInsets.all(esMovil ? 14 : 18),
@@ -13169,7 +13904,7 @@ class _GestionEmpleadosPageState extends State<_GestionEmpleadosPage> {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      'Rutas, recaudos y cumplimiento de cobros de hoy',
+                      _actividadPeriodoTexto,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: context.clay.subtleText,
                             fontWeight: FontWeight.w700,
@@ -13184,10 +13919,18 @@ class _GestionEmpleadosPageState extends State<_GestionEmpleadosPage> {
                   height: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
+              else if (_cargandoActividad)
+                const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
               else
                 const Icon(Icons.timeline_rounded),
             ],
           ),
+          const SizedBox(height: 12),
+          _construirFiltrosActividad(esMovil),
           const SizedBox(height: 12),
           if (_actividades.isEmpty)
             _MensajePanel(
@@ -13195,8 +13938,14 @@ class _GestionEmpleadosPageState extends State<_GestionEmpleadosPage> {
               titulo: 'Sin actividad',
               mensaje: 'No hay rutas, creditos o recaudos para mostrar.',
             )
+          else if (actividades.isEmpty)
+            _MensajePanel(
+              icono: Icons.search_off_rounded,
+              titulo: 'Sin resultados',
+              mensaje: 'No hay empleados que coincidan con el filtro.',
+            )
           else
-            ..._actividades.map(
+            ...actividades.map(
               (ActividadEmpleado actividad) => Padding(
                 padding: const EdgeInsets.only(bottom: 10),
                 child: _ActividadEmpleadoCard(actividad: actividad),
@@ -13204,6 +13953,56 @@ class _GestionEmpleadosPageState extends State<_GestionEmpleadosPage> {
             ),
         ],
       ),
+    );
+  }
+
+  Widget _construirFiltrosActividad(bool esMovil) {
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: <Widget>[
+        if (!esMovil)
+          SizedBox(
+            width: 260,
+            child: TextField(
+              controller: _buscarActividadEmpleadoController,
+              decoration: const InputDecoration(
+                prefixIcon: Icon(Icons.search_rounded),
+                labelText: 'Buscar empleado',
+              ),
+            ),
+          ),
+        OutlinedButton.icon(
+          onPressed:
+              _actividadHoyActiva || _cargandoActividad ? null : _mostrarActividadHoy,
+          icon: const Icon(Icons.today_rounded),
+          label: const Text('Hoy'),
+        ),
+        OutlinedButton.icon(
+          onPressed: _cargandoActividad
+              ? null
+              : () => _seleccionarFechaActividad(esInicio: true),
+          icon: const Icon(Icons.calendar_month_rounded),
+          label: Text('Inicio ${_fechaEtiqueta(_actividadFechaInicio)}'),
+        ),
+        OutlinedButton.icon(
+          onPressed: _cargandoActividad
+              ? null
+              : () => _seleccionarFechaActividad(esInicio: false),
+          icon: const Icon(Icons.event_available_rounded),
+          label: Text('Fin ${_fechaEtiqueta(_actividadFechaFin)}'),
+        ),
+        if (_actividadFiltrosActivos)
+          Tooltip(
+            message: 'Limpiar filtros',
+            child: IconButton.outlined(
+              onPressed:
+                  _cargandoActividad ? null : _limpiarFiltrosActividad,
+              icon: const Icon(Icons.filter_alt_off_rounded),
+            ),
+          ),
+      ],
     );
   }
 
@@ -14030,6 +14829,7 @@ class SesionUsuario {
     required this.correo,
     required this.roles,
     required this.esAdministrador,
+    required this.esSuperAdmin,
     required this.permisos,
     required this.activo,
   });
@@ -14053,6 +14853,7 @@ class SesionUsuario {
           ? rawRoles.whereType<String>().toList(growable: false)
           : const <String>[],
       esAdministrador: esAdministrador,
+      esSuperAdmin: json['esSuperAdmin'] as bool? ?? false,
       permisos: permisos,
       activo: json['activo'] as bool? ?? true,
     );
@@ -14064,6 +14865,7 @@ class SesionUsuario {
   final String correo;
   final List<String> roles;
   final bool esAdministrador;
+  final bool esSuperAdmin;
   final List<String> permisos;
   final bool activo;
 
@@ -14075,6 +14877,7 @@ class SesionUsuario {
       'correo': correo,
       'roles': roles,
       'esAdministrador': esAdministrador,
+      'esSuperAdmin': esSuperAdmin,
       'permisos': permisos,
       'activo': activo,
     };
@@ -14082,6 +14885,98 @@ class SesionUsuario {
 
   bool puede(String permiso) {
     return esAdministrador || permisos.contains(permiso);
+  }
+}
+
+class OrganizacionAdmin {
+  const OrganizacionAdmin({
+    required this.id,
+    required this.nombre,
+    required this.telefono,
+    required this.correo,
+    required this.activo,
+    required this.esSistema,
+    required this.montoPlan,
+    required this.monedaPlan,
+    required this.accesoHasta,
+    required this.suspendidaEn,
+    required this.motivoSuspension,
+    required this.suspendida,
+    required this.diasRestantes,
+    required this.usuariosTotal,
+    required this.usuariosActivos,
+    required this.administradores,
+  });
+
+  factory OrganizacionAdmin.fromJson(Map<String, dynamic> json) {
+    final Object? rawAdministradores = json['administradores'];
+    return OrganizacionAdmin(
+      id: json['id'] as String,
+      nombre: json['nombre'] as String,
+      telefono: json['telefono'] as String?,
+      correo: json['correo'] as String?,
+      activo: json['activo'] as bool? ?? true,
+      esSistema: json['esSistema'] as bool? ?? false,
+      montoPlan: _doble(json['montoPlan']),
+      monedaPlan: json['monedaPlan'] as String? ?? 'COP',
+      accesoHasta: json['accesoHasta'] as String?,
+      suspendidaEn: json['suspendidaEn'] as String?,
+      motivoSuspension: json['motivoSuspension'] as String?,
+      suspendida: json['suspendida'] as bool? ?? false,
+      diasRestantes: _enteroNullableJson(json['diasRestantes']),
+      usuariosTotal: _enteroJson(json['usuariosTotal']),
+      usuariosActivos: _enteroJson(json['usuariosActivos']),
+      administradores: rawAdministradores is List<dynamic>
+          ? rawAdministradores.whereType<String>().toList(growable: false)
+          : const <String>[],
+    );
+  }
+
+  final String id;
+  final String nombre;
+  final String? telefono;
+  final String? correo;
+  final bool activo;
+  final bool esSistema;
+  final double montoPlan;
+  final String monedaPlan;
+  final String? accesoHasta;
+  final String? suspendidaEn;
+  final String? motivoSuspension;
+  final bool suspendida;
+  final int? diasRestantes;
+  final int usuariosTotal;
+  final int usuariosActivos;
+  final List<String> administradores;
+
+  String get estadoTexto {
+    if (suspendida) {
+      return 'Suspendida';
+    }
+    if (diasRestantes == null) {
+      return 'Activa';
+    }
+    if (diasRestantes == 0) {
+      return 'Vence hoy';
+    }
+    return 'Activa';
+  }
+
+  String get accesoTexto {
+    if (accesoHasta == null) {
+      return 'Sin vencimiento';
+    }
+    final int? dias = diasRestantes;
+    if (dias == null) {
+      return accesoHasta!;
+    }
+    if (dias < 0) {
+      return '$accesoHasta (${dias.abs()} dias vencida)';
+    }
+    if (dias == 0) {
+      return '$accesoHasta (vence hoy)';
+    }
+    return '$accesoHasta ($dias dias)';
   }
 }
 
@@ -14115,6 +15010,26 @@ class EmpleadoGestion {
   final String correo;
   final List<String> permisos;
   final bool activo;
+}
+
+class ActividadEmpleadosFiltros {
+  const ActividadEmpleadosFiltros({
+    required this.fechaInicio,
+    required this.fechaFin,
+    this.empleadoId,
+  });
+
+  final DateTime fechaInicio;
+  final DateTime fechaFin;
+  final String? empleadoId;
+
+  Map<String, String?> toQuery() {
+    return <String, String?>{
+      'inicio': _fechaValor(fechaInicio),
+      'fin': _fechaValor(fechaFin),
+      'empleadoId': empleadoId,
+    };
+  }
 }
 
 enum EstadoActividadEmpleado {
@@ -15438,6 +16353,9 @@ class PresupuestoItem {
     required this.recaudado,
     required this.gastos,
     required this.creditos,
+    required this.creditosRefinanciados,
+    required this.clientesCreditos,
+    required this.valorRefinanciado,
     required this.presupuesto,
   });
 
@@ -15450,6 +16368,9 @@ class PresupuestoItem {
       recaudado: _doble(json['recaudado']),
       gastos: _doble(json['gastos']).abs(),
       creditos: _doble(json['creditos']),
+      creditosRefinanciados: _enteroJson(json['creditosRefinanciados']),
+      clientesCreditos: _enteroJson(json['clientesCreditos']),
+      valorRefinanciado: _doble(json['valorRefinanciado']),
       presupuesto: _doble(json['presupuesto']),
     );
   }
@@ -15461,6 +16382,9 @@ class PresupuestoItem {
   final double recaudado;
   final double gastos;
   final double creditos;
+  final int creditosRefinanciados;
+  final int clientesCreditos;
+  final double valorRefinanciado;
   final double presupuesto;
 }
 
@@ -15470,6 +16394,9 @@ class PresupuestoTotales {
     required this.recaudado,
     required this.gastos,
     required this.creditos,
+    required this.creditosRefinanciados,
+    required this.clientesCreditos,
+    required this.valorRefinanciado,
     required this.presupuesto,
   });
 
@@ -15478,6 +16405,9 @@ class PresupuestoTotales {
         recaudado = 0,
         gastos = 0,
         creditos = 0,
+        creditosRefinanciados = 0,
+        clientesCreditos = 0,
+        valorRefinanciado = 0,
         presupuesto = 0;
 
   factory PresupuestoTotales.fromJson(Map<String, dynamic> json) {
@@ -15486,6 +16416,9 @@ class PresupuestoTotales {
       recaudado: _doble(json['recaudado']),
       gastos: _doble(json['gastos']).abs(),
       creditos: _doble(json['creditos']),
+      creditosRefinanciados: _enteroJson(json['creditosRefinanciados']),
+      clientesCreditos: _enteroJson(json['clientesCreditos']),
+      valorRefinanciado: _doble(json['valorRefinanciado']),
       presupuesto: _doble(json['presupuesto']),
     );
   }
@@ -15494,6 +16427,9 @@ class PresupuestoTotales {
   final double recaudado;
   final double gastos;
   final double creditos;
+  final int creditosRefinanciados;
+  final int clientesCreditos;
+  final double valorRefinanciado;
   final double presupuesto;
 }
 
@@ -15572,6 +16508,19 @@ int _enteroJson(Object? value) {
   return 0;
 }
 
+int? _enteroNullableJson(Object? value) {
+  if (value == null) {
+    return null;
+  }
+  if (value is num) {
+    return value.toInt();
+  }
+  if (value is String) {
+    return int.tryParse(value);
+  }
+  return null;
+}
+
 DateTime? _fechaNullable(Object? value) {
   if (value is! String || value.isEmpty) {
     return null;
@@ -15647,6 +16596,10 @@ String _textoCeldaExportacion(Object? value) {
     return _numero(value.toDouble()).replaceAll('.', ',');
   }
   return value.toString();
+}
+
+String _textoCreditos(int value) {
+  return value == 1 ? '1 credito' : '$value creditos';
 }
 
 String _dinero(double value) {

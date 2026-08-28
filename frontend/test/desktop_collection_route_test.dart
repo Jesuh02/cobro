@@ -136,6 +136,30 @@ void main() {
         _unorderedCustomers[0].point!,
       ],
     );
+    expect(
+      tester
+          .getTopLeft(find.byKey(const ValueKey<String>('route-card-near')))
+          .dy,
+      lessThan(
+        tester
+            .getTopLeft(
+              find.byKey(const ValueKey<String>('route-card-middle')),
+            )
+            .dy,
+      ),
+    );
+    expect(
+      tester
+          .getTopLeft(
+            find.byKey(const ValueKey<String>('route-card-middle')),
+          )
+          .dy,
+      lessThan(
+        tester
+            .getTopLeft(find.byKey(const ValueKey<String>('route-card-far')))
+            .dy,
+      ),
+    );
   });
 
   testWidgets(

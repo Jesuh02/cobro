@@ -123,6 +123,7 @@ export class WhatsappNotificationService {
       credito_aprobado: 'YCLOUD_TEMPLATE_CREDIT_APPROVED',
       pago_recibido: 'YCLOUD_TEMPLATE_PAYMENT_RECEIVED',
       credito_finalizado: 'YCLOUD_TEMPLATE_CREDIT_COMPLETED',
+      cobros_atrasados_cobrador: 'YCLOUD_TEMPLATE_COLLECTOR_OVERDUE',
     };
 
     return this.config.get<string>(keyByKind[kind]);

@@ -89,6 +89,43 @@ describe('WhatsappNotificationService', () => {
     expect(body.template.language.code).toBe('es_CO');
   });
 
+  it('uses the collector overdue template when configured', async () => {
+    const fetchMock = jest.fn().mockResolvedValue(
+      new Response(JSON.stringify({ id: 'message-collector' }), {
+        status: 200,
+      }),
+    );
+    global.fetch = fetchMock;
+    const service = new WhatsappNotificationService(
+      new ConfigService({
+        YCLOUD_API_KEY: 'test-key',
+        YCLOUD_BASE_URL: 'https://api.ycloud.com/v2',
+        YCLOUD_WHATSAPP_NUMBER: '+573044271932',
+        YCLOUD_TEMPLATE_COLLECTOR_OVERDUE: 'cobros_atrasados_cobrador',
+        YCLOUD_TEMPLATE_LANGUAGE: 'es_CO',
+      }),
+    );
+
+    await service.send({
+      to: '+573001112233',
+      kind: 'cobros_atrasados_cobrador',
+      text: 'Tienes cobros atrasados',
+      templateParameters: ['Luis', '2 cobros atrasados', 'Ana - Centro'],
+      externalId: 'collector-1',
+    });
+
+    const [, request] = fetchMock.mock.calls[0] as [string, RequestInit];
+    if (typeof request.body !== 'string') {
+      throw new Error('Expected a JSON string body');
+    }
+    const body = JSON.parse(request.body) as {
+      type: string;
+      template: { name: string };
+    };
+    expect(body.type).toBe('template');
+    expect(body.template.name).toBe('cobros_atrasados_cobrador');
+  });
+
   it('skips malformed local recipient phones before calling YCloud', async () => {
     const fetchMock = jest.fn();
     global.fetch = fetchMock;

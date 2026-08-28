@@ -92,4 +92,39 @@ describe('NotificationTemplatesService', () => {
     expect(result.emailHtml).not.toContain('<script>alert(1)</script>');
     expect(result.emailHtml).toContain('&lt;script&gt;');
   });
+
+  it('renders collector overdue alerts with the overdue customer list', () => {
+    const result = service.render({
+      kind: 'cobros_atrasados_cobrador',
+      eventId: 'collector-1-2026-08-27',
+      contact: {
+        nombre: 'Luis Perez',
+        correo: 'luis@example.com',
+        whatsapp: '+573001112233',
+      },
+      totalAtrasados: 2,
+      cobros: [
+        {
+          cliente: 'Ana Torres',
+          ruta: 'Centro',
+          fechaVencimiento: new Date('2026-08-20T00:00:00.000Z'),
+          saldoCuota: 50_000,
+          monedaCodigo: 'COP',
+        },
+        {
+          cliente: 'Carlos Diaz',
+          ruta: 'Norte',
+          fechaVencimiento: new Date('2026-08-21T00:00:00.000Z'),
+          saldoCuota: 80_000,
+          monedaCodigo: 'COP',
+        },
+      ],
+    });
+
+    expect(result.subject).toContain('2 cobros atrasados');
+    expect(result.emailText).toContain('Ana Torres');
+    expect(result.emailText).toContain('20 de agosto de 2026');
+    expect(result.whatsappText).toContain('*2 cobros atrasados*');
+    expect(result.whatsappTemplateParameters).toHaveLength(3);
+  });
 });

@@ -1,13 +1,14 @@
 import { Module } from '@nestjs/common';
 
 import { PrismaModule } from '../../common/prisma/prisma.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { AuthController } from './auth.controller';
 import { AuthGuard } from './auth.guard';
 import { AuthService } from './auth.service';
 import { PasswordService } from './password.service';
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, NotificationsModule],
   controllers: [AuthController],
   providers: [AuthGuard, AuthService, PasswordService],
   exports: [AuthGuard, AuthService],

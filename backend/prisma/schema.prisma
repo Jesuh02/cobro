@@ -681,12 +681,18 @@ model TblRolRecurso {
 }
 
 model TblOrganizacion {
-  idOrg    BigInt   @id @default(autoincrement()) @map("id_org")
-  nombre   String   @unique @map("org_nombre")
-  telefono String?  @map("org_telefono")
-  email    String?  @map("org_email")
-  activo   Boolean  @default(true) @map("org_activo")
-  creacion DateTime @default(now()) @map("org_creacion") @db.Timestamptz(6)
+  idOrg             BigInt    @id @default(autoincrement()) @map("id_org")
+  nombre            String    @unique @map("org_nombre")
+  telefono          String?   @map("org_telefono")
+  email             String?   @map("org_email")
+  activo            Boolean   @default(true) @map("org_activo")
+  montoPlan         Decimal   @default(0) @map("org_monto_plan")
+  monedaPlan        String    @default("COP") @map("org_moneda_plan") @db.Char(3)
+  accesoHasta       DateTime? @map("org_acceso_hasta") @db.Date
+  suspendidaEn      DateTime? @map("org_suspendida_en") @db.Timestamptz(6)
+  motivoSuspension  String?   @map("org_motivo_suspension")
+  esSistema         Boolean   @default(false) @map("org_es_sistema")
+  creacion          DateTime  @default(now()) @map("org_creacion") @db.Timestamptz(6)
 
   usuarios         TblUsuarioOrganizacion[]
   clientes         TblCliente[]

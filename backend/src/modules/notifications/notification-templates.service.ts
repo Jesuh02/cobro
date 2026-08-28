@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import {
   CreditApprovedNotification,
   CreditCompletedNotification,
+  CollectorOverdueNotification,
   CustomerNotification,
   PaymentReceivedNotification,
   RenderedNotification,
@@ -26,6 +27,8 @@ export class NotificationTemplatesService {
         return this.paymentReceived(notification);
       case 'credito_finalizado':
         return this.creditCompleted(notification);
+      case 'cobros_atrasados_cobrador':
+        return this.collectorOverdue(notification);
     }
   }
 
@@ -227,6 +230,65 @@ export class NotificationTemplatesService {
         `— *${this.brandName}*`,
       ].join('\n'),
       whatsappTemplateParameters: [firstName, principal, this.brandName],
+    };
+  }
+
+  private collectorOverdue(
+    notification: CollectorOverdueNotification,
+  ): RenderedNotification {
+    const firstName = this.firstName(notification.contact.nombre);
+    const totalLabel = `${notification.totalAtrasados} ${notification.totalAtrasados === 1 ? 'cobro atrasado' : 'cobros atrasados'}`;
+    const listLines = notification.cobros.map((cobro, index) => {
+      const amount = this.money(cobro.saldoCuota, cobro.monedaCodigo);
+      return `${index + 1}. ${cobro.cliente} - ${cobro.ruta} - ${this.date(cobro.fechaVencimiento)} - ${amount}`;
+    });
+    const whatsappLines = listLines.slice(0, 12);
+    const remaining = notification.cobros.length - whatsappLines.length;
+
+    const emailText = [
+      `Hola ${firstName},`,
+      '',
+      `Tienes ${totalLabel}.`,
+      '',
+      ...listLines,
+      '',
+      `Revisa la ruta activa en ${this.brandName}.`,
+    ].join('\n');
+
+    const whatsappText = [
+      `*${this.brandName}: cobros atrasados*`,
+      '',
+      `Hola ${firstName}, tienes *${totalLabel}*.`,
+      '',
+      ...whatsappLines,
+      remaining > 0 ? `Y ${remaining} mas en la app.` : null,
+    ]
+      .filter((line): line is string => line !== null)
+      .join('\n');
+
+    return {
+      subject: `${totalLabel} pendientes por gestionar`,
+      emailText,
+      emailHtml: this.layout({
+        eyebrow: 'Cobros atrasados',
+        title: 'Cartera vencida por gestionar',
+        greeting: `Hola ${this.escape(firstName)},`,
+        lead: `Tienes <strong>${this.escape(totalLabel)}</strong>.`,
+        rows: notification.cobros.map((cobro) => [
+          cobro.cliente,
+          `${cobro.ruta} - ${this.date(cobro.fechaVencimiento)} - ${this.money(
+            cobro.saldoCuota,
+            cobro.monedaCodigo,
+          )}`,
+        ]),
+        closing: `Revisa tu ruta activa en ${this.escape(this.brandName)} para gestionar estos cobros.`,
+      }),
+      whatsappText,
+      whatsappTemplateParameters: [
+        firstName,
+        totalLabel,
+        whatsappLines.join('\n'),
+      ],
     };
   }
 

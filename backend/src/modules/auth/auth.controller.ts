@@ -5,6 +5,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
@@ -15,10 +16,12 @@ import { AuthenticatedUser } from './auth.types';
 import { CurrentUser } from './current-user.decorator';
 import { ResourceIdPipe } from '../../common/validation/resource-id';
 import {
+  ActualizarOrganizacionSuperAdminDto,
   ActualizarEstadoUsuarioDto,
   ActualizarPermisosUsuariosDto,
   ActualizarUsuarioDto,
   CrearUsuarioDto,
+  ExtenderAccesoOrganizacionDto,
   LoginDto,
   RegistrarInstitucionDto,
 } from './dto';
@@ -53,6 +56,32 @@ export class AuthController {
     return this.auth.obtenerUsuarioAutenticado(usuario.usuarioId);
   }
 
+  @Get('super-admin/organizaciones')
+  @UseGuards(AuthGuard)
+  listarOrganizacionesSuperAdmin(@CurrentUser() usuario: AuthenticatedUser) {
+    return this.auth.listarOrganizacionesSuperAdmin(usuario);
+  }
+
+  @Patch('super-admin/organizaciones/:id')
+  @UseGuards(AuthGuard)
+  actualizarOrganizacionSuperAdmin(
+    @CurrentUser() usuario: AuthenticatedUser,
+    @Param('id', new ResourceIdPipe()) id: string,
+    @Body() body: ActualizarOrganizacionSuperAdminDto,
+  ) {
+    return this.auth.actualizarOrganizacionSuperAdmin(usuario, id, body);
+  }
+
+  @Post('super-admin/organizaciones/:id/plazo')
+  @UseGuards(AuthGuard)
+  extenderAccesoOrganizacion(
+    @CurrentUser() usuario: AuthenticatedUser,
+    @Param('id', new ResourceIdPipe()) id: string,
+    @Body() body: ExtenderAccesoOrganizacionDto,
+  ) {
+    return this.auth.extenderAccesoOrganizacion(usuario, id, body);
+  }
+
   @Post('usuarios')
   @UseGuards(AuthGuard)
   crearEmpleado(
@@ -70,8 +99,17 @@ export class AuthController {
 
   @Get('usuarios/actividad')
   @UseGuards(AuthGuard)
-  listarActividadEmpleados(@CurrentUser() usuario: AuthenticatedUser) {
-    return this.auth.listarActividadEmpleados(usuario);
+  listarActividadEmpleados(
+    @CurrentUser() usuario: AuthenticatedUser,
+    @Query('inicio') inicio?: string,
+    @Query('fin') fin?: string,
+    @Query('empleadoId') empleadoId?: string,
+  ) {
+    return this.auth.listarActividadEmpleados(usuario, {
+      inicio,
+      fin,
+      empleadoId,
+    });
   }
 
   @Patch('usuarios/permisos')

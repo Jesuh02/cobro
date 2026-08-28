@@ -115,17 +115,55 @@ class DesktopCollectionRoute extends StatefulWidget {
 class _DesktopCollectionRouteState extends State<DesktopCollectionRoute> {
   final GlobalKey<_CollectionRouteMapPanelState> _mapPanelKey =
       GlobalKey<_CollectionRouteMapPanelState>();
+  late _MemoizedRouteLocationService _locationService;
+  LatLng? _listOrigin;
+  int _listOriginGeneration = 0;
   String? _selectedCustomerId;
+
+  @override
+  void initState() {
+    super.initState();
+    _locationService = _MemoizedRouteLocationService(
+      widget.locationService ?? const DeviceRouteLocationService(),
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        unawaited(_loadListOrigin());
+      }
+    });
+  }
 
   @override
   void didUpdateWidget(DesktopCollectionRoute oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!identical(widget.locationService, oldWidget.locationService)) {
+      _locationService = _MemoizedRouteLocationService(
+        widget.locationService ?? const DeviceRouteLocationService(),
+      );
+      unawaited(_loadListOrigin());
+    }
     if (_selectedCustomerId != null &&
         !widget.customers.any(
           (CollectionMapCustomer customer) =>
               customer.id == _selectedCustomerId,
         )) {
       _selectedCustomerId = null;
+    }
+  }
+
+  Future<void> _loadListOrigin() async {
+    final int generation = ++_listOriginGeneration;
+    try {
+      final LatLng origin = await _locationService.currentPosition();
+      if (!mounted || generation != _listOriginGeneration) {
+        return;
+      }
+      setState(() => _listOrigin = origin);
+    } on Object {
+      if (!mounted || generation != _listOriginGeneration) {
+        return;
+      }
+      setState(() => _listOrigin = null);
     }
   }
 
@@ -152,9 +190,11 @@ class _DesktopCollectionRouteState extends State<DesktopCollectionRoute> {
   @override
   Widget build(BuildContext context) {
     final ClayTokens clay = context.clay;
+    final List<CollectionMapCustomer> orderedCustomers =
+        _orderCustomersFromOrigin(widget.customers, _listOrigin);
     final CollectionMapCustomer? selected = _selectedCustomerId == null
         ? null
-        : widget.customers.cast<CollectionMapCustomer?>().firstWhere(
+        : orderedCustomers.cast<CollectionMapCustomer?>().firstWhere(
               (CollectionMapCustomer? customer) =>
                   customer?.id == _selectedCustomerId,
               orElse: () => null,
@@ -208,7 +248,7 @@ class _DesktopCollectionRouteState extends State<DesktopCollectionRoute> {
                           children: <Widget>[
                             Expanded(
                               child: Text(
-                                '${widget.customers.length} cobros en la ruta',
+                                '${orderedCustomers.length} cobros en la ruta',
                                 style: Theme.of(context)
                                     .textTheme
                                     .labelLarge
@@ -226,7 +266,7 @@ class _DesktopCollectionRouteState extends State<DesktopCollectionRoute> {
                         ),
                       ),
                       Expanded(
-                        child: widget.customers.isEmpty
+                        child: orderedCustomers.isEmpty
                             ? _RouteListEmpty(clay: clay)
                             : RefreshIndicator(
                                 onRefresh: widget.onRefresh,
@@ -240,13 +280,13 @@ class _DesktopCollectionRouteState extends State<DesktopCollectionRoute> {
                                     14,
                                     18,
                                   ),
-                                  itemCount: widget.customers.length,
+                                  itemCount: orderedCustomers.length,
                                   itemBuilder: (
                                     BuildContext context,
                                     int index,
                                   ) {
                                     final CollectionMapCustomer customer =
-                                        widget.customers[index];
+                                        orderedCustomers[index];
                                     return Padding(
                                       padding:
                                           const EdgeInsets.only(bottom: 10),
@@ -271,12 +311,12 @@ class _DesktopCollectionRouteState extends State<DesktopCollectionRoute> {
               flex: 53,
               child: CollectionRouteMapPanel(
                 key: _mapPanelKey,
-                customers: widget.customers,
+                customers: orderedCustomers,
                 selectedCustomer: selected,
                 onCustomerSelected: _selectCustomer,
                 onSelectionCleared: _clearCustomerSelection,
                 onCollect: widget.onCollect,
-                locationService: widget.locationService,
+                locationService: _locationService,
                 roadRouter: widget.roadRouter,
               ),
             ),
@@ -284,6 +324,51 @@ class _DesktopCollectionRouteState extends State<DesktopCollectionRoute> {
         ),
       ),
     );
+  }
+
+  static List<CollectionMapCustomer> _orderCustomersFromOrigin(
+    List<CollectionMapCustomer> customers,
+    LatLng? origin,
+  ) {
+    if (origin == null) {
+      return customers;
+    }
+
+    final Distance distance = const Distance();
+    final List<MapEntry<int, CollectionMapCustomer>> indexed =
+        customers.asMap().entries.toList(growable: false);
+    indexed.sort(
+      (
+        MapEntry<int, CollectionMapCustomer> left,
+        MapEntry<int, CollectionMapCustomer> right,
+      ) {
+        final bool leftLocated = left.value.hasLocation;
+        final bool rightLocated = right.value.hasLocation;
+        if (leftLocated != rightLocated) {
+          return leftLocated ? -1 : 1;
+        }
+        if (!leftLocated) {
+          return left.key.compareTo(right.key);
+        }
+
+        final int distanceComparison = distance
+            .as(LengthUnit.Meter, origin, left.value.point!)
+            .compareTo(
+              distance.as(LengthUnit.Meter, origin, right.value.point!),
+            );
+        if (distanceComparison != 0) {
+          return distanceComparison;
+        }
+
+        final int nameComparison = left.value.name.compareTo(right.value.name);
+        return nameComparison != 0
+            ? nameComparison
+            : left.value.id.compareTo(right.value.id);
+      },
+    );
+    return indexed
+        .map((MapEntry<int, CollectionMapCustomer> entry) => entry.value)
+        .toList(growable: false);
   }
 }
 
@@ -572,7 +657,7 @@ class _CollectionRouteMapPanelState extends State<CollectionRouteMapPanel>
         return;
       }
       final List<CollectionMapCustomer> orderedCustomers =
-          _nearestNeighborCustomers(origin, eligible);
+          _nearestToFarthestCustomers(origin, eligible);
       final List<LatLng> destinations = orderedCustomers
           .map((CollectionMapCustomer customer) => customer.point!)
           .toList(growable: false);
@@ -664,23 +749,24 @@ class _CollectionRouteMapPanelState extends State<CollectionRouteMapPanel>
   ) =>
       <LatLng>[origin, ...destinations];
 
-  List<CollectionMapCustomer> _nearestNeighborCustomers(
+  List<CollectionMapCustomer> _nearestToFarthestCustomers(
     LatLng origin,
     List<CollectionMapCustomer> customers,
   ) {
-    final List<CollectionMapCustomer> remaining =
-        customers.toList(growable: true);
-    final List<CollectionMapCustomer> ordered = <CollectionMapCustomer>[];
-    var cursor = origin;
-    while (remaining.isNotEmpty) {
-      final CollectionMapCustomer next =
-          _nearestCustomerByDijkstra(cursor, remaining);
-      ordered.add(next);
-      remaining.removeWhere(
-        (CollectionMapCustomer customer) => customer.id == next.id,
-      );
-      cursor = next.point!;
-    }
+    final Distance distance = const Distance();
+    final List<CollectionMapCustomer> ordered =
+        customers.toList(growable: false);
+    ordered.sort((CollectionMapCustomer left, CollectionMapCustomer right) {
+      final int distanceComparison = distance
+          .as(LengthUnit.Meter, origin, left.point!)
+          .compareTo(distance.as(LengthUnit.Meter, origin, right.point!));
+      if (distanceComparison != 0) {
+        return distanceComparison;
+      }
+
+      final int nameComparison = left.name.compareTo(right.name);
+      return nameComparison != 0 ? nameComparison : left.id.compareTo(right.id);
+    });
     return ordered;
   }
 
@@ -1995,6 +2081,38 @@ class _TooltipMetric extends StatelessWidget {
         ),
       ],
     );
+  }
+}
+
+class _MemoizedRouteLocationService implements RouteLocationService {
+  _MemoizedRouteLocationService(this._delegate);
+
+  final RouteLocationService _delegate;
+  Future<LatLng>? _pending;
+  LatLng? _lastPosition;
+
+  @override
+  Future<LatLng> currentPosition() {
+    final LatLng? lastPosition = _lastPosition;
+    if (lastPosition != null) {
+      return Future<LatLng>.value(lastPosition);
+    }
+
+    final Future<LatLng>? pending = _pending;
+    if (pending != null) {
+      return pending;
+    }
+
+    final Future<LatLng> request = _delegate.currentPosition().then((value) {
+      _lastPosition = value;
+      _pending = null;
+      return value;
+    }).catchError((Object error) {
+      _pending = null;
+      throw error;
+    });
+    _pending = request;
+    return request;
   }
 }
 

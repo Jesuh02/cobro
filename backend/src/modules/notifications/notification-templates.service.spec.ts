@@ -11,6 +11,9 @@ describe('NotificationTemplatesService', () => {
     const result = service.render({
       kind: 'credito_aprobado',
       eventId: 'credit-1',
+      orgId: '1',
+      cliId: '1',
+      creId: '1',
       contact: {
         nombre: 'Ana Torres',
         correo: 'ana@example.com',
@@ -36,6 +39,9 @@ describe('NotificationTemplatesService', () => {
     const result = service.render({
       kind: 'pago_recibido',
       eventId: 'payment-1',
+      orgId: '1',
+      cliId: '1',
+      creId: '1',
       contact: {
         nombre: 'Carlos Díaz',
         correo: 'carlos@example.com',
@@ -60,6 +66,9 @@ describe('NotificationTemplatesService', () => {
     const result = service.render({
       kind: 'credito_finalizado',
       eventId: 'credit-1',
+      orgId: '1',
+      cliId: '1',
+      creId: '1',
       contact: {
         nombre: 'Luisa Gómez',
         correo: 'luisa@example.com',
@@ -80,6 +89,9 @@ describe('NotificationTemplatesService', () => {
     const result = service.render({
       kind: 'credito_finalizado',
       eventId: 'credit-2',
+      orgId: '1',
+      cliId: '1',
+      creId: '2',
       contact: {
         nombre: '<script>alert(1)</script>',
         correo: 'safe@example.com',

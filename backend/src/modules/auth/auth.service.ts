@@ -11,7 +11,6 @@ import { Prisma } from '@prisma/client';
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { NotificationsService } from '../notifications/notifications.service';
 import {
   ActualizarOrganizacionSuperAdminDto,
   ActualizarUsuarioDto,
@@ -146,7 +145,6 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly passwords: PasswordService,
     private readonly config: ConfigService,
-    private readonly notifications: NotificationsService,
   ) {}
 
   async login(dto: LoginDto): Promise<AuthSessionResponse> {
@@ -2289,7 +2287,7 @@ export class AuthService {
   ): AuthSessionResponse {
     const issuedAt = Math.floor(Date.now() / 1000);
 
-    const session = {
+    return {
       token: this.firmarToken({
         aud: 'cobro-app',
         exp: this.expiracion(issuedAt),
@@ -2301,16 +2299,6 @@ export class AuthService {
       }),
       usuario: usuarioResponse,
     };
-    this.notificarCobrosAtrasadosCobrador(usuarioResponse);
-    return session;
-  }
-
-  private notificarCobrosAtrasadosCobrador(usuario: AuthUserResponse) {
-    if (usuario.esAdministrador || !usuario.roles.includes('COBRADOR')) {
-      return;
-    }
-
-    void this.notifications.notifyCollectorOverdueCollections(usuario.id);
   }
 
   private firmarToken(payload: TokenPayload) {
@@ -2490,47 +2478,8 @@ export class AuthService {
         p.per_apellido AS apellidos,
         tu.usu_email AS correo,
         tu.usu_activo AS activo,
-        (
-          EXISTS (
-            SELECT 1
-            FROM public.tbl_usuarios_organizaciones acceso_uo
-            JOIN public.tbl_roles acceso_rol
-              ON acceso_rol.id_rol = acceso_uo.rol_id
-            LEFT JOIN public.tbl_organizaciones acceso_org
-              ON acceso_org.id_org = acceso_uo.org_id
-            WHERE acceso_uo.usu_id = tu.id_usu
-              AND acceso_uo.urg_activo
-              AND (
-                acceso_rol.rol_tip::text = 'SUPER_ADMIN'
-                OR (
-                  NOT COALESCE(acceso_org.org_es_sistema, FALSE)
-                  AND acceso_org.org_activo
-                  AND (
-                    acceso_org.org_acceso_hasta IS NULL
-                    OR acceso_org.org_acceso_hasta >= CURRENT_DATE
-                  )
-                )
-              )
-          )
-        ) AS "tieneAccesoOrganizacion",
-        (
-          EXISTS (
-            SELECT 1
-            FROM public.tbl_usuarios_organizaciones susp_uo
-            JOIN public.tbl_organizaciones susp_org
-              ON susp_org.id_org = susp_uo.org_id
-            WHERE susp_uo.usu_id = tu.id_usu
-              AND susp_uo.urg_activo
-              AND NOT COALESCE(susp_org.org_es_sistema, FALSE)
-              AND (
-                NOT susp_org.org_activo
-                OR (
-                  susp_org.org_acceso_hasta IS NOT NULL
-                  AND susp_org.org_acceso_hasta < CURRENT_DATE
-                )
-              )
-          )
-        ) AS "organizacionSuspendida",
+        TRUE AS "tieneAccesoOrganizacion",
+        FALSE AS "organizacionSuspendida",
         COALESCE(
           array_agg(DISTINCT tr.rol_tip::text)
             FILTER (WHERE tr.rol_tip IS NOT NULL),
@@ -2546,20 +2495,7 @@ export class AuthService {
       LEFT JOIN public.tbl_usuarios_organizaciones uo
         ON uo.usu_id = tu.id_usu
        AND uo.urg_activo
-      LEFT JOIN public.tbl_organizaciones org ON org.id_org = uo.org_id
-      LEFT JOIN public.tbl_roles tr
-        ON tr.id_rol = uo.rol_id
-       AND (
-         tr.rol_tip::text = 'SUPER_ADMIN'
-         OR (
-           NOT COALESCE(org.org_es_sistema, FALSE)
-           AND org.org_activo
-           AND (
-             org.org_acceso_hasta IS NULL
-             OR org.org_acceso_hasta >= CURRENT_DATE
-           )
-         )
-       )
+      LEFT JOIN public.tbl_roles tr ON tr.id_rol = uo.rol_id
       LEFT JOIN public.tbl_roles_recursos rr ON rr.rol_id = tr.id_rol
       LEFT JOIN public.tbl_recursos rec ON rec.id_rec = rr.rec_id
       WHERE lower(tu.usu_usuario) = ${nombreUsuario}
@@ -2591,47 +2527,8 @@ export class AuthService {
         p.per_apellido AS apellidos,
         tu.usu_email AS correo,
         tu.usu_activo AS activo,
-        (
-          EXISTS (
-            SELECT 1
-            FROM public.tbl_usuarios_organizaciones acceso_uo
-            JOIN public.tbl_roles acceso_rol
-              ON acceso_rol.id_rol = acceso_uo.rol_id
-            LEFT JOIN public.tbl_organizaciones acceso_org
-              ON acceso_org.id_org = acceso_uo.org_id
-            WHERE acceso_uo.usu_id = tu.id_usu
-              AND acceso_uo.urg_activo
-              AND (
-                acceso_rol.rol_tip::text = 'SUPER_ADMIN'
-                OR (
-                  NOT COALESCE(acceso_org.org_es_sistema, FALSE)
-                  AND acceso_org.org_activo
-                  AND (
-                    acceso_org.org_acceso_hasta IS NULL
-                    OR acceso_org.org_acceso_hasta >= CURRENT_DATE
-                  )
-                )
-              )
-          )
-        ) AS "tieneAccesoOrganizacion",
-        (
-          EXISTS (
-            SELECT 1
-            FROM public.tbl_usuarios_organizaciones susp_uo
-            JOIN public.tbl_organizaciones susp_org
-              ON susp_org.id_org = susp_uo.org_id
-            WHERE susp_uo.usu_id = tu.id_usu
-              AND susp_uo.urg_activo
-              AND NOT COALESCE(susp_org.org_es_sistema, FALSE)
-              AND (
-                NOT susp_org.org_activo
-                OR (
-                  susp_org.org_acceso_hasta IS NOT NULL
-                  AND susp_org.org_acceso_hasta < CURRENT_DATE
-                )
-              )
-          )
-        ) AS "organizacionSuspendida",
+        TRUE AS "tieneAccesoOrganizacion",
+        FALSE AS "organizacionSuspendida",
         COALESCE(
           array_agg(DISTINCT tr.rol_tip::text)
             FILTER (WHERE tr.rol_tip IS NOT NULL),
@@ -2647,20 +2544,7 @@ export class AuthService {
       LEFT JOIN public.tbl_usuarios_organizaciones uo
         ON uo.usu_id = tu.id_usu
        AND uo.urg_activo
-      LEFT JOIN public.tbl_organizaciones org ON org.id_org = uo.org_id
-      LEFT JOIN public.tbl_roles tr
-        ON tr.id_rol = uo.rol_id
-       AND (
-         tr.rol_tip::text = 'SUPER_ADMIN'
-         OR (
-           NOT COALESCE(org.org_es_sistema, FALSE)
-           AND org.org_activo
-           AND (
-             org.org_acceso_hasta IS NULL
-             OR org.org_acceso_hasta >= CURRENT_DATE
-           )
-         )
-       )
+      LEFT JOIN public.tbl_roles tr ON tr.id_rol = uo.rol_id
       LEFT JOIN public.tbl_roles_recursos rr ON rr.rol_id = tr.id_rol
       LEFT JOIN public.tbl_recursos rec ON rec.id_rec = rr.rec_id
       WHERE tu.id_usu = ${BigInt(usuarioId)}

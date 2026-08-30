@@ -57,6 +57,7 @@ type UsuarioTblAuth = {
   apellidos: string;
   correo: string;
   activo: boolean;
+  organizacionId: string | null;
   roles: string[];
   permisos: string[];
   tieneAccesoOrganizacion: boolean;
@@ -300,6 +301,7 @@ export class AuthService {
           permisos: permisosEmpleadoCodigos,
           tieneAccesoOrganizacion: true,
           organizacionSuspendida: false,
+          organizacionId: organizacion.id,
         }),
       );
     });
@@ -424,7 +426,9 @@ export class AuthService {
 
     if (dto.nombre !== undefined) {
       const nombre = dto.nombre.trim();
-      const duplicados = await this.prisma.$queryRaw<Array<{ existe: boolean }>>(
+      const duplicados = await this.prisma.$queryRaw<
+        Array<{ existe: boolean }>
+      >(
         Prisma.sql`
           SELECT EXISTS (
             SELECT 1
@@ -798,6 +802,7 @@ export class AuthService {
       return {
         usuarioId: formateado.id,
         usuario: formateado.usuario,
+        organizacionId: formateado.organizacionId,
         roles: formateado.roles,
         permisos: formateado.permisos,
       };
@@ -826,6 +831,7 @@ export class AuthService {
     return {
       usuarioId: formateado.id,
       usuario: formateado.usuario,
+      organizacionId: formateado.organizacionId,
       roles: formateado.roles,
       permisos: formateado.permisos,
     };
@@ -837,7 +843,7 @@ export class AuthService {
     this.requerirVerEmpleados(usuario);
 
     if (await this.usarEsquemaTbl()) {
-      return this.listarEmpleadosTbl();
+      return this.listarEmpleadosTbl(usuario);
     }
 
     try {
@@ -854,7 +860,7 @@ export class AuthService {
       return usuarios.map((usuario) => this.formatearUsuario(usuario));
     } catch (error) {
       if (this.esErrorEsquemaAuthFaltante(error)) {
-        return this.listarEmpleadosTbl();
+        return this.listarEmpleadosTbl(usuario);
       }
       throw error;
     }
@@ -1000,7 +1006,7 @@ export class AuthService {
     const rango = this.normalizarRangoActividad(filtros);
 
     if (await this.usarEsquemaTbl()) {
-      return this.listarActividadEmpleadosTbl(rango);
+      return this.listarActividadEmpleadosTbl(usuario, rango);
     }
 
     const rows = await this.prisma.$queryRaw<ActividadEmpleadoRow[]>(Prisma.sql`
@@ -1339,7 +1345,12 @@ export class AuthService {
     });
   }
 
-  private async listarEmpleadosTbl(): Promise<AuthUserResponse[]> {
+  private async listarEmpleadosTbl(
+    usuario: AuthenticatedUser,
+  ): Promise<AuthUserResponse[]> {
+    const orgId = await this.prisma.$transaction((tx) =>
+      this.obtenerOrganizacionActivaAdministradorTbl(tx, usuario),
+    );
     const usuarios = await this.prisma.$queryRaw<UsuarioTblAuth[]>(Prisma.sql`
       SELECT
         tu.id_usu::text AS id,
@@ -1349,6 +1360,9 @@ export class AuthService {
         p.per_apellido AS apellidos,
         COALESCE(p.per_email, '') AS correo,
         tu.usu_activo AS activo,
+        ${orgId}::text AS "organizacionId",
+        TRUE AS "tieneAccesoOrganizacion",
+        FALSE AS "organizacionSuspendida",
         COALESCE(
           array_agg(DISTINCT tr.rol_tip::text)
             FILTER (WHERE tr.rol_tip IS NOT NULL),
@@ -1364,6 +1378,7 @@ export class AuthService {
       JOIN public.tbl_usuarios_organizaciones uo
         ON uo.usu_id = tu.id_usu
        AND uo.urg_activo
+       AND uo.org_id = ${BigInt(orgId)}
       JOIN public.tbl_roles tr ON tr.id_rol = uo.rol_id
       LEFT JOIN public.tbl_roles_recursos rr ON rr.rol_id = tr.id_rol
       LEFT JOIN public.tbl_recursos rec ON rec.id_rec = rr.rec_id
@@ -1374,6 +1389,7 @@ export class AuthService {
           ON rol_cobrador.id_rol = uo_cobrador.rol_id
         WHERE uo_cobrador.usu_id = tu.id_usu
           AND uo_cobrador.urg_activo
+          AND uo_cobrador.org_id = ${BigInt(orgId)}
           AND rol_cobrador.rol_tip::text = 'COBRADOR'
       )
       GROUP BY
@@ -1390,7 +1406,13 @@ export class AuthService {
     return usuarios.map((usuario) => this.formatearUsuarioTbl(usuario));
   }
 
-  private async listarActividadEmpleadosTbl(rango: RangoActividadEmpleados) {
+  private async listarActividadEmpleadosTbl(
+    usuario: AuthenticatedUser,
+    rango: RangoActividadEmpleados,
+  ) {
+    const orgId = await this.prisma.$transaction((tx) =>
+      this.obtenerOrganizacionActivaAdministradorTbl(tx, usuario),
+    );
     const rows = await this.prisma.$queryRaw<ActividadEmpleadoRow[]>(Prisma.sql`
       WITH parametros AS (
         SELECT
@@ -1410,6 +1432,7 @@ export class AuthService {
         JOIN public.tbl_usuarios_organizaciones uo
           ON uo.usu_id = tu.id_usu
          AND uo.urg_activo
+         AND uo.org_id = ${BigInt(orgId)}
         JOIN public.tbl_roles r
           ON r.id_rol = uo.rol_id
          AND r.rol_tip::text = 'COBRADOR'
@@ -1438,7 +1461,8 @@ export class AuthService {
           ORDER BY (r.usu_id = cr.usu_id) DESC, r.rut_activa DESC, r.rut_nombre ASC
           LIMIT 1
         ) ruta_credito ON TRUE
-        WHERE UPPER(cr.cre_estado::text) <> 'ANULADO'
+        WHERE cl.org_id = ${BigInt(orgId)}
+          AND UPPER(cr.cre_estado::text) <> 'ANULADO'
       ),
       cuotas_estado AS (
         SELECT
@@ -1552,6 +1576,7 @@ export class AuthService {
           ORDER BY (r.usu_id = cr.usu_id) DESC, r.rut_activa DESC, r.rut_nombre ASC
           LIMIT 1
         ) ruta_credito ON TRUE
+        WHERE cl.org_id = ${BigInt(orgId)}
         GROUP BY cr.usu_id, ruta_credito.ruta_id
       ),
       rutas_creditos AS (
@@ -2158,6 +2183,7 @@ export class AuthService {
     return {
       usuarioId: decoded.sub,
       usuario: '',
+      organizacionId: null,
       roles: [],
       permisos: [],
     };
@@ -2396,6 +2422,11 @@ export class AuthService {
     tx: Prisma.TransactionClient,
     administrador?: AuthenticatedUser,
   ) {
+    const filtroOrganizacionSesion =
+      administrador?.organizacionId &&
+      this.esIdTbl(administrador.organizacionId)
+        ? Prisma.sql`AND uo.org_id = ${BigInt(administrador.organizacionId)}`
+        : Prisma.empty;
     const [scope] = administrador
       ? await tx.$queryRaw<Array<{ org_id: string }>>(Prisma.sql`
           SELECT uo.org_id::text AS org_id
@@ -2406,7 +2437,13 @@ export class AuthService {
           JOIN public.tbl_organizaciones org
             ON org.id_org = uo.org_id
            AND org.org_activo
+           AND NOT COALESCE(org.org_es_sistema, FALSE)
+           AND (
+             org.org_acceso_hasta IS NULL
+             OR org.org_acceso_hasta >= CURRENT_DATE
+           )
           WHERE tu.usu_activo
+            ${filtroOrganizacionSesion}
             AND (
               tu.id_usu::text = ${administrador.usuarioId}
               OR lower(tu.usu_usuario) = lower(${administrador.usuario})
@@ -2418,6 +2455,11 @@ export class AuthService {
           SELECT id_org::text AS org_id
           FROM public.tbl_organizaciones
           WHERE org_activo
+            AND NOT COALESCE(org_es_sistema, FALSE)
+            AND (
+              org_acceso_hasta IS NULL
+              OR org_acceso_hasta >= CURRENT_DATE
+            )
           ORDER BY id_org ASC
           LIMIT 1
         `);
@@ -2630,8 +2672,24 @@ export class AuthService {
         p.per_apellido AS apellidos,
         COALESCE(p.per_email, '') AS correo,
         tu.usu_activo AS activo,
-        TRUE AS "tieneAccesoOrganizacion",
-        FALSE AS "organizacionSuspendida",
+        scope.org_id::text AS "organizacionId",
+        scope.org_id IS NOT NULL AS "tieneAccesoOrganizacion",
+        EXISTS (
+          SELECT 1
+          FROM public.tbl_usuarios_organizaciones uo_suspendida
+          JOIN public.tbl_organizaciones org_suspendida
+            ON org_suspendida.id_org = uo_suspendida.org_id
+          WHERE uo_suspendida.usu_id = tu.id_usu
+            AND uo_suspendida.urg_activo
+            AND NOT COALESCE(org_suspendida.org_es_sistema, FALSE)
+            AND (
+              NOT org_suspendida.org_activo
+              OR (
+                org_suspendida.org_acceso_hasta IS NOT NULL
+                AND org_suspendida.org_acceso_hasta < CURRENT_DATE
+              )
+            )
+        ) AS "organizacionSuspendida",
         COALESCE(
           array_agg(DISTINCT tr.rol_tip::text)
             FILTER (WHERE tr.rol_tip IS NOT NULL),
@@ -2644,9 +2702,26 @@ export class AuthService {
         ) AS permisos
       FROM public.tbl_usuarios tu
       JOIN public.tbl_personas p ON p.id_per = tu.persona_id
+      LEFT JOIN LATERAL (
+        SELECT uo_scope.org_id
+        FROM public.tbl_usuarios_organizaciones uo_scope
+        JOIN public.tbl_organizaciones org_scope
+          ON org_scope.id_org = uo_scope.org_id
+        WHERE uo_scope.usu_id = tu.id_usu
+          AND uo_scope.urg_activo
+          AND org_scope.org_activo
+          AND NOT COALESCE(org_scope.org_es_sistema, FALSE)
+          AND (
+            org_scope.org_acceso_hasta IS NULL
+            OR org_scope.org_acceso_hasta >= CURRENT_DATE
+          )
+        ORDER BY uo_scope.id_urg ASC
+        LIMIT 1
+      ) scope ON TRUE
       LEFT JOIN public.tbl_usuarios_organizaciones uo
         ON uo.usu_id = tu.id_usu
        AND uo.urg_activo
+       AND (scope.org_id IS NULL OR uo.org_id = scope.org_id)
       LEFT JOIN public.tbl_roles tr ON tr.id_rol = uo.rol_id
       LEFT JOIN public.tbl_roles_recursos rr ON rr.rol_id = tr.id_rol
       LEFT JOIN public.tbl_recursos rec ON rec.id_rec = rr.rec_id
@@ -2658,7 +2733,8 @@ export class AuthService {
         p.per_primer_nombre,
         p.per_apellido,
         p.per_email,
-        tu.usu_activo
+        tu.usu_activo,
+        scope.org_id
       LIMIT 1
     `;
 
@@ -2679,8 +2755,24 @@ export class AuthService {
         p.per_apellido AS apellidos,
         COALESCE(p.per_email, '') AS correo,
         tu.usu_activo AS activo,
-        TRUE AS "tieneAccesoOrganizacion",
-        FALSE AS "organizacionSuspendida",
+        scope.org_id::text AS "organizacionId",
+        scope.org_id IS NOT NULL AS "tieneAccesoOrganizacion",
+        EXISTS (
+          SELECT 1
+          FROM public.tbl_usuarios_organizaciones uo_suspendida
+          JOIN public.tbl_organizaciones org_suspendida
+            ON org_suspendida.id_org = uo_suspendida.org_id
+          WHERE uo_suspendida.usu_id = tu.id_usu
+            AND uo_suspendida.urg_activo
+            AND NOT COALESCE(org_suspendida.org_es_sistema, FALSE)
+            AND (
+              NOT org_suspendida.org_activo
+              OR (
+                org_suspendida.org_acceso_hasta IS NOT NULL
+                AND org_suspendida.org_acceso_hasta < CURRENT_DATE
+              )
+            )
+        ) AS "organizacionSuspendida",
         COALESCE(
           array_agg(DISTINCT tr.rol_tip::text)
             FILTER (WHERE tr.rol_tip IS NOT NULL),
@@ -2693,9 +2785,26 @@ export class AuthService {
         ) AS permisos
       FROM public.tbl_usuarios tu
       JOIN public.tbl_personas p ON p.id_per = tu.persona_id
+      LEFT JOIN LATERAL (
+        SELECT uo_scope.org_id
+        FROM public.tbl_usuarios_organizaciones uo_scope
+        JOIN public.tbl_organizaciones org_scope
+          ON org_scope.id_org = uo_scope.org_id
+        WHERE uo_scope.usu_id = tu.id_usu
+          AND uo_scope.urg_activo
+          AND org_scope.org_activo
+          AND NOT COALESCE(org_scope.org_es_sistema, FALSE)
+          AND (
+            org_scope.org_acceso_hasta IS NULL
+            OR org_scope.org_acceso_hasta >= CURRENT_DATE
+          )
+        ORDER BY uo_scope.id_urg ASC
+        LIMIT 1
+      ) scope ON TRUE
       LEFT JOIN public.tbl_usuarios_organizaciones uo
         ON uo.usu_id = tu.id_usu
        AND uo.urg_activo
+       AND (scope.org_id IS NULL OR uo.org_id = scope.org_id)
       LEFT JOIN public.tbl_roles tr ON tr.id_rol = uo.rol_id
       LEFT JOIN public.tbl_roles_recursos rr ON rr.rol_id = tr.id_rol
       LEFT JOIN public.tbl_recursos rec ON rec.id_rec = rr.rec_id
@@ -2707,7 +2816,8 @@ export class AuthService {
         p.per_primer_nombre,
         p.per_apellido,
         p.per_email,
-        tu.usu_activo
+        tu.usu_activo,
+        scope.org_id
       LIMIT 1
     `;
 
@@ -2858,6 +2968,7 @@ export class AuthService {
       nombreCompleto: `${usuario.nombres} ${usuario.apellidos}`.trim(),
       correo: usuario.correo,
       roles,
+      organizacionId: null,
       esAdministrador,
       esSuperAdmin,
       activo: usuario.estadoUsuario.codigo === 'ACTIVO',
@@ -2884,6 +2995,7 @@ export class AuthService {
       nombreCompleto: `${usuario.nombres} ${usuario.apellidos}`.trim(),
       correo: usuario.correo,
       roles,
+      organizacionId: usuario.organizacionId,
       esAdministrador,
       esSuperAdmin,
       activo: usuario.activo,

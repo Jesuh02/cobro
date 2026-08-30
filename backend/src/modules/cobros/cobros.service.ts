@@ -272,9 +272,9 @@ type ClienteTblDetalleRow = ClienteTblRow & {
   persona_id: string;
 };
 
-type UsuarioOrganizacionActivaTblRow = {
-  usuario_id: string | null;
-  org_id: string;
+type OrganizacionScopeTbl = {
+  usuarioId: string;
+  organizacionId: string;
 };
 
 type CobroRutaTblRow = {
@@ -624,7 +624,11 @@ export class CobrosService {
   ) {}
 
   private usuarioCacheKey(usuario: AuthenticatedUser) {
-    return `${usuario.usuarioId}:${[...usuario.roles].sort().join(',')}`;
+    return `${usuario.usuarioId}:${usuario.organizacionId ?? 'sin-org'}:${[
+      ...usuario.roles,
+    ]
+      .sort()
+      .join(',')}`;
   }
 
   private invalidarCacheLecturas() {
@@ -1271,6 +1275,7 @@ export class CobrosService {
     dto: ActualizarUbicacionClienteDto,
     usuario: AuthenticatedUser,
   ) {
+    const scope = await this.obtenerScopeOrganizacionTbl(usuario);
     const rows = await this.prisma.$queryRaw<
       ClienteUbicacionTblRow[]
     >(Prisma.sql`
@@ -1280,6 +1285,7 @@ export class CobrosService {
       FROM public.tbl_clientes c
       JOIN public.tbl_personas p ON p.id_per = c.cli_persona
       WHERE c.id_cli::text = ${clienteId}
+        AND c.org_id = ${scope.organizacionId}::bigint
         AND ${
           this.esAdministrador(usuario)
             ? Prisma.sql`TRUE`
@@ -2421,34 +2427,11 @@ export class CobrosService {
   ) {
     const creditoId = await this.prisma.$transaction(
       async (tx) => {
-        const [scope] = await tx.$queryRaw<
-          Array<{ usuario_id: string; org_id: string }>
-        >(Prisma.sql`
-          SELECT
-            tu.id_usu::text AS usuario_id,
-            uo.org_id::text AS org_id
-          FROM public.tbl_usuarios tu
-          JOIN public.tbl_usuarios_organizaciones uo
-            ON uo.usu_id = tu.id_usu
-           AND uo.urg_activo
-          JOIN public.tbl_organizaciones o
-            ON o.id_org = uo.org_id
-           AND o.org_activo
-          WHERE tu.usu_activo
-            AND (
-              tu.id_usu::text = ${usuario.usuarioId}
-              OR lower(tu.usu_usuario) = lower(${usuario.usuario})
-            )
-          ORDER BY uo.id_urg ASC
-          LIMIT 1
-        `);
-
-        if (!scope) {
-          throw DomainError.notFound(
-            'No existe una organizacion activa para crear el credito',
-            'ORGANIZACION_ACTIVA_NO_EXISTE',
-          );
-        }
+        const orgScope = await this.obtenerScopeOrganizacionTbl(usuario, tx);
+        const scope = {
+          usuario_id: orgScope.usuarioId,
+          org_id: orgScope.organizacionId,
+        };
 
         const [cliente] = await tx.$queryRaw<
           Array<{ id: string; org_id: string; nombre: string }>
@@ -2571,8 +2554,7 @@ export class CobrosService {
         );
 
         if (
-          this.decimalANumero(presupuesto?.presupuesto ?? null) <
-          valorPrincipal
+          this.decimalANumero(presupuesto?.presupuesto ?? null) < valorPrincipal
         ) {
           throw DomainError.conflict(
             'No se puede hacer credito sin caja suficiente',
@@ -4044,6 +4026,7 @@ export class CobrosService {
 
     const resultadoPago = await this.prisma.$transaction(
       async (tx) => {
+        const scope = await this.obtenerScopeOrganizacionTbl(usuario, tx);
         await tx.$queryRaw(Prisma.sql`
           SELECT id_cuo
           FROM public.tbl_cuotas
@@ -4095,7 +4078,14 @@ export class CobrosService {
           );
         }
 
-        if (!this.esAdministrador(usuario) && cuota.usuario !== usuario.usuario) {
+        if (cuota.org_id !== scope.organizacionId) {
+          throw new ForbiddenException('No tienes acceso a este credito');
+        }
+
+        if (
+          !this.esAdministrador(usuario) &&
+          cuota.usuario !== usuario.usuario
+        ) {
           throw new ForbiddenException('No tienes acceso a este credito');
         }
 
@@ -4416,6 +4406,7 @@ export class CobrosService {
   }
 
   private async obtenerPagoTbl(pagoId: string, usuario: AuthenticatedUser) {
+    const scope = await this.obtenerScopeOrganizacionTbl(usuario);
     const rows = await this.prisma.$queryRaw<PagoTblRow[]>(Prisma.sql`
       SELECT
         pa.id_pag::text AS pago_id,
@@ -4448,6 +4439,7 @@ export class CobrosService {
         LIMIT 1
       ) ruta_credito ON TRUE
       WHERE pa.id_pag = ${pagoId}::bigint
+        AND cl.org_id = ${scope.organizacionId}::bigint
         AND ${
           this.esAdministrador(usuario)
             ? Prisma.sql`TRUE`
@@ -5093,11 +5085,8 @@ export class CobrosService {
       dto.motivo,
       'El motivo del movimiento es obligatorio',
     );
-    const condicionUsuario = this.esIdTbl(usuario.usuarioId)
-      ? Prisma.sql`tu.id_usu = ${usuario.usuarioId}::bigint`
-      : Prisma.sql`tu.usu_usuario = ${usuario.usuario}`;
-
     const movimiento = await this.prisma.$transaction(async (tx) => {
+      const scope = await this.obtenerScopeOrganizacionTbl(usuario, tx);
       const [caja] = await tx.$queryRaw<CajaMovimientoTblRow[]>(Prisma.sql`
         SELECT
           c.id_caj::text AS caja_menor_id,
@@ -5125,10 +5114,11 @@ export class CobrosService {
           LIMIT 1
         ) sc ON TRUE
         WHERE c.id_caj::text = ${dto.cajaMenorId}
+          AND c.org_id = ${scope.organizacionId}::bigint
           AND c.caj_tipo::text = 'MENOR'
           AND uo.urg_activo
           AND tu.usu_activo
-          AND ${condicionUsuario}
+          AND tu.id_usu = ${scope.usuarioId}::bigint
         LIMIT 1
       `);
 
@@ -5575,11 +5565,8 @@ export class CobrosService {
       );
     }
 
-    const condicionUsuario = this.esIdTbl(usuario.usuarioId)
-      ? Prisma.sql`tu.id_usu = ${usuario.usuarioId}::bigint`
-      : Prisma.sql`tu.usu_usuario = ${usuario.usuario}`;
-
     const caja = await this.prisma.$transaction(async (tx) => {
+      const scope = await this.obtenerScopeOrganizacionTbl(usuario, tx);
       const [responsable] = await tx.$queryRaw<UsuarioOrganizacionTblRow[]>(
         Prisma.sql`
           SELECT
@@ -5593,9 +5580,10 @@ export class CobrosService {
           FROM public.tbl_usuarios tu
           JOIN public.tbl_personas p ON p.id_per = tu.persona_id
           JOIN public.tbl_usuarios_organizaciones uo ON uo.usu_id = tu.id_usu
-          WHERE ${condicionUsuario}
+          WHERE tu.id_usu = ${scope.usuarioId}::bigint
             AND tu.usu_activo
             AND uo.urg_activo
+            AND uo.org_id = ${scope.organizacionId}::bigint
           ORDER BY uo.id_urg ASC
           LIMIT 1
         `,
@@ -5982,8 +5970,61 @@ export class CobrosService {
     return this.esquemaTblDisponible;
   }
 
+  private async obtenerScopeOrganizacionTbl(
+    usuario: AuthenticatedUser,
+    executor: PrismaExecutor = this.prisma,
+  ): Promise<OrganizacionScopeTbl> {
+    const conditions: Prisma.Sql[] = [Prisma.sql`tu.usu_activo`];
+
+    if (this.esIdTbl(usuario.usuarioId)) {
+      conditions.push(Prisma.sql`tu.id_usu = ${usuario.usuarioId}::bigint`);
+    } else {
+      conditions.push(
+        Prisma.sql`lower(tu.usu_usuario) = lower(${usuario.usuario})`,
+      );
+    }
+
+    if (usuario.organizacionId && this.esIdTbl(usuario.organizacionId)) {
+      conditions.push(
+        Prisma.sql`uo.org_id = ${usuario.organizacionId}::bigint`,
+      );
+    }
+
+    const [scope] = await executor.$queryRaw<
+      Array<{ usuario_id: string; organizacion_id: string }>
+    >(Prisma.sql`
+      SELECT
+        tu.id_usu::text AS usuario_id,
+        uo.org_id::text AS organizacion_id
+      FROM public.tbl_usuarios tu
+      JOIN public.tbl_usuarios_organizaciones uo
+        ON uo.usu_id = tu.id_usu
+       AND uo.urg_activo
+      JOIN public.tbl_organizaciones org
+        ON org.id_org = uo.org_id
+       AND org.org_activo
+       AND NOT COALESCE(org.org_es_sistema, FALSE)
+       AND (
+         org.org_acceso_hasta IS NULL
+         OR org.org_acceso_hasta >= CURRENT_DATE
+       )
+      WHERE ${Prisma.join(conditions, ' AND ')}
+      ORDER BY uo.id_urg ASC
+      LIMIT 1
+    `);
+
+    if (!scope) {
+      throw new ForbiddenException('No tienes una institucion activa');
+    }
+
+    return {
+      usuarioId: scope.usuario_id,
+      organizacionId: scope.organizacion_id,
+    };
+  }
+
   private async obtenerCatalogosTbl(usuario: AuthenticatedUser) {
-    const puedeVerTodo = this.esAdministrador(usuario);
+    const scope = await this.obtenerScopeOrganizacionTbl(usuario);
     const [monedas, catalogos, rutas, cajasMenores, usuarios] =
       await Promise.all([
         this.obtenerMonedasTbl(),
@@ -6004,6 +6045,7 @@ export class CobrosService {
               END AS extra,
               TRUE AS activo
             FROM public.tbl_productos_creditos
+            WHERE org_id = ${scope.organizacionId}::bigint
             GROUP BY pcr_frecuencia::text
             UNION ALL
             SELECT
@@ -6014,6 +6056,7 @@ export class CobrosService {
               NULL,
               med_activo
             FROM public.tbl_medios_pagos
+            WHERE org_id = ${scope.organizacionId}::bigint
             UNION ALL
             SELECT
               'medio_pago',
@@ -6071,9 +6114,10 @@ export class CobrosService {
             FROM (
               SELECT DISTINCT UPPER(mca_tipo::text) AS codigo
               FROM public.tbl_movimientos_cajas
-              WHERE UPPER(mca_tipo::text) NOT IN (${Prisma.join(
-                codigosMovimientoCajaTblBase,
-              )})
+              WHERE org_id = ${scope.organizacionId}::bigint
+                AND UPPER(mca_tipo::text) NOT IN (${Prisma.join(
+                  codigosMovimientoCajaTblBase,
+                )})
             ) existentes
           ) catalogos
           ORDER BY tipo ASC, id ASC
@@ -6092,20 +6136,14 @@ export class CobrosService {
             SELECT tu.id_usu
             FROM public.tbl_usuarios_organizaciones uo
             JOIN public.tbl_usuarios tu ON tu.id_usu = uo.usu_id
-            WHERE uo.org_id = c.org_id
+            WHERE uo.org_id = ${scope.organizacionId}::bigint
+              AND uo.org_id = c.org_id
               AND uo.urg_activo
-              ${
-                puedeVerTodo
-                  ? Prisma.empty
-                  : Prisma.sql`AND tu.usu_usuario = ${usuario.usuario}`
-              }
             ORDER BY tu.id_usu ASC
             LIMIT 1
           ) u ON TRUE
           WHERE c.caj_tipo::text = 'MENOR'
-            ${
-              puedeVerTodo ? Prisma.empty : Prisma.sql`AND u.id_usu IS NOT NULL`
-            }
+            AND c.org_id = ${scope.organizacionId}::bigint
           ORDER BY c.caj_activa DESC, c.caj_nombre ASC
         `),
         this.prisma.$queryRaw<UsuarioTblRow[]>(Prisma.sql`
@@ -6118,12 +6156,11 @@ export class CobrosService {
             p.per_num_celular AS telefono
           FROM public.tbl_usuarios tu
           JOIN public.tbl_personas p ON p.id_per = tu.persona_id
+          JOIN public.tbl_usuarios_organizaciones uo
+            ON uo.usu_id = tu.id_usu
+           AND uo.urg_activo
+           AND uo.org_id = ${scope.organizacionId}::bigint
           WHERE tu.usu_activo
-            ${
-              puedeVerTodo
-                ? Prisma.empty
-                : Prisma.sql`AND tu.usu_usuario = ${usuario.usuario}`
-            }
           ORDER BY p.per_primer_nombre ASC, p.per_apellido ASC
         `),
       ]);
@@ -6233,21 +6270,11 @@ export class CobrosService {
     query: ListarClientesQueryDto,
     usuario: AuthenticatedUser,
   ) {
+    const scope = await this.obtenerScopeOrganizacionTbl(usuario);
     const search = this.normalizarTextoOpcional(query.search);
-    const conditions: Prisma.Sql[] = [];
-
-    if (!this.esAdministrador(usuario)) {
-      conditions.push(Prisma.sql`
-        EXISTS (
-          SELECT 1
-          FROM public.tbl_usuarios_organizaciones uo
-          JOIN public.tbl_usuarios tu ON tu.id_usu = uo.usu_id
-          WHERE uo.org_id = c.org_id
-            AND uo.urg_activo
-            AND tu.usu_usuario = ${usuario.usuario}
-        )
-      `);
-    }
+    const conditions: Prisma.Sql[] = [
+      Prisma.sql`c.org_id = ${scope.organizacionId}::bigint`,
+    ];
 
     if (search) {
       const pattern = `%${search}%`;
@@ -6308,51 +6335,7 @@ export class CobrosService {
 
     const clienteId = await this.prisma.$transaction(
       async (tx) => {
-        const [scope] = await tx.$queryRaw<UsuarioOrganizacionActivaTblRow[]>(
-          Prisma.sql`
-            SELECT
-              tu.id_usu::text AS usuario_id,
-              uo.org_id::text AS org_id
-            FROM public.tbl_usuarios tu
-            JOIN public.tbl_usuarios_organizaciones uo
-              ON uo.usu_id = tu.id_usu
-             AND uo.urg_activo
-            JOIN public.tbl_organizaciones o
-              ON o.id_org = uo.org_id
-             AND o.org_activo
-            WHERE tu.usu_activo
-              AND (
-                tu.id_usu::text = ${usuario.usuarioId}
-                OR lower(tu.usu_usuario) = lower(${usuario.usuario})
-              )
-            ORDER BY uo.id_urg ASC
-            LIMIT 1
-          `,
-        );
-        const organizacion =
-          scope ??
-          (this.esAdministrador(usuario)
-            ? (
-                await tx.$queryRaw<UsuarioOrganizacionActivaTblRow[]>(
-                  Prisma.sql`
-                    SELECT
-                      NULL::text AS usuario_id,
-                      o.id_org::text AS org_id
-                    FROM public.tbl_organizaciones o
-                    WHERE o.org_activo
-                    ORDER BY o.id_org ASC
-                    LIMIT 1
-                  `,
-                )
-              )[0]
-            : null);
-
-        if (!organizacion) {
-          throw DomainError.notFound(
-            'No existe una organizacion activa para crear el cliente',
-            'ORGANIZACION_ACTIVA_NO_EXISTE',
-          );
-        }
+        const scope = await this.obtenerScopeOrganizacionTbl(usuario, tx);
 
         if (input.cedula) {
           const [duplicado] = await tx.$queryRaw<Array<{ existe: boolean }>>(
@@ -6406,7 +6389,7 @@ export class CobrosService {
             )
             VALUES (
               ${input.nombreComercial},
-              ${BigInt(organizacion.org_id)},
+              ${scope.organizacionId}::bigint,
               ${BigInt(persona.id)}
             )
             RETURNING id_cli::text AS id
@@ -6429,7 +6412,7 @@ export class CobrosService {
             telefono,
             latitud: input.latitud ?? null,
             longitud: input.longitud ?? null,
-            organizacionId: organizacion.org_id,
+            organizacionId: scope.organizacionId,
           },
         });
 
@@ -6511,6 +6494,7 @@ export class CobrosService {
       );
     }
     const nombrePersona = this.dividirNombrePersonaTbl(nombreCompleto);
+    const scope = await this.obtenerScopeOrganizacionTbl(usuario);
 
     await this.prisma.$transaction(
       async (tx) => {
@@ -6532,6 +6516,7 @@ export class CobrosService {
         FROM public.tbl_clientes c
         JOIN public.tbl_personas p ON p.id_per = c.cli_persona
         WHERE c.id_cli::text = ${clienteId}
+          AND c.org_id = ${scope.organizacionId}::bigint
         FOR UPDATE OF c, p
       `);
         const actual = rows[0];
@@ -6633,6 +6618,7 @@ export class CobrosService {
       FROM public.tbl_clientes c
       JOIN public.tbl_personas p ON p.id_per = c.cli_persona
       WHERE c.id_cli::text = ${clienteId}
+        AND c.org_id = ${scope.organizacionId}::bigint
     `);
     const cliente = actualizados[0];
 
@@ -6652,6 +6638,7 @@ export class CobrosService {
     usuario: AuthenticatedUser,
   ) {
     this.asegurarAdministrador(usuario);
+    const scope = await this.obtenerScopeOrganizacionTbl(usuario);
 
     await this.prisma.$transaction(async (tx) => {
       const rows = await tx.$queryRaw<ClienteTblDetalleRow[]>(Prisma.sql`
@@ -6672,6 +6659,7 @@ export class CobrosService {
         FROM public.tbl_clientes c
         JOIN public.tbl_personas p ON p.id_per = c.cli_persona
         WHERE c.id_cli::text = ${clienteId}
+          AND c.org_id = ${scope.organizacionId}::bigint
         FOR UPDATE OF c, p
       `);
       const cliente = rows[0];
@@ -6693,6 +6681,7 @@ export class CobrosService {
         LEFT JOIN public.tbl_creditos cr ON cr.cli_id = c.id_cli
         LEFT JOIN public.tbl_pagos pa ON pa.cre_id = cr.id_cre
         WHERE c.id_cli::text = ${clienteId}
+          AND c.org_id = ${scope.organizacionId}::bigint
       `);
       const conteo = relaciones[0];
 
@@ -6714,11 +6703,15 @@ export class CobrosService {
 
       await tx.$executeRaw(Prisma.sql`
         DELETE FROM public.tbl_rutas_clientes
-        WHERE cli_id::text = ${clienteId}
+        USING public.tbl_rutas r
+        WHERE tbl_rutas_clientes.rut_id = r.id_rut
+          AND tbl_rutas_clientes.cli_id::text = ${clienteId}
+          AND r.org_id = ${scope.organizacionId}::bigint
       `);
       await tx.$executeRaw(Prisma.sql`
         DELETE FROM public.tbl_clientes
         WHERE id_cli::text = ${clienteId}
+          AND org_id = ${scope.organizacionId}::bigint
       `);
       await tx.$executeRaw(Prisma.sql`
         DELETE FROM public.tbl_personas
@@ -6731,6 +6724,7 @@ export class CobrosService {
   }
 
   private async listarRutasTbl(usuario: AuthenticatedUser) {
+    const scope = await this.obtenerScopeOrganizacionTbl(usuario);
     const rows = await this.prisma.$queryRaw<RutaTblRow[]>(Prisma.sql`
       SELECT
         r.id_rut::text AS id,
@@ -6754,11 +6748,12 @@ export class CobrosService {
       LEFT JOIN public.tbl_creditos cr
         ON cr.cli_id = rc.cli_id
         AND cr.usu_id = r.usu_id
-      WHERE ${
-        this.esAdministrador(usuario)
-          ? Prisma.sql`TRUE`
-          : Prisma.sql`tu.usu_usuario = ${usuario.usuario}`
-      }
+      WHERE r.org_id = ${scope.organizacionId}::bigint
+        AND ${
+          this.esAdministrador(usuario)
+            ? Prisma.sql`TRUE`
+            : Prisma.sql`tu.usu_usuario = ${usuario.usuario}`
+        }
       GROUP BY r.id_rut, tu.id_usu, p.id_per
       ORDER BY r.rut_activa DESC, r.rut_nombre ASC
     `);
@@ -6790,8 +6785,10 @@ export class CobrosService {
     usuario: AuthenticatedUser,
     limit?: number,
   ) {
+    const scope = await this.obtenerScopeOrganizacionTbl(usuario);
     const search = this.normalizarTextoOpcional(query.search);
     const conditions: Prisma.Sql[] = [
+      Prisma.sql`cl.org_id = ${scope.organizacionId}::bigint`,
       Prisma.sql`UPPER(cr.cre_estado::text) <> 'ANULADO'`,
     ];
 
@@ -6956,9 +6953,12 @@ export class CobrosService {
     limite?: number,
     offset = 0,
   ) {
+    const scope = await this.obtenerScopeOrganizacionTbl(usuario);
     const search = this.normalizarTextoOpcional(query.search);
     const estado = query.estado ?? 'todos';
-    const conditions: Prisma.Sql[] = [Prisma.sql`1 = 1`];
+    const conditions: Prisma.Sql[] = [
+      Prisma.sql`cl.org_id = ${scope.organizacionId}::bigint`,
+    ];
 
     if (!this.esAdministrador(usuario)) {
       conditions.push(Prisma.sql`tu.usu_usuario = ${usuario.usuario}`);
@@ -7139,8 +7139,11 @@ export class CobrosService {
     query: ListarCreditosQueryDto,
     usuario: AuthenticatedUser,
   ) {
+    const scope = await this.obtenerScopeOrganizacionTbl(usuario);
     const search = this.normalizarTextoOpcional(query.search);
-    const conditions: Prisma.Sql[] = [Prisma.sql`1 = 1`];
+    const conditions: Prisma.Sql[] = [
+      Prisma.sql`cl.org_id = ${scope.organizacionId}::bigint`,
+    ];
     const fechaConditions: Prisma.Sql[] = [Prisma.sql`1 = 1`];
 
     if (!this.esAdministrador(usuario)) {
@@ -7460,8 +7463,11 @@ export class CobrosService {
     limit = 100,
     offset = 0,
   ) {
+    const scope = await this.obtenerScopeOrganizacionTbl(usuario);
     const search = this.normalizarTextoOpcional(query.search);
-    const conditions: Prisma.Sql[] = [];
+    const conditions: Prisma.Sql[] = [
+      Prisma.sql`org_id = ${scope.organizacionId}`,
+    ];
 
     if (query.cajaMenorId) {
       conditions.push(Prisma.sql`caja_menor_id = ${query.cajaMenorId}`);
@@ -7510,6 +7516,7 @@ export class CobrosService {
       WITH base AS (
         SELECT
           CONCAT('mov-', m.id_mca::text) AS id,
+          m.org_id::text AS org_id,
           c.id_caj::text AS caja_menor_id,
           COALESCE(c.caj_nombre, o.org_nombre) AS caja_menor,
           NULL::text AS cliente,
@@ -7542,6 +7549,7 @@ export class CobrosService {
         UNION ALL
         SELECT
           CONCAT('pago-', pa.id_pag::text),
+          cl.org_id::text,
           c.id_caj::text,
           COALESCE(c.caj_nombre, r.rut_nombre, o.org_nombre),
           TRIM(CONCAT_WS(' ', per.per_primer_nombre, per.per_apellido)),
@@ -7588,6 +7596,7 @@ export class CobrosService {
         UNION ALL
         SELECT
           CONCAT('gasto-', g.id_gas::text),
+          c.org_id::text,
           c.id_caj::text,
           c.caj_nombre,
           NULL::text,
@@ -7720,6 +7729,7 @@ export class CobrosService {
     query: ObtenerPresupuestoQueryDto,
     usuario: AuthenticatedUser,
   ) {
+    const scope = await this.obtenerScopeOrganizacionTbl(usuario);
     const search = this.normalizarTextoOpcional(query.search);
     const fechaDesde = query.fechaDesde
       ? this.parsearFecha(query.fechaDesde, 'fechaDesde')
@@ -7735,24 +7745,10 @@ export class CobrosService {
     const fechaHastaColombia = query.fechaHasta
       ? this.finDiaColombia(this.parsearFecha(query.fechaHasta, 'fechaHasta'))
       : null;
-    const condicionUsuario = this.esIdTbl(usuario.usuarioId)
-      ? Prisma.sql`tu_org.id_usu = ${usuario.usuarioId}::bigint`
-      : Prisma.sql`tu_org.usu_usuario = ${usuario.usuario}`;
-
     const condicionesCajas: Prisma.Sql[] = [
       Prisma.sql`c.caj_tipo::text = 'MENOR'`,
       Prisma.sql`c.caj_activa`,
-      Prisma.sql`
-        EXISTS (
-          SELECT 1
-          FROM public.tbl_usuarios_organizaciones uo_org
-          JOIN public.tbl_usuarios tu_org ON tu_org.id_usu = uo_org.usu_id
-          WHERE uo_org.org_id = c.org_id
-            AND uo_org.urg_activo
-            AND tu_org.usu_activo
-            AND ${condicionUsuario}
-        )
-      `,
+      Prisma.sql`c.org_id = ${scope.organizacionId}::bigint`,
     ];
     const filtrosFechaPagos: Prisma.Sql[] = [];
     const filtrosFechaGastos: Prisma.Sql[] = [];
@@ -7940,13 +7936,16 @@ export class CobrosService {
     creditoId: string,
     usuario: AuthenticatedUser,
   ) {
+    const scope = await this.obtenerScopeOrganizacionTbl(usuario);
     const rows = await this.prisma.$queryRaw<Array<{ existe: boolean }>>(
       Prisma.sql`
         SELECT EXISTS (
           SELECT 1
           FROM public.tbl_creditos cr
           JOIN public.tbl_usuarios tu ON tu.id_usu = cr.usu_id
+          JOIN public.tbl_clientes cl ON cl.id_cli = cr.cli_id
           WHERE cr.id_cre = ${creditoId}::bigint
+            AND cl.org_id = ${scope.organizacionId}::bigint
             AND ${
               this.esAdministrador(usuario)
                 ? Prisma.sql`TRUE`

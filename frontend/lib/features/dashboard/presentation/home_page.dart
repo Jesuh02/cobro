@@ -2778,13 +2778,19 @@ class _HomePageState extends State<HomePage> {
 
       final Sesion sesion = Sesion.fromJson(decoded);
       _apiClient.setAuthToken(sesion.token);
+      final SesionUsuario usuarioActual = SesionUsuario.fromJson(
+        await _apiClient.getObject('/auth/me'),
+      );
+      await _guardarSesionLocal(
+        Sesion(token: sesion.token, usuario: usuarioActual),
+      );
 
       if (!mounted) {
         return;
       }
 
       setState(() {
-        _usuarioSesion = sesion.usuario;
+        _usuarioSesion = usuarioActual;
         _seccionActual = 0;
         _error = null;
         _aplicarFechaInicioHoy();
@@ -2792,6 +2798,7 @@ class _HomePageState extends State<HomePage> {
 
       unawaited(_cargar());
     } catch (_) {
+      _apiClient.setAuthToken(null);
       await clearCachedSessionPayload();
     }
   }

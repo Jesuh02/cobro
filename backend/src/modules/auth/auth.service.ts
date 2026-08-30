@@ -2178,7 +2178,7 @@ export class AuthService {
   private requerirSuperAdmin(usuario: AuthenticatedUser) {
     if (!usuario.roles.includes('SUPER_ADMIN')) {
       throw new ForbiddenException(
-        'Solo soporte puede administrar instituciones',
+        'Solo SUPER_ADMIN puede administrar instituciones',
       );
     }
   }

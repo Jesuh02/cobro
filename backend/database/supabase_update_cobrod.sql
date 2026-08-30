@@ -807,7 +807,7 @@ BEGIN
 
   IF NOT super_admin_existia THEN
     RAISE NOTICE
-      'Valor SUPER_ADMIN agregado a rol_tipo_enum. Ejecuta nuevamente este script para sembrar el rol de soporte.';
+      'Valor SUPER_ADMIN agregado a rol_tipo_enum. Ejecuta nuevamente este script para sembrar el rol SUPER_ADMIN.';
   ELSE
     UPDATE tbl_roles
     SET rol_nivel = 4
@@ -1023,75 +1023,6 @@ INSERT INTO tbl_categorias_gastos (cga_nombre, cga_descripcion) VALUES
   ('COMISION', 'Comisiones operativas'),
   ('OTRO', 'Otros gastos')
 ON CONFLICT (cga_nombre) DO NOTHING;
-
-WITH soporte_org AS (
-  INSERT INTO tbl_organizaciones (
-    org_nombre,
-    org_email,
-    org_activo,
-    org_es_sistema
-  )
-  VALUES (
-    'Cobro Soporte',
-    'soporte@cobro.local',
-    TRUE,
-    TRUE
-  )
-  ON CONFLICT (org_nombre) DO UPDATE
-  SET
-    org_activo = TRUE,
-    org_es_sistema = TRUE
-  RETURNING id_org
-),
-soporte_usuario AS (
-  SELECT id_usu
-  FROM tbl_usuarios
-  WHERE lower(usu_usuario) = 'soporte'
-  LIMIT 1
-),
-super_admin_rol AS (
-  SELECT id_rol
-  FROM tbl_roles
-  WHERE rol_tip::text = 'SUPER_ADMIN'
-  LIMIT 1
-)
-INSERT INTO tbl_usuarios_organizaciones (rol_id, usu_id, org_id)
-SELECT super_admin_rol.id_rol, soporte_usuario.id_usu, soporte_org.id_org
-FROM soporte_org
-CROSS JOIN soporte_usuario
-CROSS JOIN super_admin_rol
-WHERE NOT EXISTS (
-  SELECT 1
-  FROM tbl_usuarios_organizaciones existente
-  WHERE existente.rol_id = super_admin_rol.id_rol
-    AND existente.usu_id = soporte_usuario.id_usu
-    AND existente.org_id = soporte_org.id_org
-);
-
-WITH soporte_org AS (
-  SELECT id_org
-  FROM tbl_organizaciones
-  WHERE org_nombre = 'Cobro Soporte'
-  LIMIT 1
-),
-soporte_usuario AS (
-  SELECT id_usu
-  FROM tbl_usuarios
-  WHERE lower(usu_usuario) = 'soporte'
-  LIMIT 1
-),
-super_admin_rol AS (
-  SELECT id_rol
-  FROM tbl_roles
-  WHERE rol_tip::text = 'SUPER_ADMIN'
-  LIMIT 1
-)
-UPDATE tbl_usuarios_organizaciones uo
-SET urg_activo = TRUE
-FROM soporte_org, soporte_usuario, super_admin_rol
-WHERE uo.rol_id = super_admin_rol.id_rol
-  AND uo.usu_id = soporte_usuario.id_usu
-  AND uo.org_id = soporte_org.id_org;
 
 COMMIT;
 -- ==============================================================================

@@ -375,6 +375,14 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
             ),
+            const SizedBox(width: 12),
+            Tooltip(
+              message: 'Cerrar sesion',
+              child: IconButton(
+                onPressed: _cerrarSesion,
+                icon: const Icon(Icons.logout_rounded),
+              ),
+            ),
           ],
           if (esMovil)
             PopupMenuButton<_AccionSesion>(
@@ -784,12 +792,6 @@ class _HomePageState extends State<HomePage> {
                           );
                         },
                       ),
-                      const SizedBox(height: 8),
-                      TextButton.icon(
-                        onPressed: _cerrarSesion,
-                        icon: const Icon(Icons.logout_rounded),
-                        label: const Text('Cerrar sesion'),
-                      ),
                     ],
                   ),
                 )
@@ -834,14 +836,6 @@ class _HomePageState extends State<HomePage> {
                             .toList(growable: false),
                       ),
                     ),
-                    Tooltip(
-                      message: 'Cerrar sesion',
-                      child: IconButton(
-                        onPressed: _cerrarSesion,
-                        icon: const Icon(Icons.logout_rounded),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
                   ],
                 );
         },

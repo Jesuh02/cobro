@@ -178,12 +178,6 @@ class _HomePageState extends State<HomePage> {
   final TextEditingController _loginUsuarioController = TextEditingController();
   final TextEditingController _loginContrasenaController =
       TextEditingController();
-  final TextEditingController _registroInstitucionController =
-      TextEditingController();
-  final TextEditingController _registroNombreController =
-      TextEditingController();
-  final TextEditingController _registroCorreoController =
-      TextEditingController();
 
   SesionUsuario? _usuarioSesion;
   Catalogos? _catalogos;
@@ -209,7 +203,6 @@ class _HomePageState extends State<HomePage> {
   bool _guardando = false;
   bool _exportando = false;
   bool _mostrarContrasenaLogin = false;
-  bool _registrandoInstitucion = false;
   bool _menuLateralExpandido = true;
   _FiltroEstadoRuta _filtroEstadoRuta = _FiltroEstadoRuta.todos;
   _FiltroEstadoCredito _filtroCredito = _FiltroEstadoCredito.todos;
@@ -298,9 +291,6 @@ class _HomePageState extends State<HomePage> {
     _observacionCreditoController.dispose();
     _loginUsuarioController.dispose();
     _loginContrasenaController.dispose();
-    _registroInstitucionController.dispose();
-    _registroNombreController.dispose();
-    _registroCorreoController.dispose();
     super.dispose();
   }
 
@@ -532,18 +522,12 @@ class _HomePageState extends State<HomePage> {
                             backgroundColor:
                                 CobroAppTheme.primary.withValues(alpha: 0.12),
                             foregroundColor: CobroAppTheme.primary,
-                            child: Icon(
-                              _registrandoInstitucion
-                                  ? Icons.apartment_rounded
-                                  : Icons.lock_rounded,
-                            ),
+                            child: const Icon(Icons.lock_rounded),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
                             child: Text(
-                              _registrandoInstitucion
-                                  ? 'Registrar institucion'
-                                  : 'Iniciar sesion',
+                              'Iniciar sesion',
                               style: Theme.of(context)
                                   .textTheme
                                   .titleLarge
@@ -570,39 +554,6 @@ class _HomePageState extends State<HomePage> {
                         ],
                       ),
                       const SizedBox(height: 18),
-                      if (_registrandoInstitucion) ...<Widget>[
-                        TextField(
-                          controller: _registroInstitucionController,
-                          enabled: !_guardando,
-                          textInputAction: TextInputAction.next,
-                          decoration: const InputDecoration(
-                            labelText: 'Institucion',
-                            prefixIcon: Icon(Icons.business_rounded),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: _registroNombreController,
-                          enabled: !_guardando,
-                          textInputAction: TextInputAction.next,
-                          decoration: const InputDecoration(
-                            labelText: 'Tu nombre completo',
-                            prefixIcon: Icon(Icons.badge_rounded),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: _registroCorreoController,
-                          enabled: !_guardando,
-                          keyboardType: TextInputType.emailAddress,
-                          textInputAction: TextInputAction.next,
-                          decoration: const InputDecoration(
-                            labelText: 'Correo',
-                            prefixIcon: Icon(Icons.mail_rounded),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                      ],
                       TextField(
                         controller: _loginUsuarioController,
                         enabled: !_guardando,
@@ -617,14 +568,9 @@ class _HomePageState extends State<HomePage> {
                         controller: _loginContrasenaController,
                         enabled: !_guardando,
                         obscureText: !_mostrarContrasenaLogin,
-                        onSubmitted: (_) => _registrandoInstitucion
-                            ? _registrarInstitucion()
-                            : _iniciarSesion(),
+                        onSubmitted: (_) => _iniciarSesion(),
                         decoration: InputDecoration(
                           labelText: 'Contrasena',
-                          helperText: _registrandoInstitucion
-                              ? 'Minimo 12 caracteres'
-                              : null,
                           prefixIcon: const Icon(Icons.key_rounded),
                           suffixIcon: IconButton(
                             onPressed: () {
@@ -654,11 +600,7 @@ class _HomePageState extends State<HomePage> {
                       ],
                       const SizedBox(height: 18),
                       FilledButton.icon(
-                        onPressed: _guardando
-                            ? null
-                            : _registrandoInstitucion
-                                ? _registrarInstitucion
-                                : _iniciarSesion,
+                        onPressed: _guardando ? null : _iniciarSesion,
                         icon: _guardando
                             ? const SizedBox(
                                 width: 18,
@@ -666,33 +608,8 @@ class _HomePageState extends State<HomePage> {
                                 child:
                                     CircularProgressIndicator(strokeWidth: 2),
                               )
-                            : Icon(
-                                _registrandoInstitucion
-                                    ? Icons.app_registration_rounded
-                                    : Icons.login_rounded,
-                              ),
-                        label: Text(
-                          _registrandoInstitucion
-                              ? 'Registrar y entrar'
-                              : 'Entrar',
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      TextButton(
-                        onPressed: _guardando
-                            ? null
-                            : () {
-                                setState(() {
-                                  _registrandoInstitucion =
-                                      !_registrandoInstitucion;
-                                  _error = null;
-                                });
-                              },
-                        child: Text(
-                          _registrandoInstitucion
-                              ? 'Ya tengo usuario'
-                              : 'No tengo usuario',
-                        ),
+                            : const Icon(Icons.login_rounded),
+                        label: const Text('Entrar'),
                       ),
                     ],
                   ),
@@ -2302,84 +2219,6 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  Future<void> _registrarInstitucion() async {
-    final String institucion = _registroInstitucionController.text.trim();
-    final String nombre = _registroNombreController.text.trim();
-    final String correo = _registroCorreoController.text.trim().toLowerCase();
-    final String usuario = _loginUsuarioController.text.trim().toLowerCase();
-    final String contrasena = _loginContrasenaController.text;
-
-    if (institucion.length < 3) {
-      setState(() => _error = 'Ingresa el nombre de tu institucion');
-      return;
-    }
-
-    if (nombre.length < 3) {
-      setState(() => _error = 'Ingresa tu nombre completo');
-      return;
-    }
-
-    if (!correo.contains('@')) {
-      setState(() => _error = 'Ingresa un correo valido');
-      return;
-    }
-
-    if (usuario.length < 3 || contrasena.length < 12) {
-      setState(() {
-        _error = 'El usuario debe tener 3 caracteres y la contrasena 12';
-      });
-      return;
-    }
-
-    setState(() {
-      _guardando = true;
-      _error = null;
-    });
-
-    try {
-      final Sesion sesion = Sesion.fromJson(
-        await _apiClient.postObject('/auth/register', <String, dynamic>{
-          'institucion': institucion,
-          'nombreCompleto': nombre,
-          'usuario': usuario,
-          'correo': correo,
-          'contrasena': contrasena,
-        }),
-      );
-
-      _apiClient.setAuthToken(sesion.token);
-      await _guardarSesionLocal(sesion);
-
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        _usuarioSesion = sesion.usuario;
-        _registrandoInstitucion = false;
-        _seccionActual = 0;
-        _catalogos = null;
-        _presupuesto = null;
-        _clientes = const <Cliente>[];
-        _cobrosRuta = const <CobroRuta>[];
-        _organizacionesAdmin = const <OrganizacionAdmin>[];
-        _movimientosCaja = const <MovimientoCaja>[];
-        _cajaMenorFiltroId = null;
-        _aplicarFechaInicioHoy();
-      });
-
-      await _cargar();
-    } catch (error) {
-      if (mounted) {
-        setState(() => _error = _mensajeError(error));
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _guardando = false);
-      }
-    }
-  }
-
   Future<void> _abrirGestionEmpleados() async {
     if (!_puedeVerEmpleados) {
       _mostrarMensaje('No tienes permiso para ver empleados');
@@ -2728,9 +2567,6 @@ class _HomePageState extends State<HomePage> {
     _apiClient.setAuthToken(null);
     unawaited(clearCachedSessionPayload());
     _loginContrasenaController.clear();
-    _registroInstitucionController.clear();
-    _registroNombreController.clear();
-    _registroCorreoController.clear();
 
     setState(() {
       _usuarioSesion = null;
@@ -2751,7 +2587,6 @@ class _HomePageState extends State<HomePage> {
       _cargandoMasMovimientosCaja = false;
       _seccionActual = 0;
       _cajaMenorFiltroId = null;
-      _registrandoInstitucion = false;
       _cargando = false;
       _guardando = false;
       _error = null;

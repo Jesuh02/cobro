@@ -16,6 +16,8 @@ import {
   ActualizarUsuarioDto,
   ActualizarEstadoUsuarioDto,
   ActualizarPermisosUsuariosDto,
+  CrearAdministradorSuperAdminDto,
+  CrearOrganizacionSuperAdminDto,
   CrearUsuarioDto,
   ExtenderAccesoOrganizacionDto,
   LoginDto,
@@ -358,6 +360,57 @@ export class AuthService {
     return rows.map((row) => this.formatearOrganizacionSuperAdmin(row));
   }
 
+  async crearOrganizacionSuperAdmin(
+    usuario: AuthenticatedUser,
+    dto: CrearOrganizacionSuperAdminDto,
+  ) {
+    this.requerirSuperAdmin(usuario);
+    await this.requerirEsquemaTblSuperAdmin();
+
+    const nombre = dto.nombre.trim();
+    const telefono = dto.telefono?.trim() || null;
+    const correo = dto.correo?.trim().toLowerCase() || null;
+    const montoPlan = dto.montoPlan ?? 0;
+    const monedaPlan = dto.monedaPlan ?? 'COP';
+    const accesoHasta = dto.accesoHasta ?? null;
+
+    const organizacionId = await this.prisma.$transaction(async (tx) => {
+      if (await this.existeOrganizacionTbl(tx, nombre)) {
+        throw new ConflictException('La institucion ya esta registrada');
+      }
+
+      const [organizacion] = await tx.$queryRaw<Array<{ id: string }>>(
+        Prisma.sql`
+          INSERT INTO public.tbl_organizaciones (
+            org_nombre,
+            org_telefono,
+            org_email,
+            org_monto_plan,
+            org_moneda_plan,
+            org_acceso_hasta,
+            org_activo,
+            org_es_sistema
+          )
+          VALUES (
+            ${nombre},
+            ${telefono},
+            ${correo},
+            ${montoPlan},
+            ${monedaPlan},
+            ${accesoHasta}::date,
+            TRUE,
+            FALSE
+          )
+          RETURNING id_org::text AS id
+        `,
+      );
+
+      return organizacion.id;
+    });
+
+    return this.obtenerOrganizacionSuperAdminPorId(organizacionId);
+  }
+
   async actualizarOrganizacionSuperAdmin(
     usuario: AuthenticatedUser,
     organizacionId: string,
@@ -368,6 +421,36 @@ export class AuthService {
     this.requerirIdTbl(organizacionId, 'Institucion no encontrada');
 
     const setters: Prisma.Sql[] = [];
+
+    if (dto.nombre !== undefined) {
+      const nombre = dto.nombre.trim();
+      const duplicados = await this.prisma.$queryRaw<Array<{ existe: boolean }>>(
+        Prisma.sql`
+          SELECT EXISTS (
+            SELECT 1
+            FROM public.tbl_organizaciones
+            WHERE lower(org_nombre) = lower(${nombre})
+              AND id_org <> ${BigInt(organizacionId)}
+          ) AS existe
+        `,
+      );
+
+      if (duplicados[0]?.existe) {
+        throw new ConflictException('La institucion ya esta registrada');
+      }
+
+      setters.push(Prisma.sql`org_nombre = ${nombre}`);
+    }
+
+    if (dto.telefono !== undefined) {
+      setters.push(Prisma.sql`org_telefono = ${dto.telefono?.trim() || null}`);
+    }
+
+    if (dto.correo !== undefined) {
+      setters.push(
+        Prisma.sql`org_email = ${dto.correo?.trim().toLowerCase() || null}`,
+      );
+    }
 
     if (dto.activo !== undefined) {
       setters.push(Prisma.sql`org_activo = ${dto.activo}`);
@@ -549,6 +632,111 @@ export class AuthService {
     }
 
     return this.formatearOrganizacionSuperAdmin(actualizado[0]);
+  }
+
+  async crearAdministradorSuperAdmin(
+    usuario: AuthenticatedUser,
+    dto: CrearAdministradorSuperAdminDto,
+  ): Promise<AuthUserResponse> {
+    this.requerirSuperAdmin(usuario);
+    await this.requerirEsquemaTblSuperAdmin();
+    this.requerirIdTbl(dto.organizacionId, 'Institucion no encontrada');
+
+    const nombreUsuario = this.normalizarUsuario(dto.usuario);
+    const correo = dto.correo.trim().toLowerCase();
+    const nombre = this.separarNombre(dto.nombreCompleto);
+    const passwordHash = await this.passwords.hash(dto.contrasena);
+
+    const creadoId = await this.prisma.$transaction(async (tx) => {
+      const [organizacion] = await tx.$queryRaw<
+        Array<{ id: string }>
+      >(Prisma.sql`
+        SELECT id_org::text AS id
+        FROM public.tbl_organizaciones
+        WHERE id_org = ${BigInt(dto.organizacionId)}
+          AND NOT COALESCE(org_es_sistema, FALSE)
+        LIMIT 1
+      `);
+
+      if (!organizacion) {
+        throw new NotFoundException('Institucion no encontrada');
+      }
+
+      const [usuarioExiste, correoExiste] = await Promise.all([
+        this.existeUsuarioTbl(tx, nombreUsuario),
+        this.existeCorreoUsuarioTbl(tx, correo),
+      ]);
+
+      if (usuarioExiste) {
+        throw new ConflictException('El usuario ya existe');
+      }
+
+      if (correoExiste) {
+        throw new ConflictException('El correo ya esta registrado');
+      }
+
+      const rolAdministradorId =
+        await this.obtenerOCrearRolAdministradorTbl(tx);
+      const documento = `admin-${nombreUsuario}-${randomUUID().slice(0, 8)}`;
+
+      const [persona] = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        INSERT INTO public.tbl_personas (
+          per_primer_nombre,
+          per_apellido,
+          per_documento,
+          per_email
+        )
+        VALUES (
+          ${nombre.nombres},
+          ${nombre.apellidos || ' '},
+          ${documento},
+          ${correo}
+        )
+        RETURNING id_per::text AS id
+      `);
+
+      const [usuarioCreado] = await tx.$queryRaw<Array<{ id: string }>>(
+        Prisma.sql`
+          INSERT INTO public.tbl_usuarios (
+            usu_usuario,
+            usu_password,
+            usu_email,
+            persona_id
+          )
+          VALUES (
+            ${nombreUsuario},
+            ${passwordHash},
+            ${correo},
+            ${persona.id}::bigint
+          )
+          RETURNING id_usu::text AS id
+        `,
+      );
+
+      await tx.$executeRaw(Prisma.sql`
+        INSERT INTO public.tbl_usuarios_organizaciones (
+          rol_id,
+          usu_id,
+          org_id,
+          urg_activo
+        )
+        VALUES (
+          ${rolAdministradorId}::bigint,
+          ${usuarioCreado.id}::bigint,
+          ${organizacion.id}::bigint,
+          TRUE
+        )
+      `);
+
+      return usuarioCreado.id;
+    });
+
+    const creado = await this.obtenerUsuarioTblPorId(creadoId);
+    if (!creado) {
+      throw new ConflictException('No se pudo crear el administrador');
+    }
+
+    return this.formatearUsuarioTbl(creado);
   }
 
   async crearEmpleado(
@@ -2729,6 +2917,63 @@ export class AuthService {
     }
 
     throw new UnauthorizedException('No tienes una institucion activa');
+  }
+
+  private async obtenerOrganizacionSuperAdminPorId(organizacionId: string) {
+    const rows = await this.prisma.$queryRaw<
+      OrganizacionSuperAdminRow[]
+    >(Prisma.sql`
+      SELECT
+        org.id_org::text AS id,
+        org.org_nombre AS nombre,
+        org.org_telefono AS telefono,
+        org.org_email AS correo,
+        org.org_activo AS activo,
+        COALESCE(org.org_es_sistema, FALSE) AS es_sistema,
+        org.org_monto_plan AS monto_plan,
+        org.org_moneda_plan AS moneda_plan,
+        org.org_acceso_hasta AS acceso_hasta,
+        org.org_suspendida_en AS suspendida_en,
+        org.org_motivo_suspension AS motivo_suspension,
+        COUNT(DISTINCT uo.usu_id)::int AS usuarios_total,
+        COUNT(DISTINCT uo.usu_id) FILTER (WHERE tu.usu_activo)::int
+          AS usuarios_activos,
+        COALESCE(
+          array_agg(DISTINCT tu.usu_usuario)
+            FILTER (
+              WHERE rol.rol_tip::text = 'ADMINISTRADOR'
+                AND tu.usu_usuario IS NOT NULL
+            ),
+          ARRAY[]::text[]
+        ) AS administradores,
+        (
+          NOT org.org_activo
+          OR (
+            org.org_acceso_hasta IS NOT NULL
+            AND org.org_acceso_hasta < CURRENT_DATE
+          )
+        ) AS suspendida,
+        CASE
+          WHEN org.org_acceso_hasta IS NULL THEN NULL
+          ELSE (org.org_acceso_hasta - CURRENT_DATE)::int
+        END AS dias_restantes
+      FROM public.tbl_organizaciones org
+      LEFT JOIN public.tbl_usuarios_organizaciones uo
+        ON uo.org_id = org.id_org
+       AND uo.urg_activo
+      LEFT JOIN public.tbl_usuarios tu ON tu.id_usu = uo.usu_id
+      LEFT JOIN public.tbl_roles rol ON rol.id_rol = uo.rol_id
+      WHERE org.id_org = ${BigInt(organizacionId)}
+        AND NOT COALESCE(org.org_es_sistema, FALSE)
+      GROUP BY org.id_org
+      LIMIT 1
+    `);
+
+    if (!rows[0]) {
+      throw new NotFoundException('Institucion no encontrada');
+    }
+
+    return this.formatearOrganizacionSuperAdmin(rows[0]);
   }
 
   private formatearOrganizacionSuperAdmin(row: OrganizacionSuperAdminRow) {

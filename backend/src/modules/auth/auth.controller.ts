@@ -20,6 +20,8 @@ import {
   ActualizarEstadoUsuarioDto,
   ActualizarPermisosUsuariosDto,
   ActualizarUsuarioDto,
+  CrearAdministradorSuperAdminDto,
+  CrearOrganizacionSuperAdminDto,
   CrearUsuarioDto,
   ExtenderAccesoOrganizacionDto,
   LoginDto,
@@ -62,6 +64,15 @@ export class AuthController {
     return this.auth.listarOrganizacionesSuperAdmin(usuario);
   }
 
+  @Post('super-admin/organizaciones')
+  @UseGuards(AuthGuard)
+  crearOrganizacionSuperAdmin(
+    @CurrentUser() usuario: AuthenticatedUser,
+    @Body() body: CrearOrganizacionSuperAdminDto,
+  ) {
+    return this.auth.crearOrganizacionSuperAdmin(usuario, body);
+  }
+
   @Patch('super-admin/organizaciones/:id')
   @UseGuards(AuthGuard)
   actualizarOrganizacionSuperAdmin(
@@ -80,6 +91,15 @@ export class AuthController {
     @Body() body: ExtenderAccesoOrganizacionDto,
   ) {
     return this.auth.extenderAccesoOrganizacion(usuario, id, body);
+  }
+
+  @Post('super-admin/usuarios/admin')
+  @UseGuards(AuthGuard)
+  crearAdministradorSuperAdmin(
+    @CurrentUser() usuario: AuthenticatedUser,
+    @Body() body: CrearAdministradorSuperAdminDto,
+  ) {
+    return this.auth.crearAdministradorSuperAdmin(usuario, body);
   }
 
   @Post('usuarios')

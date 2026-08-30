@@ -177,7 +177,72 @@ export class ActualizarEstadoUsuarioDto {
   activo!: boolean;
 }
 
+export class CrearOrganizacionSuperAdminDto {
+  @IsString()
+  @MinLength(3)
+  @MaxLength(160)
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  nombre!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  telefono?: string | null;
+
+  @IsOptional()
+  @IsEmail()
+  @MaxLength(180)
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().toLowerCase() : value,
+  )
+  correo?: string | null;
+
+  @IsOptional()
+  @IsDateString()
+  accesoHasta?: string | null;
+
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  montoPlan?: number;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['COP', 'USD'])
+  monedaPlan?: string;
+}
+
 export class ActualizarOrganizacionSuperAdminDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(3)
+  @MaxLength(160)
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  nombre?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  telefono?: string | null;
+
+  @IsOptional()
+  @IsEmail()
+  @MaxLength(180)
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().toLowerCase() : value,
+  )
+  correo?: string | null;
+
   @IsOptional()
   @IsBoolean()
   activo?: boolean;
@@ -203,6 +268,15 @@ export class ActualizarOrganizacionSuperAdminDto {
     typeof value === 'string' ? value.trim() : value,
   )
   motivoSuspension?: string | null;
+}
+
+export class CrearAdministradorSuperAdminDto extends CrearUsuarioDto {
+  @IsString()
+  @MaxLength(64)
+  @Matches(resourceIdPattern, {
+    message: 'La organizacion debe ser un identificador valido',
+  })
+  organizacionId!: string;
 }
 
 export class ExtenderAccesoOrganizacionDto {

@@ -192,8 +192,7 @@ class _HomePageState extends State<HomePage> {
   List<CobroRuta> _cobrosRuta = const <CobroRuta>[];
   List<CreditoRegistro> _creditos = const <CreditoRegistro>[];
   List<MovimientoCaja> _movimientosCaja = const <MovimientoCaja>[];
-  List<OrganizacionAdmin> _organizacionesAdmin =
-      const <OrganizacionAdmin>[];
+  List<OrganizacionAdmin> _organizacionesAdmin = const <OrganizacionAdmin>[];
   _ConteoCreditosInicio _conteoCreditosInicio =
       const _ConteoCreditosInicio.vacio();
   int _siguienteOffsetCreditos = 0;
@@ -358,6 +357,7 @@ class _HomePageState extends State<HomePage> {
                 icon: const Icon(Icons.refresh_rounded),
               ),
             ),
+            const SizedBox(width: 12),
             Tooltip(
               message: 'Cambiar tema',
               child: IconButton(
@@ -495,10 +495,9 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
       ),
-      bottomNavigationBar:
-          esMovil && !usuarioSesion.esSuperAdmin
-              ? _construirNavegacionInferior(context)
-              : null,
+      bottomNavigationBar: esMovil && !usuarioSesion.esSuperAdmin
+          ? _construirNavegacionInferior(context)
+          : null,
     );
   }
 
@@ -3015,34 +3014,31 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  Future<void> _extenderAccesoOrganizacion(
-    OrganizacionAdmin organizacion,
-    int dias,
-  ) async {
-    if (_guardando) {
+  Future<void> _crearOrganizacionAdmin() async {
+    final Map<String, dynamic>? datos = await _pedirDatosOrganizacionAdmin();
+
+    if (datos == null || _guardando) {
       return;
     }
 
     setState(() => _guardando = true);
     try {
-      final OrganizacionAdmin actualizada = OrganizacionAdmin.fromJson(
-        await _apiClient.postObject(
-          '/super-admin/organizaciones/${organizacion.id}/plazo',
-          <String, dynamic>{'dias': dias},
-        ),
+      final OrganizacionAdmin creada = OrganizacionAdmin.fromJson(
+        await _apiClient.postObject('/super-admin/organizaciones', datos),
       );
       if (!mounted) {
         return;
       }
       setState(() {
-        _organizacionesAdmin = _organizacionesAdmin
-            .map(
-              (OrganizacionAdmin item) =>
-                  item.id == actualizada.id ? actualizada : item,
-            )
-            .toList(growable: false);
+        _organizacionesAdmin = <OrganizacionAdmin>[
+          creada,
+          ..._organizacionesAdmin,
+        ]..sort(
+            (OrganizacionAdmin a, OrganizacionAdmin b) =>
+                a.nombre.toLowerCase().compareTo(b.nombre.toLowerCase()),
+          );
       });
-      _mostrarMensaje('Plazo extendido $dias dia${dias == 1 ? '' : 's'}');
+      _mostrarMensaje('Institucion creada');
     } catch (error) {
       _mostrarMensaje(_mensajeError(error));
     } finally {
@@ -3055,13 +3051,42 @@ class _HomePageState extends State<HomePage> {
   Future<void> _editarOrganizacionAdmin(
     OrganizacionAdmin organizacion,
   ) async {
+    final Map<String, dynamic>? datos =
+        await _pedirDatosOrganizacionAdmin(organizacion: organizacion);
+
+    if (datos == null) {
+      return;
+    }
+
+    await _actualizarOrganizacionAdmin(
+      organizacion,
+      datos,
+      'Institucion actualizada',
+    );
+  }
+
+  Future<Map<String, dynamic>?> _pedirDatosOrganizacionAdmin({
+    OrganizacionAdmin? organizacion,
+  }) async {
+    final TextEditingController nombreController = TextEditingController(
+      text: organizacion?.nombre ?? '',
+    );
+    final TextEditingController telefonoController = TextEditingController(
+      text: organizacion?.telefono ?? '',
+    );
+    final TextEditingController correoController = TextEditingController(
+      text: organizacion?.correo ?? '',
+    );
     final TextEditingController montoController = TextEditingController(
-      text: _numero(organizacion.montoPlan),
+      text: _numero(organizacion?.montoPlan ?? 0),
     );
     final TextEditingController accesoController = TextEditingController(
-      text: organizacion.accesoHasta ?? '',
+      text: organizacion?.accesoHasta ?? '',
     );
-    String moneda = organizacion.monedaPlan;
+    String moneda = organizacion?.monedaPlan ?? 'COP';
+    DateTime? accesoHasta = organizacion?.accesoHasta == null
+        ? null
+        : DateTime.tryParse(organizacion!.accesoHasta!);
 
     final Map<String, dynamic>? datos = await showDialog<Map<String, dynamic>>(
       context: context,
@@ -3069,13 +3094,45 @@ class _HomePageState extends State<HomePage> {
         return StatefulBuilder(
           builder: (BuildContext context, StateSetter setDialogState) =>
               AlertDialog(
-            title: Text(organizacion.nombre),
+            title: Text(
+              organizacion == null ? 'Crear institucion' : 'Editar institucion',
+            ),
             content: SingleChildScrollView(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 420),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
+                    TextField(
+                      controller: nombreController,
+                      autofocus: true,
+                      textInputAction: TextInputAction.next,
+                      decoration: const InputDecoration(
+                        labelText: 'Nombre',
+                        prefixIcon: Icon(Icons.business_rounded),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: telefonoController,
+                      keyboardType: TextInputType.phone,
+                      textInputAction: TextInputAction.next,
+                      decoration: const InputDecoration(
+                        labelText: 'Telefono',
+                        prefixIcon: Icon(Icons.call_rounded),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: correoController,
+                      keyboardType: TextInputType.emailAddress,
+                      textInputAction: TextInputAction.next,
+                      decoration: const InputDecoration(
+                        labelText: 'Email',
+                        prefixIcon: Icon(Icons.mail_rounded),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
                     TextField(
                       controller: montoController,
                       keyboardType: const TextInputType.numberWithOptions(
@@ -3088,7 +3145,7 @@ class _HomePageState extends State<HomePage> {
                     ),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
-                      value: moneda,
+                      initialValue: moneda,
                       decoration: const InputDecoration(
                         labelText: 'Moneda',
                         prefixIcon: Icon(Icons.attach_money_rounded),
@@ -3112,11 +3169,49 @@ class _HomePageState extends State<HomePage> {
                     const SizedBox(height: 12),
                     TextField(
                       controller: accesoController,
-                      decoration: const InputDecoration(
+                      readOnly: true,
+                      decoration: InputDecoration(
                         labelText: 'Acceso hasta',
-                        hintText: 'YYYY-MM-DD',
-                        prefixIcon: Icon(Icons.event_available_rounded),
+                        hintText: 'Sin vencimiento',
+                        prefixIcon: const Icon(Icons.event_available_rounded),
+                        suffixIcon: accesoHasta == null
+                            ? const Icon(Icons.calendar_month_rounded)
+                            : IconButton(
+                                onPressed: () {
+                                  setDialogState(() {
+                                    accesoHasta = null;
+                                    accesoController.clear();
+                                  });
+                                },
+                                icon: const Icon(Icons.close_rounded),
+                                tooltip: 'Quitar fecha',
+                              ),
                       ),
+                      onTap: () async {
+                        final DateTime initialDate =
+                            accesoHasta ?? DateTime.now();
+                        final DateTime? selected = await showDatePicker(
+                          context: dialogContext,
+                          initialDate: initialDate,
+                          firstDate: DateTime(2000),
+                          lastDate: DateTime(2100),
+                          switchToInputEntryModeIcon: const Icon(
+                            Icons.edit_calendar_rounded,
+                            color: CobroAppTheme.primary,
+                          ),
+                          switchToCalendarEntryModeIcon: const Icon(
+                            Icons.calendar_month_rounded,
+                            color: CobroAppTheme.primary,
+                          ),
+                        );
+
+                        if (selected != null) {
+                          setDialogState(() {
+                            accesoHasta = selected;
+                            accesoController.text = _fechaValor(selected);
+                          });
+                        }
+                      },
                     ),
                   ],
                 ),
@@ -3129,24 +3224,36 @@ class _HomePageState extends State<HomePage> {
               ),
               FilledButton.icon(
                 onPressed: () {
+                  final String nombre = nombreController.text.trim();
+                  final String telefono = telefonoController.text.trim();
+                  final String correo =
+                      correoController.text.trim().toLowerCase();
                   final double? monto = _parseNumero(montoController.text);
-                  final String acceso = accesoController.text.trim();
+
+                  if (nombre.length < 3) {
+                    _mostrarMensaje('El nombre debe tener minimo 3 caracteres');
+                    return;
+                  }
+
+                  if (correo.isNotEmpty &&
+                      !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(correo)) {
+                    _mostrarMensaje('Ingresa un email valido');
+                    return;
+                  }
 
                   if (monto == null || monto < 0) {
                     _mostrarMensaje('Ingresa un monto valido');
                     return;
                   }
 
-                  if (acceso.isNotEmpty &&
-                      !RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(acceso)) {
-                    _mostrarMensaje('La fecha debe tener formato YYYY-MM-DD');
-                    return;
-                  }
-
                   Navigator.of(dialogContext).pop(<String, dynamic>{
+                    'nombre': nombre,
+                    'telefono': telefono.isEmpty ? null : telefono,
+                    'correo': correo.isEmpty ? null : correo,
                     'montoPlan': monto,
                     'monedaPlan': moneda,
-                    'accesoHasta': acceso.isEmpty ? null : acceso,
+                    'accesoHasta':
+                        accesoHasta == null ? null : _fechaValor(accesoHasta!),
                   });
                 },
                 icon: const Icon(Icons.check_rounded),
@@ -3160,16 +3267,278 @@ class _HomePageState extends State<HomePage> {
 
     montoController.dispose();
     accesoController.dispose();
+    nombreController.dispose();
+    telefonoController.dispose();
+    correoController.dispose();
 
-    if (datos == null) {
+    return datos;
+  }
+
+  Future<void> _crearAdministradorAdmin() async {
+    if (_organizacionesAdmin.isEmpty) {
+      _mostrarMensaje('Crea una institucion antes de agregar administradores');
       return;
     }
 
-    await _actualizarOrganizacionAdmin(
-      organizacion,
-      datos,
-      'Institucion actualizada',
+    final Map<String, dynamic>? creado = await _pedirDatosAdministradorAdmin();
+
+    if (creado == null || !mounted) {
+      return;
+    }
+
+    await _cargarOrganizacionesSuperAdmin();
+    final String usuarioCreado =
+        creado['usuario'] is String ? creado['usuario'] as String : 'usuario';
+    final String organizacionNombre = creado['_organizacionNombre'] is String
+        ? creado['_organizacionNombre'] as String
+        : 'la institucion';
+    _mostrarMensaje(
+      'Administrador $usuarioCreado creado en $organizacionNombre',
     );
+  }
+
+  Future<Map<String, dynamic>?> _pedirDatosAdministradorAdmin() async {
+    final OrganizacionAdmin organizacionInicial = _organizacionesAdmin.first;
+    final TextEditingController organizacionController =
+        TextEditingController(text: organizacionInicial.nombre);
+    final FocusNode organizacionFocusNode = FocusNode();
+    final TextEditingController nombreController = TextEditingController();
+    final TextEditingController usuarioController = TextEditingController();
+    final TextEditingController correoController = TextEditingController();
+    final TextEditingController contrasenaController = TextEditingController();
+    OrganizacionAdmin? organizacionSeleccionada = organizacionInicial;
+    bool mostrarContrasena = false;
+    bool guardandoDialog = false;
+
+    final Map<String, dynamic>? datos = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setDialogState) =>
+              AlertDialog(
+            title: const Text('Crear administrador'),
+            content: SingleChildScrollView(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 460),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    _OrganizacionAdminPicker(
+                      organizaciones: _organizacionesAdmin,
+                      controller: organizacionController,
+                      focusNode: organizacionFocusNode,
+                      seleccionada: organizacionSeleccionada,
+                      onChanged: (OrganizacionAdmin? value) {
+                        setDialogState(
+                          () => organizacionSeleccionada = value,
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    InputDecorator(
+                      decoration: const InputDecoration(
+                        labelText: 'Rol',
+                        prefixIcon: Icon(Icons.admin_panel_settings_rounded),
+                      ),
+                      child: Text(
+                        'ADMINISTRADOR',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w900,
+                            ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: nombreController,
+                      textInputAction: TextInputAction.next,
+                      decoration: const InputDecoration(
+                        labelText: 'Nombre completo',
+                        prefixIcon: Icon(Icons.badge_rounded),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: usuarioController,
+                      textInputAction: TextInputAction.next,
+                      decoration: const InputDecoration(
+                        labelText: 'Usuario',
+                        prefixIcon: Icon(Icons.person_rounded),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: correoController,
+                      keyboardType: TextInputType.emailAddress,
+                      textInputAction: TextInputAction.next,
+                      decoration: const InputDecoration(
+                        labelText: 'Email',
+                        prefixIcon: Icon(Icons.mail_rounded),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: contrasenaController,
+                      obscureText: !mostrarContrasena,
+                      decoration: InputDecoration(
+                        labelText: 'Contrasena',
+                        helperText: 'Minimo 12 caracteres',
+                        prefixIcon: const Icon(Icons.key_rounded),
+                        suffixIcon: IconButton(
+                          onPressed: () {
+                            setDialogState(
+                              () => mostrarContrasena = !mostrarContrasena,
+                            );
+                          },
+                          icon: Icon(
+                            mostrarContrasena
+                                ? Icons.visibility_off_rounded
+                                : Icons.visibility_rounded,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: <Widget>[
+              TextButton(
+                onPressed: guardandoDialog
+                    ? null
+                    : () => Navigator.of(dialogContext).pop(),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton.icon(
+                onPressed: guardandoDialog
+                    ? null
+                    : () async {
+                        final OrganizacionAdmin? organizacion =
+                            organizacionSeleccionada;
+                        final String nombre = nombreController.text.trim();
+                        final String usuario =
+                            usuarioController.text.trim().toLowerCase();
+                        final String correo =
+                            correoController.text.trim().toLowerCase();
+                        final String contrasena = contrasenaController.text;
+
+                        if (organizacion == null) {
+                          _mostrarMensaje('Selecciona una institucion');
+                          return;
+                        }
+
+                        if (nombre.length < 3) {
+                          _mostrarMensaje(
+                            'El nombre debe tener minimo 3 caracteres',
+                          );
+                          return;
+                        }
+
+                        if (usuario.length < 3 ||
+                            !RegExp(r'^[a-zA-Z0-9._-]+$').hasMatch(usuario)) {
+                          _mostrarMensaje(
+                            'El usuario debe tener minimo 3 caracteres validos',
+                          );
+                          return;
+                        }
+
+                        if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+                            .hasMatch(correo)) {
+                          _mostrarMensaje('Ingresa un email valido');
+                          return;
+                        }
+
+                        if (contrasena.length < 12) {
+                          _mostrarMensaje(
+                            'La contrasena debe tener 12 caracteres',
+                          );
+                          return;
+                        }
+
+                        final Map<String, dynamic> body = <String, dynamic>{
+                          'organizacionId': organizacion.id,
+                          'nombreCompleto': nombre,
+                          'usuario': usuario,
+                          'correo': correo,
+                          'contrasena': contrasena,
+                        };
+
+                        setDialogState(() => guardandoDialog = true);
+                        if (mounted) {
+                          setState(() => _guardando = true);
+                        }
+
+                        try {
+                          final Map<String, dynamic> creado =
+                              await _apiClient.postObject(
+                            '/super-admin/usuarios/admin',
+                            body,
+                          );
+                          final Object? rawRoles = creado['roles'];
+                          final List<String> roles = rawRoles is List<dynamic>
+                              ? rawRoles
+                                  .whereType<String>()
+                                  .toList(growable: false)
+                              : const <String>[];
+                          final String? idCreado = creado['id'] is String
+                              ? creado['id'] as String
+                              : null;
+                          final String? usuarioCreado =
+                              creado['usuario'] is String
+                                  ? creado['usuario'] as String
+                                  : null;
+
+                          if (idCreado == null ||
+                              usuarioCreado == null ||
+                              usuarioCreado.isEmpty ||
+                              !roles.contains('ADMINISTRADOR')) {
+                            throw const ApiException(
+                              statusCode: 500,
+                              message:
+                                  'El servidor no confirmo el administrador creado',
+                            );
+                          }
+
+                          if (!dialogContext.mounted) {
+                            return;
+                          }
+
+                          Navigator.of(dialogContext).pop(<String, dynamic>{
+                            ...creado,
+                            '_organizacionNombre': organizacion.nombre,
+                          });
+                        } catch (error) {
+                          if (dialogContext.mounted) {
+                            _mostrarMensaje(_mensajeError(error));
+                            setDialogState(() => guardandoDialog = false);
+                          }
+                        } finally {
+                          if (mounted) {
+                            setState(() => _guardando = false);
+                          }
+                        }
+                      },
+                icon: guardandoDialog
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2.4),
+                      )
+                    : const Icon(Icons.check_rounded),
+                label: const Text('Crear'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    organizacionController.dispose();
+    organizacionFocusNode.dispose();
+    nombreController.dispose();
+    usuarioController.dispose();
+    correoController.dispose();
+    contrasenaController.dispose();
+
+    return datos;
   }
 
   Widget _construirSuperAdmin(BuildContext context) {
@@ -3184,6 +3553,16 @@ class _HomePageState extends State<HomePage> {
       error: _error,
       onRefresh: _cargar,
       acciones: <Widget>[
+        FilledButton.icon(
+          onPressed: _guardando ? null : _crearOrganizacionAdmin,
+          icon: const Icon(Icons.add_business_rounded),
+          label: const Text('Institucion'),
+        ),
+        FilledButton.tonalIcon(
+          onPressed: _guardando ? null : _crearAdministradorAdmin,
+          icon: const Icon(Icons.admin_panel_settings_rounded),
+          label: const Text('Administrador'),
+        ),
         IconButton.filledTonal(
           onPressed: _cargando ? null : _cargar,
           icon: const Icon(Icons.refresh_rounded),
@@ -3229,22 +3608,14 @@ class _HomePageState extends State<HomePage> {
                 organizacion: organizacion,
                 guardando: _guardando,
                 onEditar: () => _editarOrganizacionAdmin(organizacion),
-                onExtenderUno: () =>
-                    _extenderAccesoOrganizacion(organizacion, 1),
-                onExtenderDos: () =>
-                    _extenderAccesoOrganizacion(organizacion, 2),
-                onActivoChanged: (bool activo) =>
-                    _actualizarOrganizacionAdmin(
+                onActivoChanged: (bool activo) => _actualizarOrganizacionAdmin(
                   organizacion,
                   <String, dynamic>{
                     'activo': activo,
                     if (!activo)
-                      'motivoSuspension':
-                          'Suspendido por falta de pagos',
+                      'motivoSuspension': 'Suspendido por falta de pagos',
                   },
-                  activo
-                      ? 'Institucion reactivada'
-                      : 'Institucion suspendida',
+                  activo ? 'Institucion reactivada' : 'Institucion suspendida',
                 ),
               ),
             ),
@@ -4144,22 +4515,23 @@ class _HomePageState extends State<HomePage> {
         try {
           final CreditoRegistro credito = CreditoRegistro.fromJson(
             await _apiClient.postObject(
-                '/creditos',
-                <String, dynamic>{
-                  'clienteId': clienteId,
-                  if (rutaId != null) 'rutaId': rutaId,
-                  'monedaCodigo': monedaCodigo,
-                  'frecuenciaPagoId': frecuenciaPagoId,
-                  'fechaInicio': _fechaValor(_fechaInicioCredito),
-                  'valorPrincipal': valoresPorCliente[clienteId],
-                  'porcentajeInteres': porcentajeInteres,
-                  'plazoDias': plazoDias,
-                  'omitirDomingos': _omitirDomingos,
-                  'cajaMenorId': cajaMenorId,
-                  if (_observacionCreditoController.text.trim().isNotEmpty)
-                    'observacion': _observacionCreditoController.text.trim(),
-                },
-                queueOffline: true),
+              '/creditos',
+              <String, dynamic>{
+                'clienteId': clienteId,
+                if (rutaId != null) 'rutaId': rutaId,
+                'monedaCodigo': monedaCodigo,
+                'frecuenciaPagoId': frecuenciaPagoId,
+                'fechaInicio': _fechaValor(_fechaInicioCredito),
+                'valorPrincipal': valoresPorCliente[clienteId],
+                'porcentajeInteres': porcentajeInteres,
+                'plazoDias': plazoDias,
+                'omitirDomingos': _omitirDomingos,
+                'cajaMenorId': cajaMenorId,
+                if (_observacionCreditoController.text.trim().isNotEmpty)
+                  'observacion': _observacionCreditoController.text.trim(),
+              },
+              queueOffline: true,
+            ),
           );
           _guardarCreditoLocal(credito);
           creados++;
@@ -5387,14 +5759,15 @@ class _HomePageState extends State<HomePage> {
 
     try {
       await _apiClient.postObject(
-          '/pagos',
-          <String, dynamic>{
-            'creditoCuotaId': cuotaId,
-            'montoPagado': monto,
-            'medioPagoCodigo': medioPagoCodigo,
-            if (observacion != null) 'observacion': observacion,
-          },
-          queueOffline: true);
+        '/pagos',
+        <String, dynamic>{
+          'creditoCuotaId': cuotaId,
+          'montoPagado': monto,
+          'medioPagoCodigo': medioPagoCodigo,
+          if (observacion != null) 'observacion': observacion,
+        },
+        queueOffline: true,
+      );
       _mostrarMensaje('Pago registrado');
       _recargarEnSegundoPlano();
     } on OfflineMutationQueuedException catch (error) {
@@ -5461,14 +5834,15 @@ class _HomePageState extends State<HomePage> {
       await Future.wait<Map<String, dynamic>>(
         pagosPendientes.map((_PagoRutaSolicitud pago) {
           return _apiClient.postObject(
-              '/pagos',
-              <String, dynamic>{
-                'creditoCuotaId': pago.cuotaId,
-                'montoPagado': pago.monto,
-                'medioPagoCodigo': pago.medioPagoCodigo,
-                if (pago.observacion != null) 'observacion': pago.observacion,
-              },
-              queueOffline: true);
+            '/pagos',
+            <String, dynamic>{
+              'creditoCuotaId': pago.cuotaId,
+              'montoPagado': pago.monto,
+              'medioPagoCodigo': pago.medioPagoCodigo,
+              if (pago.observacion != null) 'observacion': pago.observacion,
+            },
+            queueOffline: true,
+          );
         }),
       );
       _mostrarMensaje(
@@ -5824,23 +6198,24 @@ class _HomePageState extends State<HomePage> {
                 await _ejecutarAccion(() async {
                   final Cliente cliente = Cliente.fromJson(
                     await _apiClient.postObject(
-                        '/clientes',
-                        <String, dynamic>{
-                          'nombreCompleto': nombreController.text.trim(),
-                          if (cedulaController.text.trim().isNotEmpty)
-                            'cedula': cedulaController.text.trim(),
-                          if (direccionController.text.trim().isNotEmpty)
-                            'direccion': direccionController.text.trim(),
-                          if (ubicacionCliente != null) ...<String, dynamic>{
-                            'latitud': ubicacionCliente!.latitude,
-                            'longitud': ubicacionCliente!.longitude,
-                          },
-                          if (correoController.text.trim().isNotEmpty)
-                            'correo': correoController.text.trim(),
-                          if (telefonoController.text.trim().isNotEmpty)
-                            'telefono': telefonoController.text.trim(),
+                      '/clientes',
+                      <String, dynamic>{
+                        'nombreCompleto': nombreController.text.trim(),
+                        if (cedulaController.text.trim().isNotEmpty)
+                          'cedula': cedulaController.text.trim(),
+                        if (direccionController.text.trim().isNotEmpty)
+                          'direccion': direccionController.text.trim(),
+                        if (ubicacionCliente != null) ...<String, dynamic>{
+                          'latitud': ubicacionCliente!.latitude,
+                          'longitud': ubicacionCliente!.longitude,
                         },
-                        queueOffline: true),
+                        if (correoController.text.trim().isNotEmpty)
+                          'correo': correoController.text.trim(),
+                        if (telefonoController.text.trim().isNotEmpty)
+                          'telefono': telefonoController.text.trim(),
+                      },
+                      queueOffline: true,
+                    ),
                   );
                   _guardarClienteLocal(cliente);
                   _recargarEnSegundoPlano(
@@ -7504,15 +7879,12 @@ enum _TipoMensaje { exito, advertencia, error, info }
 _TipoMensaje _tipoMensaje(String message) {
   final String normalizado = message.toLowerCase();
 
-  if (normalizado.contains('cread') ||
-      normalizado.contains('registrad') ||
-      normalizado.contains('aplicad') ||
-      normalizado.contains('complet')) {
-    return _TipoMensaje.exito;
-  }
-
   if (normalizado.contains('error') ||
       normalizado.contains('no se pudo') ||
+      normalizado.contains('ya existe') ||
+      normalizado.contains('ya esta registrad') ||
+      normalizado.contains('ya está registrad') ||
+      normalizado.contains('duplicad') ||
       normalizado.contains('no tienes acceso')) {
     return _TipoMensaje.error;
   }
@@ -7527,6 +7899,13 @@ _TipoMensaje _tipoMensaje(String message) {
       normalizado.contains('intenta') ||
       normalizado.contains('no hay')) {
     return _TipoMensaje.advertencia;
+  }
+
+  if (normalizado.contains('cread') ||
+      normalizado.contains('registrad') ||
+      normalizado.contains('aplicad') ||
+      normalizado.contains('complet')) {
+    return _TipoMensaje.exito;
   }
 
   return _TipoMensaje.info;
@@ -12698,21 +13077,202 @@ class _MovimientoCajaItem extends StatelessWidget {
   }
 }
 
+class _OrganizacionAdminPicker extends StatelessWidget {
+  const _OrganizacionAdminPicker({
+    required this.organizaciones,
+    required this.controller,
+    required this.focusNode,
+    required this.seleccionada,
+    required this.onChanged,
+  });
+
+  final List<OrganizacionAdmin> organizaciones;
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final OrganizacionAdmin? seleccionada;
+  final ValueChanged<OrganizacionAdmin?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return RawAutocomplete<OrganizacionAdmin>(
+      textEditingController: controller,
+      focusNode: focusNode,
+      displayStringForOption: (OrganizacionAdmin option) => option.nombre,
+      optionsBuilder: (TextEditingValue value) {
+        final String texto = value.text.trim();
+        final String consulta = texto.toLowerCase();
+        if (consulta.isEmpty ||
+            (seleccionada != null && texto == seleccionada!.nombre)) {
+          return organizaciones;
+        }
+
+        return organizaciones.where((OrganizacionAdmin organizacion) {
+          final String nombre = organizacion.nombre.toLowerCase();
+          final String correo = (organizacion.correo ?? '').toLowerCase();
+          final String administradores =
+              organizacion.administradores.join(' ').toLowerCase();
+          return nombre.contains(consulta) ||
+              correo.contains(consulta) ||
+              administradores.contains(consulta);
+        });
+      },
+      onSelected: onChanged,
+      fieldViewBuilder: (
+        BuildContext context,
+        TextEditingController controller,
+        FocusNode focusNode,
+        VoidCallback onFieldSubmitted,
+      ) {
+        return TextField(
+          controller: controller,
+          focusNode: focusNode,
+          decoration: const InputDecoration(
+            labelText: 'Institucion',
+            hintText: 'Buscar por nombre, correo o admin',
+            prefixIcon: Icon(Icons.apartment_rounded),
+            suffixIcon: Icon(Icons.arrow_drop_down_rounded),
+          ),
+          onTap: () {
+            controller.selection = TextSelection(
+              baseOffset: 0,
+              extentOffset: controller.text.length,
+            );
+          },
+          onChanged: (String value) {
+            final String texto = value.trim();
+            final bool mantieneSeleccion =
+                seleccionada != null && texto == seleccionada!.nombre;
+            if (seleccionada != null && !mantieneSeleccion) {
+              onChanged(null);
+            }
+          },
+        );
+      },
+      optionsViewBuilder: (
+        BuildContext context,
+        AutocompleteOnSelected<OrganizacionAdmin> onSelected,
+        Iterable<OrganizacionAdmin> options,
+      ) {
+        final List<OrganizacionAdmin> opciones =
+            options.toList(growable: false);
+        final double ancho = math.min(
+          460,
+          math.max(0, MediaQuery.sizeOf(context).width - 32),
+        );
+
+        return Align(
+          alignment: Alignment.topLeft,
+          child: SizedBox(
+            width: ancho,
+            child: Material(
+              elevation: 6,
+              borderRadius: BorderRadius.circular(8),
+              clipBehavior: Clip.antiAlias,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 280),
+                child: opciones.isEmpty
+                    ? Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text(
+                          'No hay instituciones con ese filtro',
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                      )
+                    : ListView.separated(
+                        padding: EdgeInsets.zero,
+                        shrinkWrap: true,
+                        itemCount: opciones.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (BuildContext context, int index) {
+                          final OrganizacionAdmin organizacion =
+                              opciones[index];
+                          final String detalle = [
+                            if ((organizacion.correo ?? '').isNotEmpty)
+                              organizacion.correo!,
+                            if (organizacion.administradores.isNotEmpty)
+                              organizacion.administradores.join(', '),
+                          ].join(' · ');
+
+                          return InkWell(
+                            onTap: () => onSelected(organizacion),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
+                              child: Row(
+                                children: <Widget>[
+                                  CircleAvatar(
+                                    radius: 18,
+                                    backgroundColor: CobroAppTheme.primary
+                                        .withValues(alpha: 0.12),
+                                    foregroundColor: CobroAppTheme.primary,
+                                    child: const Icon(
+                                      Icons.apartment_rounded,
+                                      size: 18,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: <Widget>[
+                                        Text(
+                                          organizacion.nombre,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .bodyMedium
+                                              ?.copyWith(
+                                                fontWeight: FontWeight.w800,
+                                              ),
+                                        ),
+                                        if (detalle.isNotEmpty)
+                                          Text(
+                                            detalle,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodySmall
+                                                ?.copyWith(
+                                                  color:
+                                                      context.clay.subtleText,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 class _OrganizacionAdminItem extends StatelessWidget {
   const _OrganizacionAdminItem({
     required this.organizacion,
     required this.guardando,
     required this.onEditar,
-    required this.onExtenderUno,
-    required this.onExtenderDos,
     required this.onActivoChanged,
   });
 
   final OrganizacionAdmin organizacion;
   final bool guardando;
   final VoidCallback onEditar;
-  final VoidCallback onExtenderUno;
-  final VoidCallback onExtenderDos;
   final ValueChanged<bool> onActivoChanged;
 
   @override
@@ -12814,16 +13374,6 @@ class _OrganizacionAdminItem extends StatelessWidget {
             runSpacing: 8,
             alignment: WrapAlignment.end,
             children: <Widget>[
-              OutlinedButton.icon(
-                onPressed: guardando ? null : onExtenderUno,
-                icon: const Icon(Icons.plus_one_rounded),
-                label: const Text('1 dia'),
-              ),
-              OutlinedButton.icon(
-                onPressed: guardando ? null : onExtenderDos,
-                icon: const Icon(Icons.exposure_plus_2_rounded),
-                label: const Text('2 dias'),
-              ),
               OutlinedButton.icon(
                 onPressed: guardando ? null : onEditar,
                 icon: const Icon(Icons.edit_outlined),
@@ -13044,8 +13594,9 @@ class _GestionEmpleadosPage extends StatefulWidget {
 
   final ApiClient apiClient;
   final Future<List<EmpleadoGestion>> Function() cargarEmpleados;
-  final Future<List<ActividadEmpleado>> Function(ActividadEmpleadosFiltros filtros)
-      cargarActividadEmpleados;
+  final Future<List<ActividadEmpleado>> Function(
+    ActividadEmpleadosFiltros filtros,
+  ) cargarActividadEmpleados;
   final Future<bool> Function() crearEmpleado;
   final Future<EmpleadoGestion?> Function(EmpleadoGestion empleado)
       modificarEmpleado;
@@ -13974,8 +14525,9 @@ class _GestionEmpleadosPageState extends State<_GestionEmpleadosPage> {
             ),
           ),
         OutlinedButton.icon(
-          onPressed:
-              _actividadHoyActiva || _cargandoActividad ? null : _mostrarActividadHoy,
+          onPressed: _actividadHoyActiva || _cargandoActividad
+              ? null
+              : _mostrarActividadHoy,
           icon: const Icon(Icons.today_rounded),
           label: const Text('Hoy'),
         ),
@@ -13997,8 +14549,7 @@ class _GestionEmpleadosPageState extends State<_GestionEmpleadosPage> {
           Tooltip(
             message: 'Limpiar filtros',
             child: IconButton.outlined(
-              onPressed:
-                  _cargandoActividad ? null : _limpiarFiltrosActividad,
+              onPressed: _cargandoActividad ? null : _limpiarFiltrosActividad,
               icon: const Icon(Icons.filter_alt_off_rounded),
             ),
           ),

@@ -17,6 +17,7 @@ erDiagram
     VARCHAR per_documento UK
     VARCHAR per_direccion
     VARCHAR per_num_celular
+    VARCHAR per_email
     TIMESTAMPTZ per_creacion
   }
 
@@ -25,7 +26,6 @@ erDiagram
     VARCHAR usu_usuario UK
     VARCHAR usu_password
     TIMESTAMPTZ usu_creacion
-    VARCHAR usu_email UK
     BOOLEAN usu_activo
     BIGINT persona_id FK_UK
   }

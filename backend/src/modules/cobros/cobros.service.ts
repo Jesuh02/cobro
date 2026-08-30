@@ -5109,7 +5109,7 @@ export class CobrosService {
           tu.usu_usuario AS usuario,
           p.per_primer_nombre AS nombres,
           p.per_apellido AS apellidos,
-          tu.usu_email AS correo,
+          COALESCE(p.per_email, '') AS correo,
           p.per_num_celular AS telefono
         FROM public.tbl_cajas c
         JOIN public.tbl_usuarios_organizaciones uo
@@ -5587,7 +5587,7 @@ export class CobrosService {
             tu.usu_usuario AS usuario,
             p.per_primer_nombre AS nombres,
             p.per_apellido AS apellidos,
-            tu.usu_email AS correo,
+            COALESCE(p.per_email, '') AS correo,
             p.per_num_celular AS telefono,
             uo.org_id::text AS organizacion_id
           FROM public.tbl_usuarios tu
@@ -6114,7 +6114,7 @@ export class CobrosService {
             tu.usu_usuario AS usuario,
             p.per_primer_nombre AS nombres,
             p.per_apellido AS apellidos,
-            tu.usu_email AS correo,
+            COALESCE(p.per_email, '') AS correo,
             p.per_num_celular AS telefono
           FROM public.tbl_usuarios tu
           JOIN public.tbl_personas p ON p.id_per = tu.persona_id
@@ -6741,7 +6741,7 @@ export class CobrosService {
         tu.usu_usuario AS responsable_usuario,
         p.per_primer_nombre AS responsable_nombres,
         p.per_apellido AS responsable_apellidos,
-        tu.usu_email AS responsable_correo,
+        COALESCE(p.per_email, '') AS responsable_correo,
         p.per_num_celular AS responsable_telefono,
         COUNT(DISTINCT rc.cli_id)::int AS clientes,
         COUNT(DISTINCT cr.id_cre)::int AS creditos
@@ -7525,7 +7525,7 @@ export class CobrosService {
           tu.usu_usuario AS usuario,
           p.per_primer_nombre AS nombres,
           p.per_apellido AS apellidos,
-          tu.usu_email AS correo,
+          COALESCE(p.per_email, '') AS correo,
           p.per_num_celular AS telefono,
           m.mca_creacion AS fecha_movimiento,
           m.mca_monto AS monto,
@@ -7553,7 +7553,7 @@ export class CobrosService {
           tu.usu_usuario,
           up.per_primer_nombre,
           up.per_apellido,
-          tu.usu_email,
+          COALESCE(up.per_email, ''),
           up.per_num_celular,
           pa.pag_fecha,
           pa.pag_monto,
@@ -7599,7 +7599,7 @@ export class CobrosService {
           tu.usu_usuario,
           p.per_primer_nombre,
           p.per_apellido,
-          tu.usu_email,
+          COALESCE(p.per_email, ''),
           p.per_num_celular,
           g.gas_fecha,
           g.gas_monto,
@@ -7649,7 +7649,7 @@ export class CobrosService {
         tu.usu_usuario AS usuario,
         p.per_primer_nombre AS nombres,
         p.per_apellido AS apellidos,
-        tu.usu_email AS correo,
+        COALESCE(p.per_email, '') AS correo,
         p.per_num_celular AS telefono,
         m.mca_creacion AS fecha_movimiento,
         m.mca_monto AS monto,

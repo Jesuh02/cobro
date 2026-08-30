@@ -59,87 +59,9 @@ BEGIN
   IF to_regtype('public.rol_tipo_enum') IS NOT NULL
     AND to_regclass('public.tbl_roles') IS NOT NULL THEN
     INSERT INTO public.tbl_roles (rol_tip, rol_nivel)
-    VALUES ('SUPER_ADMIN'::public.rol_tipo_enum, 1)
+    VALUES ('SUPER_ADMIN'::public.rol_tipo_enum, 4)
     ON CONFLICT (rol_tip) DO UPDATE
     SET rol_nivel = EXCLUDED.rol_nivel;
-  END IF;
-END;
-$$;
-
-DO $$
-BEGIN
-  IF to_regclass('public.tbl_organizaciones') IS NOT NULL
-    AND to_regclass('public.tbl_usuarios') IS NOT NULL
-    AND to_regclass('public.tbl_roles') IS NOT NULL
-    AND to_regclass('public.tbl_usuarios_organizaciones') IS NOT NULL THEN
-    WITH soporte_org AS (
-      INSERT INTO public.tbl_organizaciones (
-        org_nombre,
-        org_email,
-        org_activo,
-        org_es_sistema
-      )
-      VALUES (
-        'Cobro Soporte',
-        'soporte@cobro.local',
-        TRUE,
-        TRUE
-      )
-      ON CONFLICT (org_nombre) DO UPDATE
-      SET
-        org_activo = TRUE,
-        org_es_sistema = TRUE
-      RETURNING id_org
-    ),
-    soporte_usuario AS (
-      SELECT id_usu
-      FROM public.tbl_usuarios
-      WHERE lower(usu_usuario) = 'soporte'
-      LIMIT 1
-    ),
-    super_admin_rol AS (
-      SELECT id_rol
-      FROM public.tbl_roles
-      WHERE rol_tip::text = 'SUPER_ADMIN'
-      LIMIT 1
-    )
-    INSERT INTO public.tbl_usuarios_organizaciones (rol_id, usu_id, org_id)
-    SELECT super_admin_rol.id_rol, soporte_usuario.id_usu, soporte_org.id_org
-    FROM soporte_org
-    CROSS JOIN soporte_usuario
-    CROSS JOIN super_admin_rol
-    WHERE NOT EXISTS (
-      SELECT 1
-      FROM public.tbl_usuarios_organizaciones existente
-      WHERE existente.rol_id = super_admin_rol.id_rol
-        AND existente.usu_id = soporte_usuario.id_usu
-        AND existente.org_id = soporte_org.id_org
-    );
-
-    WITH soporte_org AS (
-      SELECT id_org
-      FROM public.tbl_organizaciones
-      WHERE org_nombre = 'Cobro Soporte'
-      LIMIT 1
-    ),
-    soporte_usuario AS (
-      SELECT id_usu
-      FROM public.tbl_usuarios
-      WHERE lower(usu_usuario) = 'soporte'
-      LIMIT 1
-    ),
-    super_admin_rol AS (
-      SELECT id_rol
-      FROM public.tbl_roles
-      WHERE rol_tip::text = 'SUPER_ADMIN'
-      LIMIT 1
-    )
-    UPDATE public.tbl_usuarios_organizaciones uo
-    SET urg_activo = TRUE
-    FROM soporte_org, soporte_usuario, super_admin_rol
-    WHERE uo.rol_id = super_admin_rol.id_rol
-      AND uo.usu_id = soporte_usuario.id_usu
-      AND uo.org_id = soporte_org.id_org;
   END IF;
 END;
 $$;

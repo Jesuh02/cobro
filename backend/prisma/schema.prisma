@@ -612,6 +612,7 @@ model TblPersona {
   latitud      Decimal? @map("per_latitud") @db.Decimal(10, 7)
   longitud     Decimal? @map("per_longitud") @db.Decimal(10, 7)
   celular      String?  @map("per_num_celular")
+  email        String?  @map("per_email")
   creacion     DateTime @default(now()) @map("per_creacion") @db.Timestamptz(6)
 
   usuario  TblUsuario?
@@ -626,7 +627,6 @@ model TblUsuario {
   usuario   String   @unique @map("usu_usuario")
   password  String   @map("usu_password")
   creacion  DateTime @default(now()) @map("usu_creacion") @db.Timestamptz(6)
-  email     String   @map("usu_email")
   activo    Boolean  @default(true) @map("usu_activo")
   personaId BigInt   @unique @map("persona_id")
 

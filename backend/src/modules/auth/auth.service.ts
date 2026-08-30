@@ -239,12 +239,14 @@ export class AuthService {
           per_primer_nombre,
           per_apellido,
           per_documento,
+          per_email,
           per_num_celular
         )
         VALUES (
           ${nombre.nombres},
           ${nombre.apellidos || ' '},
           ${documento},
+          ${correo},
           ${telefono}
         )
         RETURNING id_per::text AS id
@@ -253,13 +255,11 @@ export class AuthService {
         INSERT INTO public.tbl_usuarios (
           usu_usuario,
           usu_password,
-          usu_email,
           persona_id
         )
         VALUES (
           ${nombreUsuario},
           ${passwordHash},
-          ${correo},
           ${BigInt(persona.id)}
         )
         RETURNING id_usu::text AS id
@@ -700,13 +700,11 @@ export class AuthService {
           INSERT INTO public.tbl_usuarios (
             usu_usuario,
             usu_password,
-            usu_email,
             persona_id
           )
           VALUES (
             ${nombreUsuario},
             ${passwordHash},
-            ${correo},
             ${persona.id}::bigint
           )
           RETURNING id_usu::text AS id
@@ -1349,7 +1347,7 @@ export class AuthService {
         tu.usu_password AS "passwordHash",
         p.per_primer_nombre AS nombres,
         p.per_apellido AS apellidos,
-        tu.usu_email AS correo,
+        COALESCE(p.per_email, '') AS correo,
         tu.usu_activo AS activo,
         COALESCE(
           array_agg(DISTINCT tr.rol_tip::text)
@@ -1384,7 +1382,7 @@ export class AuthService {
         tu.usu_password,
         p.per_primer_nombre,
         p.per_apellido,
-        tu.usu_email,
+        p.per_email,
         tu.usu_activo
       ORDER BY tu.usu_activo DESC, p.per_primer_nombre ASC, p.per_apellido ASC
     `);
@@ -1405,7 +1403,7 @@ export class AuthService {
           tu.id_usu::text AS usuario_id,
           tu.usu_usuario AS nombre_usuario,
           concat_ws(' ', p.per_primer_nombre, p.per_apellido) AS nombre_completo,
-          tu.usu_email AS correo,
+          COALESCE(p.per_email, '') AS correo,
           tu.usu_activo AS activo
         FROM public.tbl_usuarios tu
         JOIN public.tbl_personas p ON p.id_per = tu.persona_id
@@ -1920,7 +1918,7 @@ export class AuthService {
 
       const [existenteUsuario, existenteCorreo] = await Promise.all([
         tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
-          SELECT id_usu::text AS id
+          SELECT tu.id_usu::text AS id
           FROM public.tbl_usuarios
           WHERE lower(usu_usuario) = lower(${nombreUsuario})
             AND id_usu <> ${BigInt(empleadoId)}
@@ -1928,9 +1926,10 @@ export class AuthService {
         `),
         tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
           SELECT id_usu::text AS id
-          FROM public.tbl_usuarios
-          WHERE lower(usu_email) = lower(${correo})
-            AND id_usu <> ${BigInt(empleadoId)}
+          FROM public.tbl_usuarios tu
+          JOIN public.tbl_personas p ON p.id_per = tu.persona_id
+          WHERE lower(p.per_email) = lower(${correo})
+            AND tu.id_usu <> ${BigInt(empleadoId)}
           LIMIT 1
         `),
       ]);
@@ -1957,7 +1956,6 @@ export class AuthService {
           UPDATE public.tbl_usuarios
           SET
             usu_usuario = ${nombreUsuario},
-            usu_email = ${correo},
             usu_password = ${passwordHash}
           WHERE id_usu = ${BigInt(empleadoId)}
         `);
@@ -1966,9 +1964,7 @@ export class AuthService {
 
       await tx.$executeRaw(Prisma.sql`
         UPDATE public.tbl_usuarios
-        SET
-          usu_usuario = ${nombreUsuario},
-          usu_email = ${correo}
+        SET usu_usuario = ${nombreUsuario}
         WHERE id_usu = ${BigInt(empleadoId)}
       `);
     });
@@ -2361,13 +2357,11 @@ export class AuthService {
           INSERT INTO public.tbl_usuarios (
             usu_usuario,
             usu_password,
-            usu_email,
             persona_id
           )
           VALUES (
             ${nombreUsuario},
             ${passwordHash},
-            ${correo},
             ${persona.id}::bigint
           )
           RETURNING id_usu::text AS id
@@ -2558,8 +2552,9 @@ export class AuthService {
     const rows = await tx.$queryRaw<Array<{ existe: boolean }>>`
       SELECT EXISTS (
         SELECT 1
-        FROM public.tbl_usuarios
-        WHERE lower(usu_email) = ${correo}
+        FROM public.tbl_usuarios tu
+        JOIN public.tbl_personas p ON p.id_per = tu.persona_id
+        WHERE lower(p.per_email) = ${correo}
       ) AS existe
     `;
 
@@ -2633,7 +2628,7 @@ export class AuthService {
         tu.usu_password AS "passwordHash",
         p.per_primer_nombre AS nombres,
         p.per_apellido AS apellidos,
-        tu.usu_email AS correo,
+        COALESCE(p.per_email, '') AS correo,
         tu.usu_activo AS activo,
         TRUE AS "tieneAccesoOrganizacion",
         FALSE AS "organizacionSuspendida",
@@ -2662,7 +2657,7 @@ export class AuthService {
         tu.usu_password,
         p.per_primer_nombre,
         p.per_apellido,
-        tu.usu_email,
+        p.per_email,
         tu.usu_activo
       LIMIT 1
     `;
@@ -2682,7 +2677,7 @@ export class AuthService {
         tu.usu_password AS "passwordHash",
         p.per_primer_nombre AS nombres,
         p.per_apellido AS apellidos,
-        tu.usu_email AS correo,
+        COALESCE(p.per_email, '') AS correo,
         tu.usu_activo AS activo,
         TRUE AS "tieneAccesoOrganizacion",
         FALSE AS "organizacionSuspendida",
@@ -2711,7 +2706,7 @@ export class AuthService {
         tu.usu_password,
         p.per_primer_nombre,
         p.per_apellido,
-        tu.usu_email,
+        p.per_email,
         tu.usu_activo
       LIMIT 1
     `;

@@ -438,7 +438,7 @@ export class NotificationsService {
       SELECT
         tu.id_usu::text AS cobrador_id,
         TRIM(CONCAT_WS(' ', p.per_primer_nombre, p.per_apellido)) AS cobrador_nombre,
-        tu.usu_email AS cobrador_correo,
+        COALESCE(p.per_email, '') AS cobrador_correo,
         p.per_num_celular AS cobrador_telefono,
         TRIM(CONCAT_WS(' ', pc.per_primer_nombre, pc.per_apellido)) AS cliente,
         COALESCE(ruta_credito.ruta, 'Sin ruta') AS ruta,

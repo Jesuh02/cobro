@@ -3019,7 +3019,7 @@ export class AuthService {
 
     if (usuario.organizacionSuspendida) {
       throw new UnauthorizedException(
-        'La institucion esta suspendida por falta de pagos',
+        'La institucion a la que pertenece esta suspendida',
       );
     }
 

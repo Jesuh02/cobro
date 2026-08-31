@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'api_exception.dart';
@@ -81,6 +82,7 @@ class ApiClient {
 
       return _decodeObject(response);
     } catch (error) {
+      _debugRequestError('POST', path, error);
       await _queueIfOffline(
         enabled: queueOffline,
         error: error,
@@ -107,6 +109,7 @@ class ApiClient {
           .timeout(_requestTimeout);
       return _decodeObject(response);
     } catch (error) {
+      _debugRequestError('PATCH', path, error);
       await _queueIfOffline(
         enabled: queueOffline,
         error: error,
@@ -151,6 +154,7 @@ class ApiClient {
           .timeout(_requestTimeout);
       return _decodeObject(response);
     } catch (error) {
+      _debugRequestError('DELETE', path, error);
       await _queueIfOffline(
         enabled: queueOffline,
         error: error,
@@ -270,6 +274,8 @@ class ApiClient {
       return rawBody;
     }
 
+    _debugHttpError(response, rawBody);
+
     if (rawBody is Map<String, dynamic>) {
       final Object? message = rawBody['message'];
       throw ApiException(
@@ -287,6 +293,42 @@ class ApiClient {
       statusCode: response.statusCode,
       message: 'Request failed',
     );
+  }
+
+  void _debugHttpError(http.Response response, Object? rawBody) {
+    if (kReleaseMode) {
+      return;
+    }
+
+    final request = response.request;
+    final target = request == null
+        ? 'unknown-url'
+        : '${request.method} ${request.url.replace(queryParameters: null)}';
+    debugPrint(
+      '[ApiClient] HTTP ${response.statusCode} $target body=${_debugBody(rawBody)}',
+    );
+  }
+
+  void _debugRequestError(String method, String path, Object error) {
+    if (kReleaseMode) {
+      return;
+    }
+
+    debugPrint('[ApiClient] $method $path failed: $error');
+  }
+
+  String _debugBody(Object? rawBody) {
+    if (rawBody == null) {
+      return 'null';
+    }
+    if (rawBody is Map<String, dynamic>) {
+      final sanitized = Map<String, dynamic>.from(rawBody)
+        ..remove('token')
+        ..remove('password')
+        ..remove('contrasena');
+      return sanitized.toString();
+    }
+    return rawBody.toString();
   }
 
   Future<void> _queueIfOffline({

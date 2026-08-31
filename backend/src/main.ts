@@ -1,4 +1,4 @@
-import { ValidationPipe } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
@@ -10,6 +10,7 @@ import 'reflect-metadata';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
+  const requestLogger = new Logger('HTTP');
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bodyParser: false,
   });
@@ -42,10 +43,17 @@ async function bootstrap() {
 
   app.use((request: Request, response: Response, next: NextFunction) => {
     const requestId = randomUUID();
+    const startedAt = Date.now();
     response.setHeader('X-Request-ID', requestId);
     response.setHeader('Cache-Control', 'no-store, max-age=0');
     response.setHeader('Pragma', 'no-cache');
     response.setHeader('Expires', '0');
+
+    response.on('finish', () => {
+      requestLogger.log(
+        `${request.method} ${request.originalUrl} ${response.statusCode} ${Date.now() - startedAt}ms requestId=${requestId}`,
+      );
+    });
 
     if (enforceHttps && !request.secure) {
       response.status(426).json({
@@ -115,7 +123,6 @@ async function bootstrap() {
   server.keepAliveTimeout = 5_000;
   server.requestTimeout = 60_000;
   server.maxRequestsPerSocket = 1_000;
-
 }
 
 void bootstrap();

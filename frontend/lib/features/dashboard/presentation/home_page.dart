@@ -2168,6 +2168,9 @@ class _HomePageState extends State<HomePage> {
     final String contrasena = _loginContrasenaController.text;
 
     if (usuario.length < 3 || contrasena.length < 8) {
+      debugPrint(
+        '[Login] Validacion local bloqueada: usuarioLength=${usuario.length} contrasenaLength=${contrasena.length}',
+      );
       setState(() {
         _error = 'Ingresa usuario y contrasena validos';
       });
@@ -2180,6 +2183,7 @@ class _HomePageState extends State<HomePage> {
     });
 
     try {
+      debugPrint('[Login] Enviando POST /auth/login');
       final Sesion sesion = Sesion.fromJson(
         await _apiClient.postObject('/auth/login', <String, dynamic>{
           'usuario': usuario,
@@ -2189,7 +2193,6 @@ class _HomePageState extends State<HomePage> {
 
       _apiClient.setAuthToken(sesion.token);
       await _guardarSesionLocal(sesion);
-
       if (!mounted) {
         return;
       }
@@ -2210,7 +2213,9 @@ class _HomePageState extends State<HomePage> {
       await _cargar();
     } catch (error) {
       if (mounted) {
-        setState(() => _error = _mensajeError(error));
+        final String mensaje = _mensajeError(error);
+        debugPrint('[Login] Error: $mensaje detalle=$error');
+        setState(() => _error = mensaje);
       }
     } finally {
       if (mounted) {
@@ -7698,6 +7703,9 @@ class _HomePageState extends State<HomePage> {
     }
     if (error is FormatException) {
       return error.message;
+    }
+    if (error is TimeoutException) {
+      return 'La API no respondio a tiempo. Verifica el backend y la conexion del celular.';
     }
     final String detalle = error.toString().toLowerCase();
     if (detalle.contains('connection refused') ||

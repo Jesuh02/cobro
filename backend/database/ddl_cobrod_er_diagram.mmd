@@ -223,6 +223,22 @@ erDiagram
     BIGINT sca_id FK
   }
 
+  TBL_NOTIFICACIONES {
+    BIGINT id_not PK
+    BIGINT org_id FK
+    BIGINT cli_id FK
+    BIGINT cre_id FK
+    BIGINT pag_id FK
+    ENUM not_tipo
+    ENUM not_canal
+    ENUM not_estado
+    VARCHAR not_destinatario
+    VARCHAR not_referencia_externa
+    TEXT not_error
+    TIMESTAMPTZ not_creacion
+    TIMESTAMPTZ not_envio
+  }
+
   TBL_PERSONAS ||--o| TBL_USUARIOS : persona_id
   TBL_PERSONAS ||--o{ TBL_CLIENTES : cli_persona
 
@@ -239,6 +255,7 @@ erDiagram
   TBL_ORGANIZACIONES ||--o{ TBL_CAJAS : org_id
   TBL_ORGANIZACIONES ||--o{ TBL_MEDIOS_PAGOS : org_id
   TBL_ORGANIZACIONES ||--o{ TBL_MOVIMIENTOS_CAJAS : org_id
+  TBL_ORGANIZACIONES ||--o{ TBL_NOTIFICACIONES : org_id
 
   TBL_MONEDAS ||--o{ TBL_CAJAS : mon_id
   TBL_MONEDAS ||--o{ TBL_CREDITOS : mon_id
@@ -254,13 +271,16 @@ erDiagram
   TBL_CLIENTES ||--o{ TBL_RUTAS_CLIENTES : cli_id
 
   TBL_CLIENTES ||--o{ TBL_CREDITOS : cli_id
+  TBL_CLIENTES ||--o{ TBL_NOTIFICACIONES : cli_id
   TBL_PRODUCTOS_CREDITOS ||--o{ TBL_CREDITOS : pcr_id
   TBL_CREDITOS ||--o{ TBL_CUOTAS : cre_id
   TBL_CREDITOS ||--o{ TBL_PAGOS : cre_id
+  TBL_CREDITOS ||--o{ TBL_NOTIFICACIONES : cre_id
 
   TBL_CUOTAS ||--o{ TBL_CUOTAS_PAGOS : cuo_id
   TBL_PAGOS ||--o{ TBL_CUOTAS_PAGOS : pagos_id
   TBL_MEDIOS_PAGOS ||--o{ TBL_PAGOS : med_id
+  TBL_PAGOS ||--o{ TBL_NOTIFICACIONES : pag_id
 
   TBL_CAJAS ||--o{ TBL_GASTOS : caj_id
   TBL_CATEGORIAS_GASTOS ||--o{ TBL_GASTOS : cga_id

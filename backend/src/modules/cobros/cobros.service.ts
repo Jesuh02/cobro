@@ -4441,9 +4441,9 @@ export class CobrosService {
       WHERE pa.id_pag = ${pagoId}::bigint
         AND cl.org_id = ${scope.organizacionId}::bigint
         AND ${
-          this.esAdministrador(usuario)
+          this.puedeVerDatosOrganizacion(usuario)
             ? Prisma.sql`TRUE`
-            : Prisma.sql`tu.usu_usuario = ${usuario.usuario}`
+            : Prisma.sql`tu.id_usu = ${scope.usuarioId}::bigint`
         }
       LIMIT 1
     `);
@@ -6025,6 +6025,7 @@ export class CobrosService {
 
   private async obtenerCatalogosTbl(usuario: AuthenticatedUser) {
     const scope = await this.obtenerScopeOrganizacionTbl(usuario);
+    const puedeVerTodo = this.puedeVerDatosOrganizacion(usuario);
     const [monedas, catalogos, rutas, cajasMenores, usuarios] =
       await Promise.all([
         this.obtenerMonedasTbl(),
@@ -6134,16 +6135,27 @@ export class CobrosService {
           FROM public.tbl_cajas c
           LEFT JOIN LATERAL (
             SELECT tu.id_usu
-            FROM public.tbl_usuarios_organizaciones uo
-            JOIN public.tbl_usuarios tu ON tu.id_usu = uo.usu_id
-            WHERE uo.org_id = ${scope.organizacionId}::bigint
-              AND uo.org_id = c.org_id
-              AND uo.urg_activo
-            ORDER BY tu.id_usu ASC
+            FROM public.tbl_sesiones_cajas sc
+            JOIN public.tbl_usuarios tu ON tu.id_usu = sc.usu_id
+            WHERE sc.caj_id = c.id_caj
+            ORDER BY
+              (sc.sca_estado::text = 'ABIERTA') DESC,
+              sc.sca_fecha_apertura DESC,
+              sc.id_sca DESC
             LIMIT 1
           ) u ON TRUE
           WHERE c.caj_tipo::text = 'MENOR'
             AND c.org_id = ${scope.organizacionId}::bigint
+            AND ${
+              puedeVerTodo
+                ? Prisma.sql`TRUE`
+                : Prisma.sql`EXISTS (
+                    SELECT 1
+                    FROM public.tbl_sesiones_cajas sc_acl
+                    WHERE sc_acl.caj_id = c.id_caj
+                      AND sc_acl.usu_id = ${scope.usuarioId}::bigint
+                  )`
+            }
           ORDER BY c.caj_activa DESC, c.caj_nombre ASC
         `),
         this.prisma.$queryRaw<UsuarioTblRow[]>(Prisma.sql`
@@ -6161,6 +6173,11 @@ export class CobrosService {
            AND uo.urg_activo
            AND uo.org_id = ${scope.organizacionId}::bigint
           WHERE tu.usu_activo
+            AND ${
+              puedeVerTodo
+                ? Prisma.sql`TRUE`
+                : Prisma.sql`tu.id_usu = ${scope.usuarioId}::bigint`
+            }
           ORDER BY p.per_primer_nombre ASC, p.per_apellido ASC
         `),
       ]);
@@ -6275,6 +6292,18 @@ export class CobrosService {
     const conditions: Prisma.Sql[] = [
       Prisma.sql`c.org_id = ${scope.organizacionId}::bigint`,
     ];
+
+    if (!this.puedeVerDatosOrganizacion(usuario)) {
+      conditions.push(Prisma.sql`EXISTS (
+        SELECT 1
+        FROM public.tbl_rutas_clientes rc_acl
+        JOIN public.tbl_rutas r_acl ON r_acl.id_rut = rc_acl.rut_id
+        WHERE rc_acl.cli_id = c.id_cli
+          AND rc_acl.rcl_activo
+          AND r_acl.org_id = c.org_id
+          AND r_acl.usu_id = ${scope.usuarioId}::bigint
+      )`);
+    }
 
     if (search) {
       const pattern = `%${search}%`;
@@ -6395,6 +6424,21 @@ export class CobrosService {
             RETURNING id_cli::text AS id
           `,
         );
+
+        const rutaId = await this.obtenerOCrearRutaCreditoTbl(
+          tx,
+          undefined,
+          scope.organizacionId,
+          scope.usuarioId,
+          usuario.usuario,
+        );
+
+        await tx.$executeRaw(Prisma.sql`
+          INSERT INTO public.tbl_rutas_clientes (rut_id, cli_id)
+          VALUES (${rutaId}::bigint, ${cliente.id}::bigint)
+          ON CONFLICT (rut_id, cli_id) DO UPDATE
+          SET rcl_activo = TRUE
+        `);
 
         await this.registrarAuditoria(tx, {
           usuarioId: usuario.usuarioId,
@@ -6750,9 +6794,9 @@ export class CobrosService {
         AND cr.usu_id = r.usu_id
       WHERE r.org_id = ${scope.organizacionId}::bigint
         AND ${
-          this.esAdministrador(usuario)
+          this.puedeVerDatosOrganizacion(usuario)
             ? Prisma.sql`TRUE`
-            : Prisma.sql`tu.usu_usuario = ${usuario.usuario}`
+            : Prisma.sql`tu.id_usu = ${scope.usuarioId}::bigint`
         }
       GROUP BY r.id_rut, tu.id_usu, p.id_per
       ORDER BY r.rut_activa DESC, r.rut_nombre ASC
@@ -6792,8 +6836,8 @@ export class CobrosService {
       Prisma.sql`UPPER(cr.cre_estado::text) <> 'ANULADO'`,
     ];
 
-    if (!this.esAdministrador(usuario)) {
-      conditions.push(Prisma.sql`tu.usu_usuario = ${usuario.usuario}`);
+    if (!this.puedeVerDatosOrganizacion(usuario)) {
+      conditions.push(Prisma.sql`tu.id_usu = ${scope.usuarioId}::bigint`);
     }
 
     if (query.rutaId) {
@@ -6960,8 +7004,8 @@ export class CobrosService {
       Prisma.sql`cl.org_id = ${scope.organizacionId}::bigint`,
     ];
 
-    if (!this.esAdministrador(usuario)) {
-      conditions.push(Prisma.sql`tu.usu_usuario = ${usuario.usuario}`);
+    if (!this.puedeVerDatosOrganizacion(usuario)) {
+      conditions.push(Prisma.sql`tu.id_usu = ${scope.usuarioId}::bigint`);
     }
 
     if (query.rutaId) {
@@ -7146,8 +7190,8 @@ export class CobrosService {
     ];
     const fechaConditions: Prisma.Sql[] = [Prisma.sql`1 = 1`];
 
-    if (!this.esAdministrador(usuario)) {
-      conditions.push(Prisma.sql`tu.usu_usuario = ${usuario.usuario}`);
+    if (!this.puedeVerDatosOrganizacion(usuario)) {
+      conditions.push(Prisma.sql`tu.id_usu = ${scope.usuarioId}::bigint`);
     }
 
     if (query.rutaId) {
@@ -7473,8 +7517,8 @@ export class CobrosService {
       conditions.push(Prisma.sql`caja_menor_id = ${query.cajaMenorId}`);
     }
 
-    if (!this.esAdministrador(usuario)) {
-      conditions.push(Prisma.sql`usuario = ${usuario.usuario}`);
+    if (!this.puedeVerDatosOrganizacion(usuario)) {
+      conditions.push(Prisma.sql`usuario_id = ${scope.usuarioId}`);
     }
 
     if (search) {
@@ -7730,6 +7774,7 @@ export class CobrosService {
     usuario: AuthenticatedUser,
   ) {
     const scope = await this.obtenerScopeOrganizacionTbl(usuario);
+    const puedeVerTodo = this.puedeVerDatosOrganizacion(usuario);
     const search = this.normalizarTextoOpcional(query.search);
     const fechaDesde = query.fechaDesde
       ? this.parsearFecha(query.fechaDesde, 'fechaDesde')
@@ -7756,6 +7801,15 @@ export class CobrosService {
 
     if (query.cajaMenorId) {
       condicionesCajas.push(Prisma.sql`c.id_caj::text = ${query.cajaMenorId}`);
+    }
+
+    if (!puedeVerTodo) {
+      condicionesCajas.push(Prisma.sql`EXISTS (
+        SELECT 1
+        FROM public.tbl_sesiones_cajas sc_acl
+        WHERE sc_acl.caj_id = c.id_caj
+          AND sc_acl.usu_id = ${scope.usuarioId}::bigint
+      )`);
     }
 
     if (search) {
@@ -7788,6 +7842,18 @@ export class CobrosService {
     const fechaSaldoMovimientosWhere = fechaDesde
       ? Prisma.sql`AND m.mca_creacion < ${fechaDesdeColombia}`
       : Prisma.empty;
+    const usuarioMovimientosWhere = puedeVerTodo
+      ? Prisma.empty
+      : Prisma.sql`AND m.usu_id = ${scope.usuarioId}::bigint`;
+    const usuarioPagosWhere = puedeVerTodo
+      ? Prisma.empty
+      : Prisma.sql`AND cr.usu_id = ${scope.usuarioId}::bigint`;
+    const usuarioGastosWhere = puedeVerTodo
+      ? Prisma.empty
+      : Prisma.sql`AND g.usu_id = ${scope.usuarioId}::bigint`;
+    const usuarioCreditosWhere = puedeVerTodo
+      ? Prisma.empty
+      : Prisma.sql`AND cr.usu_id = ${scope.usuarioId}::bigint`;
     const fechaPagosWhere =
       filtrosFechaPagos.length > 0
         ? Prisma.sql`AND ${Prisma.join(filtrosFechaPagos, ' AND ')}`
@@ -7807,7 +7873,11 @@ export class CobrosService {
           c.id_caj,
           c.caj_nombre,
           c.org_id,
-          COALESCE(tu.id_usu, responsable.id_usu) AS responsable_id
+          ${
+            puedeVerTodo
+              ? Prisma.sql`COALESCE(tu.id_usu, responsable.id_usu)`
+              : Prisma.sql`${scope.usuarioId}::bigint`
+          } AS responsable_id
         FROM public.tbl_cajas c
         LEFT JOIN LATERAL (
           SELECT tu.id_usu
@@ -7850,18 +7920,21 @@ export class CobrosService {
         LEFT JOIN public.tbl_movimientos_cajas m
           ON m.sca_id = sc.id_sca
           ${fechaSaldoMovimientosWhere}
+          ${usuarioMovimientosWhere}
         LEFT JOIN LATERAL (
           SELECT SUM(pa.pag_monto) AS recaudado
           FROM public.tbl_pagos pa
           JOIN public.tbl_creditos cr ON cr.id_cre = pa.cre_id
           JOIN public.tbl_clientes cl ON cl.id_cli = cr.cli_id
           WHERE cl.org_id = c.org_id
+            ${usuarioPagosWhere}
             ${fechaPagosWhere}
         ) pagos ON TRUE
         LEFT JOIN LATERAL (
           SELECT SUM(g.gas_monto) AS gastos
           FROM public.tbl_gastos g
           WHERE g.caj_id = c.id_caj
+            ${usuarioGastosWhere}
             ${fechaGastosWhere}
         ) gastos ON TRUE
         LEFT JOIN LATERAL (
@@ -7870,18 +7943,10 @@ export class CobrosService {
           JOIN public.tbl_clientes cl ON cl.id_cli = cr.cli_id
           WHERE cl.org_id = c.org_id
             AND UPPER(cr.cre_estado::text) NOT IN ('ANULADO')
+            ${usuarioCreditosWhere}
             ${fechaCreditosWhere}
         ) creditos ON TRUE
-        WHERE ${
-          this.puedeVerDatosOrganizacion(usuario)
-            ? Prisma.sql`TRUE`
-            : Prisma.sql`EXISTS (
-                SELECT 1
-                FROM public.tbl_usuarios u
-                WHERE u.id_usu = c.responsable_id
-                  AND u.usu_usuario = ${usuario.usuario}
-              )`
-        }
+        WHERE TRUE
         GROUP BY c.id_caj, c.caj_nombre, c.responsable_id, pagos.recaudado, gastos.gastos, creditos.creditos
       )
       SELECT
@@ -7947,9 +8012,9 @@ export class CobrosService {
           WHERE cr.id_cre = ${creditoId}::bigint
             AND cl.org_id = ${scope.organizacionId}::bigint
             AND ${
-              this.esAdministrador(usuario)
+              this.puedeVerDatosOrganizacion(usuario)
                 ? Prisma.sql`TRUE`
-                : Prisma.sql`tu.usu_usuario = ${usuario.usuario}`
+                : Prisma.sql`tu.id_usu = ${scope.usuarioId}::bigint`
             }
         ) AS existe
       `,
@@ -9274,11 +9339,7 @@ export class CobrosService {
   }
 
   private puedeVerDatosOrganizacion(usuario: AuthenticatedUser) {
-    return (
-      this.esAdministrador(usuario) ||
-      usuario.roles.includes('COBRADOR') ||
-      usuario.roles.includes('AUDITOR')
-    );
+    return this.esAdministrador(usuario) || usuario.roles.includes('AUDITOR');
   }
 
   private esAdministrador(usuario: AuthenticatedUser) {

@@ -47,6 +47,43 @@ describe('CobrosService organization scope', () => {
     expect(sqlText(rutasQuery[0])).toContain('r.org_id =');
     expect(sqlValues(rutasQuery[0])).toContain('10');
   });
+
+  it('limits tbl clients to routes assigned to the authenticated collector', async () => {
+    const queryRaw = jest
+      .fn<Promise<unknown[]>, [unknown]>()
+      .mockResolvedValueOnce([{ usuario_id: '7', organizacion_id: '10' }])
+      .mockResolvedValueOnce([]);
+    const service = createService(queryRaw);
+
+    await servicePrivate(service).listarClientesTbl(
+      {},
+      usuarioOrganizacion('10', ['COBRADOR']),
+    );
+
+    const [, clientesQuery] = queryRaw.mock.calls;
+    const text = sqlText(clientesQuery[0]);
+    const values = sqlValues(clientesQuery[0]);
+    expect(text).toContain('public.tbl_rutas_clientes rc_acl');
+    expect(text).toContain('r_acl.usu_id =');
+    expect(values).toContain('7');
+    expect(values).toContain('10');
+  });
+
+  it('allows auditors to see all tbl routes in their organization', async () => {
+    const queryRaw = jest
+      .fn<Promise<unknown[]>, [unknown]>()
+      .mockResolvedValueOnce([{ usuario_id: '7', organizacion_id: '10' }])
+      .mockResolvedValueOnce([]);
+    const service = createService(queryRaw);
+
+    await servicePrivate(service).listarRutasTbl(
+      usuarioOrganizacion('10', ['AUDITOR']),
+    );
+
+    const [, rutasQuery] = queryRaw.mock.calls;
+    expect(sqlText(rutasQuery[0])).toContain('r.org_id =');
+    expect(sqlValues(rutasQuery[0])).toEqual(['10']);
+  });
 });
 
 type QueryRawMock = jest.Mock<Promise<unknown[]>, [unknown]>;
@@ -67,12 +104,15 @@ function servicePrivate(service: CobrosService) {
   };
 }
 
-function usuarioOrganizacion(organizacionId: string) {
+function usuarioOrganizacion(
+  organizacionId: string,
+  roles: string[] = ['ADMINISTRADOR'],
+) {
   return {
     usuarioId: '7',
     usuario: 'admin',
     organizacionId,
-    roles: ['ADMINISTRADOR'],
+    roles,
     permisos: [],
   };
 }

@@ -2262,29 +2262,16 @@ class _HomePageState extends State<HomePage> {
       return false;
     }
 
-    final Map<String, String>? datos = await _pedirDatosUsuario(
+    final bool? creado = await _pedirDatosUsuario(
       titulo: 'Crear empleado',
       accion: 'Crear empleado',
     );
 
-    if (datos == null) {
-      return false;
-    }
-
-    final bool guardado = await _ejecutarAccion(() async {
-      await _apiClient.postObject(
-        '/usuarios',
-        <String, dynamic>{...datos},
-        queueOffline: true,
-      );
-      await _cargar();
-    });
-
-    if (guardado) {
+    if (creado ?? false) {
       _mostrarMensaje('Empleado creado');
     }
 
-    return guardado;
+    return creado ?? false;
   }
 
   Future<EmpleadoGestion?> _modificarEmpleadoGestion(
@@ -2312,11 +2299,11 @@ class _HomePageState extends State<HomePage> {
     return EmpleadoGestion.fromJson(respuesta);
   }
 
-  Future<Map<String, String>?> _pedirDatosUsuario({
+  Future<bool?> _pedirDatosUsuario({
     required String titulo,
     required String accion,
   }) {
-    return showDialog<Map<String, String>>(
+    return showDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) {
         final TextEditingController nombreController = TextEditingController();
@@ -2325,6 +2312,7 @@ class _HomePageState extends State<HomePage> {
             TextEditingController();
         final TextEditingController correoController = TextEditingController();
         bool mostrarContrasena = false;
+        bool guardandoDialog = false;
 
         return StatefulBuilder(
           builder: (BuildContext context, StateSetter setDialogState) =>
@@ -2389,46 +2377,84 @@ class _HomePageState extends State<HomePage> {
             ),
             actions: <Widget>[
               TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(),
+                onPressed: guardandoDialog
+                    ? null
+                    : () => Navigator.of(dialogContext).pop(false),
                 child: const Text('Cancelar'),
               ),
               FilledButton.icon(
-                onPressed: () {
-                  final String nombre = nombreController.text.trim();
-                  final String nombreUsuario =
-                      usuarioController.text.trim().toLowerCase();
-                  final String correo = correoController.text.trim();
-                  final String contrasena = contrasenaController.text;
+                onPressed: guardandoDialog
+                    ? null
+                    : () async {
+                        final String nombre = nombreController.text.trim();
+                        final String nombreUsuario =
+                            usuarioController.text.trim().toLowerCase();
+                        final String correo = correoController.text.trim();
+                        final String contrasena = contrasenaController.text;
 
-                  if (nombre.length < 3) {
-                    _mostrarMensaje('El nombre debe tener minimo 3 caracteres');
-                    return;
-                  }
-                  if (nombreUsuario.length < 3) {
-                    _mostrarMensaje(
-                      'El usuario debe tener minimo 3 caracteres',
-                    );
-                    return;
-                  }
-                  if (!correo.contains('@')) {
-                    _mostrarMensaje('Ingresa un correo valido');
-                    return;
-                  }
-                  if (contrasena.length < 12) {
-                    _mostrarMensaje(
-                      'La contrasena debe tener minimo 12 caracteres',
-                    );
-                    return;
-                  }
+                        if (nombre.length < 3) {
+                          _mostrarMensaje(
+                            'El nombre debe tener minimo 3 caracteres',
+                          );
+                          return;
+                        }
+                        if (nombreUsuario.length < 3) {
+                          _mostrarMensaje(
+                            'El usuario debe tener minimo 3 caracteres',
+                          );
+                          return;
+                        }
+                        if (!correo.contains('@')) {
+                          _mostrarMensaje('Ingresa un correo valido');
+                          return;
+                        }
+                        if (contrasena.length < 12) {
+                          _mostrarMensaje(
+                            'La contrasena debe tener minimo 12 caracteres',
+                          );
+                          return;
+                        }
 
-                  Navigator.of(dialogContext).pop(<String, String>{
-                    'nombreCompleto': nombre,
-                    'usuario': nombreUsuario,
-                    'correo': correo,
-                    'contrasena': contrasena,
-                  });
-                },
-                icon: const Icon(Icons.check_rounded),
+                        setDialogState(() => guardandoDialog = true);
+                        if (mounted) {
+                          setState(() => _guardando = true);
+                        }
+
+                        try {
+                          await _apiClient.postObject(
+                            '/usuarios',
+                            <String, dynamic>{
+                              'nombreCompleto': nombre,
+                              'usuario': nombreUsuario,
+                              'correo': correo,
+                              'contrasena': contrasena,
+                            },
+                            queueOffline: true,
+                          );
+                          await _cargar();
+
+                          if (!dialogContext.mounted) {
+                            return;
+                          }
+
+                          Navigator.of(dialogContext).pop(true);
+                        } catch (error) {
+                          if (dialogContext.mounted) {
+                            _mostrarMensaje(_mensajeError(error));
+                            setDialogState(() => guardandoDialog = false);
+                          }
+                        } finally {
+                          if (mounted) {
+                            setState(() => _guardando = false);
+                          }
+                        }
+                      },
+                icon: guardandoDialog
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2.4),
+                      )
+                    : const Icon(Icons.check_rounded),
                 label: Text(accion),
               ),
             ],

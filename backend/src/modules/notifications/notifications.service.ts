@@ -4,7 +4,10 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { EmailNotificationService } from './email-notification.service';
 import { NotificationTemplatesService } from './notification-templates.service';
-import { CustomerNotification, NotificationContact } from './notification.types';
+import {
+  CustomerNotification,
+  NotificationContact,
+} from './notification.types';
 import { WhatsappNotificationService } from './whatsapp-notification.service';
 
 @Injectable()
@@ -56,7 +59,11 @@ export class NotificationsService {
         orgId: String(credit.org_id),
         cliId: String(credit.id_cli),
         creId: String(credit.id_cre),
-        contact: this.contact(credit.nombre, credit.per_email, credit.per_num_celular),
+        contact: this.contact(
+          credit.nombre,
+          credit.per_email,
+          credit.per_num_celular,
+        ),
         monedaCodigo: credit.mon_codigo,
         valorPrincipal: this.number(credit.cre_total),
         valorTotal: this.number(credit.cre_total_pagar),
@@ -90,10 +97,14 @@ export class NotificationsService {
           per.per_num_celular
         FROM tbl_pagos p
         JOIN tbl_monedas m ON m.id_mon = p.mon_id
-        JOIN tbl_creditos c ON c.id_cre = p.cre_id
+        JOIN tbl_cuotas_pagos cp_pago ON cp_pago.pagos_id = p.id_pag
+        JOIN tbl_cuotas cu_pago ON cu_pago.id_cuo = cp_pago.cuo_id
+        JOIN tbl_creditos c ON c.id_cre = cu_pago.cre_id
         JOIN tbl_clientes cli ON cli.id_cli = c.cli_id
         JOIN tbl_personas per ON per.id_per = cli.cli_persona
         WHERE p.id_pag = ${BigInt(paymentId)}
+        ORDER BY c.id_cre
+        LIMIT 1
       `;
 
       if (!payment) {
@@ -120,10 +131,14 @@ export class NotificationsService {
           balance: this.round(this.number(installment.saldo_pendiente)),
         }))
         .filter((item) => item.balance > 0);
-        
+
       const next = pending[0] ?? null;
-      const contact = this.contact(payment.nombre, payment.per_email, payment.per_num_celular);
-      
+      const contact = this.contact(
+        payment.nombre,
+        payment.per_email,
+        payment.per_num_celular,
+      );
+
       const paymentNotification: CustomerNotification = {
         kind: 'pago_recibido',
         eventId: String(payment.id_pag),
@@ -240,9 +255,8 @@ export class NotificationsService {
       );
     }
 
-
     const results = await Promise.allSettled(jobs);
-    
+
     if (this.isPersistableNotification(notification)) {
       // Guardar el registro en la base de datos
       for (const result of results) {
@@ -252,7 +266,9 @@ export class NotificationsService {
             : 'WHATSAPP';
         const estado = result.status === 'fulfilled' ? 'ENVIADA' : 'FALLIDA';
         const errorMsg =
-          result.status === 'rejected' ? this.errorMessage(result.reason) : null;
+          result.status === 'rejected'
+            ? this.errorMessage(result.reason)
+            : null;
         const destinatario =
           canal === 'CORREO'
             ? notification.contact.correo
@@ -289,7 +305,6 @@ export class NotificationsService {
     }
 
     results.forEach((result) => {
-
       if (result.status === 'rejected') {
         this.logger.error(
           `Fallo el envio de ${notification.kind}: ${this.errorMessage(result.reason)}`,
@@ -298,7 +313,11 @@ export class NotificationsService {
     });
   }
 
-  private contact(nombre: string, correo: string | null, telefono: string | null): NotificationContact {
+  private contact(
+    nombre: string,
+    correo: string | null,
+    telefono: string | null,
+  ): NotificationContact {
     return {
       nombre: nombre,
       correo: this.normalizeEmail(correo),

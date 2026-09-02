@@ -19,6 +19,8 @@ erDiagram
     VARCHAR per_num_celular
     VARCHAR per_email
     TIMESTAMPTZ per_creacion
+    NUMERIC per_latitud
+    NUMERIC per_longitud
   }
 
   TBL_USUARIOS {
@@ -57,6 +59,12 @@ erDiagram
     VARCHAR org_telefono
     VARCHAR org_email UK
     BOOLEAN org_activo
+    NUMERIC org_monto_plan
+    CHAR org_moneda_plan
+    DATE org_acceso_hasta
+    TIMESTAMPTZ org_suspendida_en
+    VARCHAR org_motivo_suspension
+    BOOLEAN org_es_sistema
     TIMESTAMPTZ org_creacion
   }
 
@@ -70,7 +78,7 @@ erDiagram
 
   TBL_CLIENTES {
     BIGINT id_cli PK
-    VARCHAR cli_referencia UK
+    VARCHAR cli_referencia
     BOOLEAN cli_activo
     TIMESTAMPTZ cli_creacion
     BIGINT org_id FK
@@ -79,7 +87,7 @@ erDiagram
 
   TBL_RUTAS {
     BIGINT id_rut PK
-    VARCHAR rut_nombre UK
+    VARCHAR rut_nombre
     VARCHAR rut_descripcion
     BOOLEAN rut_activa
     TIMESTAMPTZ rut_creacion
@@ -97,7 +105,7 @@ erDiagram
 
   TBL_PRODUCTOS_CREDITOS {
     BIGINT id_pcr PK
-    VARCHAR pcr_nombre UK
+    VARCHAR pcr_nombre
     ENUM pcr_frecuencia
     NUMERIC pcr_tasa_interes
     BIGINT org_id FK
@@ -120,7 +128,7 @@ erDiagram
 
   TBL_CUOTAS {
     BIGINT id_cuo PK
-    BIGINT cuo_numero UK
+    BIGINT cuo_numero
     NUMERIC cuo_valor
     NUMERIC cuo_total_pagado
     ENUM cuo_estado
@@ -130,10 +138,10 @@ erDiagram
 
   TBL_MEDIOS_PAGOS {
     BIGINT id_med PK
-    VARCHAR med_nombre UK
+    VARCHAR med_nombre
     ENUM med_tipo
     VARCHAR med_proveedor
-    VARCHAR med_referencia_cuenta UK
+    VARCHAR med_referencia_cuenta
     VARCHAR med_titular
     BOOLEAN med_activo
     TIMESTAMPTZ med_creacion
@@ -149,7 +157,6 @@ erDiagram
     UUID pag_idempotency_llave UK
     ENUM pag_estado
     BIGINT med_id FK
-    BIGINT cre_id FK
     BIGINT mon_id FK
   }
 
@@ -181,7 +188,7 @@ erDiagram
 
   TBL_CAJAS {
     BIGINT id_caj PK
-    VARCHAR caj_nombre UK
+    VARCHAR caj_nombre
     ENUM caj_tipo
     BOOLEAN caj_activa
     TIMESTAMPTZ caj_creacion
@@ -206,7 +213,7 @@ erDiagram
     NUMERIC sca_monto_inicial
     NUMERIC sca_total_cobrado
     NUMERIC sca_total_gasto
-    ENUM sca_estado UK
+    ENUM sca_estado
     BIGINT caj_id FK
     BIGINT usu_id FK
   }
@@ -239,6 +246,30 @@ erDiagram
     TIMESTAMPTZ not_envio
   }
 
+  TBL_WOMPI_TRANSACCIONES {
+    BIGINT id_wtr PK
+    BIGINT org_id FK
+    BIGINT pag_id FK
+    BIGINT mon_id FK
+    ENUM wtr_tipo_pago
+    ENUM wtr_estado
+    NUMERIC wtr_monto
+    BIGINT wtr_monto_centavos
+    VARCHAR wtr_referencia UK
+    VARCHAR wtr_wompi_transaction_id UK
+    VARCHAR wtr_metodo_pago
+    INET wtr_ip_cliente
+    TEXT wtr_user_agent
+    DATE wtr_periodo_inicio
+    DATE wtr_periodo_fin
+    TIMESTAMPTZ wtr_expiracion
+    TIMESTAMPTZ wtr_aprobacion
+    JSONB wtr_respuesta_proveedor
+    JSONB wtr_auditoria
+    TIMESTAMPTZ wtr_creacion
+    TIMESTAMPTZ wtr_actualizacion
+  }
+
   TBL_PERSONAS ||--o| TBL_USUARIOS : persona_id
   TBL_PERSONAS ||--o{ TBL_CLIENTES : cli_persona
 
@@ -256,10 +287,12 @@ erDiagram
   TBL_ORGANIZACIONES ||--o{ TBL_MEDIOS_PAGOS : org_id
   TBL_ORGANIZACIONES ||--o{ TBL_MOVIMIENTOS_CAJAS : org_id
   TBL_ORGANIZACIONES ||--o{ TBL_NOTIFICACIONES : org_id
+  TBL_ORGANIZACIONES ||--o{ TBL_WOMPI_TRANSACCIONES : org_id
 
   TBL_MONEDAS ||--o{ TBL_CAJAS : mon_id
   TBL_MONEDAS ||--o{ TBL_CREDITOS : mon_id
   TBL_MONEDAS ||--o{ TBL_PAGOS : mon_id
+  TBL_MONEDAS ||--o{ TBL_WOMPI_TRANSACCIONES : mon_id
 
   TBL_USUARIOS ||--o{ TBL_RUTAS : usu_id
   TBL_USUARIOS ||--o{ TBL_CREDITOS : usu_id
@@ -274,13 +307,13 @@ erDiagram
   TBL_CLIENTES ||--o{ TBL_NOTIFICACIONES : cli_id
   TBL_PRODUCTOS_CREDITOS ||--o{ TBL_CREDITOS : pcr_id
   TBL_CREDITOS ||--o{ TBL_CUOTAS : cre_id
-  TBL_CREDITOS ||--o{ TBL_PAGOS : cre_id
   TBL_CREDITOS ||--o{ TBL_NOTIFICACIONES : cre_id
 
   TBL_CUOTAS ||--o{ TBL_CUOTAS_PAGOS : cuo_id
   TBL_PAGOS ||--o{ TBL_CUOTAS_PAGOS : pagos_id
   TBL_MEDIOS_PAGOS ||--o{ TBL_PAGOS : med_id
   TBL_PAGOS ||--o{ TBL_NOTIFICACIONES : pag_id
+  TBL_PAGOS ||--o| TBL_WOMPI_TRANSACCIONES : pag_id
 
   TBL_CAJAS ||--o{ TBL_GASTOS : caj_id
   TBL_CATEGORIAS_GASTOS ||--o{ TBL_GASTOS : cga_id

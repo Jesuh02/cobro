@@ -1563,8 +1563,20 @@ export class AuthService {
               BETWEEN (SELECT fecha_inicio FROM parametros)
               AND (SELECT fecha_fin FROM parametros)
           ) AS ultima_actividad
-        FROM public.tbl_pagos p
-        JOIN public.tbl_creditos cr ON cr.id_cre = p.cre_id
+        FROM (
+          SELECT DISTINCT
+            p.id_pag,
+            p.pag_monto,
+            p.pag_fecha,
+            cr.id_cre AS credito_id,
+            cr.usu_id,
+            cr.cli_id
+          FROM public.tbl_pagos p
+          JOIN public.tbl_cuotas_pagos cp ON cp.pagos_id = p.id_pag
+          JOIN public.tbl_cuotas cu ON cu.id_cuo = cp.cuo_id
+          JOIN public.tbl_creditos cr ON cr.id_cre = cu.cre_id
+        ) p
+        JOIN public.tbl_creditos cr ON cr.id_cre = p.credito_id
         JOIN public.tbl_clientes cl ON cl.id_cli = cr.cli_id
         LEFT JOIN LATERAL (
           SELECT r.id_rut AS ruta_id

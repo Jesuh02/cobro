@@ -61,8 +61,8 @@ model Recurso {
 }
 
 model RolRecurso {
-  rolId     Int      @map("rol_id") @db.SmallInt
-  recursoId Int      @map("recurso_id") @db.SmallInt
+  rolId      Int      @map("rol_id") @db.SmallInt
+  recursoId  Int      @map("recurso_id") @db.SmallInt
   asignadoEn DateTime @default(now()) @map("asignado_en") @db.Timestamptz(6)
 
   rol     Rol     @relation(fields: [rolId], references: [rolId], onDelete: Cascade)
@@ -681,18 +681,18 @@ model TblRolRecurso {
 }
 
 model TblOrganizacion {
-  idOrg             BigInt    @id @default(autoincrement()) @map("id_org")
-  nombre            String    @unique @map("org_nombre")
-  telefono          String?   @map("org_telefono")
-  email             String?   @map("org_email")
-  activo            Boolean   @default(true) @map("org_activo")
-  montoPlan         Decimal   @default(0) @map("org_monto_plan")
-  monedaPlan        String    @default("COP") @map("org_moneda_plan") @db.Char(3)
-  accesoHasta       DateTime? @map("org_acceso_hasta") @db.Date
-  suspendidaEn      DateTime? @map("org_suspendida_en") @db.Timestamptz(6)
-  motivoSuspension  String?   @map("org_motivo_suspension")
-  esSistema         Boolean   @default(false) @map("org_es_sistema")
-  creacion          DateTime  @default(now()) @map("org_creacion") @db.Timestamptz(6)
+  idOrg            BigInt    @id @default(autoincrement()) @map("id_org")
+  nombre           String    @unique @map("org_nombre")
+  telefono         String?   @map("org_telefono")
+  email            String?   @map("org_email")
+  activo           Boolean   @default(true) @map("org_activo")
+  montoPlan        Decimal   @default(0) @map("org_monto_plan")
+  monedaPlan       String    @default("COP") @map("org_moneda_plan") @db.Char(3)
+  accesoHasta      DateTime? @map("org_acceso_hasta") @db.Date
+  suspendidaEn     DateTime? @map("org_suspendida_en") @db.Timestamptz(6)
+  motivoSuspension String?   @map("org_motivo_suspension")
+  esSistema        Boolean   @default(false) @map("org_es_sistema")
+  creacion         DateTime  @default(now()) @map("org_creacion") @db.Timestamptz(6)
 
   usuarios         TblUsuarioOrganizacion[]
   clientes         TblCliente[]
@@ -884,7 +884,6 @@ model TblCredito {
   producto TblProductoCredito @relation(fields: [pcrId], references: [idPcr])
   cliente  TblCliente         @relation(fields: [cliId], references: [idCli])
   cuotas   TblCuota[]
-  pagos    TblPago[]
 
   @@map("tbl_creditos")
   @@schema("public")
@@ -933,10 +932,8 @@ model TblPago {
   idempotencyLlave String   @unique @default(dbgenerated("gen_random_uuid()")) @map("pag_idempotency_llave") @db.Uuid
   estado           String   @default("REGISTRADO") @map("pag_estado")
   medId            BigInt   @map("med_id")
-  creId            BigInt   @map("cre_id")
 
   medioPago TblMedioPago   @relation(fields: [medId], references: [idMed])
-  credito   TblCredito     @relation(fields: [creId], references: [idCre])
   cuotas    TblCuotaPago[]
 
   @@map("tbl_pagos")

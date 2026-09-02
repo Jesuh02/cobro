@@ -4165,8 +4165,7 @@ export class CobrosService {
           SELECT pa.id_pag::text AS id
           FROM public.tbl_pagos pa
           JOIN public.tbl_cuotas_pagos cp ON cp.pagos_id = pa.id_pag
-          WHERE pa.cre_id = ${cuota.credito_id}::bigint
-            AND cp.cuo_id = ${dto.creditoCuotaId}::bigint
+          WHERE cp.cuo_id = ${dto.creditoCuotaId}::bigint
             AND pa.pag_monto = ${this.decimal(montoPagado)}
             AND pa.pag_fecha >= ${this.segundosAtras(30)}
           ORDER BY pa.pag_fecha DESC, pa.id_pag DESC
@@ -4242,14 +4241,12 @@ export class CobrosService {
             pag_monto,
             pag_referencia,
             med_id,
-            cre_id,
             mon_id
           )
           VALUES (
             ${this.decimal(montoPagado)},
             ${referenciaPago},
             ${medioPago.id}::bigint,
-            ${cuota.credito_id}::bigint,
             ${cuota.moneda_id}::bigint
           )
           RETURNING id_pag::text AS id
@@ -4423,7 +4420,9 @@ export class CobrosService {
         pa.pag_monto AS total_pagado,
         pa.pag_referencia AS referencia_externa
       FROM public.tbl_pagos pa
-      JOIN public.tbl_creditos cr ON cr.id_cre = pa.cre_id
+      JOIN public.tbl_cuotas_pagos cp_pago ON cp_pago.pagos_id = pa.id_pag
+      JOIN public.tbl_cuotas cu_pago ON cu_pago.id_cuo = cp_pago.cuo_id
+      JOIN public.tbl_creditos cr ON cr.id_cre = cu_pago.cre_id
       JOIN public.tbl_usuarios tu ON tu.id_usu = cr.usu_id
       JOIN public.tbl_clientes cl ON cl.id_cli = cr.cli_id
       JOIN public.tbl_personas p ON p.id_per = cl.cli_persona
@@ -4445,6 +4444,7 @@ export class CobrosService {
             ? Prisma.sql`TRUE`
             : Prisma.sql`tu.id_usu = ${scope.usuarioId}::bigint`
         }
+      ORDER BY cr.id_cre
       LIMIT 1
     `);
     const pago = rows[0];
@@ -6723,7 +6723,9 @@ export class CobrosService {
           COUNT(DISTINCT pa.id_pag)::int AS pagos
         FROM public.tbl_clientes c
         LEFT JOIN public.tbl_creditos cr ON cr.cli_id = c.id_cli
-        LEFT JOIN public.tbl_pagos pa ON pa.cre_id = cr.id_cre
+        LEFT JOIN public.tbl_cuotas cu ON cu.cre_id = cr.id_cre
+        LEFT JOIN public.tbl_cuotas_pagos cp ON cp.cuo_id = cu.id_cuo
+        LEFT JOIN public.tbl_pagos pa ON pa.id_pag = cp.pagos_id
         WHERE c.id_cli::text = ${clienteId}
           AND c.org_id = ${scope.organizacionId}::bigint
       `);
@@ -7088,10 +7090,12 @@ export class CobrosService {
       ),
       pagos_credito AS (
         SELECT
-          pa.cre_id,
+          cu.cre_id,
           MAX((pa.pag_fecha AT TIME ZONE 'America/Bogota')::date) AS fecha_ultimo_pago
         FROM public.tbl_pagos pa
-        GROUP BY pa.cre_id
+        JOIN public.tbl_cuotas_pagos cp ON cp.pagos_id = pa.id_pag
+        JOIN public.tbl_cuotas cu ON cu.id_cuo = cp.cuo_id
+        GROUP BY cu.cre_id
       )
       SELECT
         cr.id_cre::text AS credito_id,
@@ -7248,10 +7252,12 @@ export class CobrosService {
       ),
       pagos_credito AS (
         SELECT
-          pa.cre_id,
+          cu.cre_id,
           MAX((pa.pag_fecha AT TIME ZONE 'America/Bogota')::date) AS fecha_ultimo_pago
         FROM public.tbl_pagos pa
-        GROUP BY pa.cre_id
+        JOIN public.tbl_cuotas_pagos cp ON cp.pagos_id = pa.id_pag
+        JOIN public.tbl_cuotas cu ON cu.id_cuo = cp.cuo_id
+        GROUP BY cu.cre_id
       ),
       creditos_estado AS (
         SELECT
@@ -7613,8 +7619,18 @@ export class CobrosService {
           'pago',
           pa.id_pag::text,
           pa.pag_fecha
-        FROM public.tbl_pagos pa
-        JOIN public.tbl_creditos cr ON cr.id_cre = pa.cre_id
+        FROM (
+          SELECT DISTINCT ON (pa.id_pag)
+            pa.id_pag,
+            pa.pag_fecha,
+            pa.pag_monto,
+            cu.cre_id AS credito_id
+          FROM public.tbl_pagos pa
+          JOIN public.tbl_cuotas_pagos cp ON cp.pagos_id = pa.id_pag
+          JOIN public.tbl_cuotas cu ON cu.id_cuo = cp.cuo_id
+          ORDER BY pa.id_pag, cu.cre_id
+        ) pa
+        JOIN public.tbl_creditos cr ON cr.id_cre = pa.credito_id
         JOIN public.tbl_usuarios tu ON tu.id_usu = cr.usu_id
         JOIN public.tbl_personas up ON up.id_per = tu.persona_id
         JOIN public.tbl_clientes cl ON cl.id_cli = cr.cli_id
@@ -7923,8 +7939,18 @@ export class CobrosService {
           ${usuarioMovimientosWhere}
         LEFT JOIN LATERAL (
           SELECT SUM(pa.pag_monto) AS recaudado
-          FROM public.tbl_pagos pa
-          JOIN public.tbl_creditos cr ON cr.id_cre = pa.cre_id
+          FROM (
+            SELECT DISTINCT ON (pa.id_pag)
+              pa.id_pag,
+              pa.pag_monto,
+              pa.pag_fecha,
+              cu.cre_id AS credito_id
+            FROM public.tbl_pagos pa
+            JOIN public.tbl_cuotas_pagos cp ON cp.pagos_id = pa.id_pag
+            JOIN public.tbl_cuotas cu ON cu.id_cuo = cp.cuo_id
+            ORDER BY pa.id_pag, cu.cre_id
+          ) pa
+          JOIN public.tbl_creditos cr ON cr.id_cre = pa.credito_id
           JOIN public.tbl_clientes cl ON cl.id_cli = cr.cli_id
           WHERE cl.org_id = c.org_id
             ${usuarioPagosWhere}

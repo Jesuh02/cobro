@@ -1124,7 +1124,6 @@ INSERT INTO tbl_categorias_gastos (cga_nombre, cga_descripcion) VALUES
   ('OTRO', 'Otros gastos')
 ON CONFLICT (cga_nombre) DO NOTHING;
 
-COMMIT;
 -- ==============================================================================
 -- TBL_NOTIFICACIONES
 -- ==============================================================================
@@ -1190,3 +1189,5 @@ CREATE INDEX IF NOT EXISTS idx_tbl_notificaciones_org ON tbl_notificaciones (org
 CREATE INDEX IF NOT EXISTS idx_tbl_notificaciones_cli ON tbl_notificaciones (cli_id);
 CREATE INDEX IF NOT EXISTS idx_tbl_notificaciones_cre ON tbl_notificaciones (cre_id);
 CREATE INDEX IF NOT EXISTS idx_tbl_notificaciones_estado ON tbl_notificaciones (not_estado);
+
+COMMIT;

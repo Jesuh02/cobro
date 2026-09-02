@@ -257,17 +257,9 @@ erDiagram
     BIGINT wtr_monto_centavos
     VARCHAR wtr_referencia UK
     VARCHAR wtr_wompi_transaction_id UK
-    VARCHAR wtr_metodo_pago
-    INET wtr_ip_cliente
-    TEXT wtr_user_agent
     DATE wtr_periodo_inicio
     DATE wtr_periodo_fin
-    TIMESTAMPTZ wtr_expiracion
-    TIMESTAMPTZ wtr_aprobacion
-    JSONB wtr_respuesta_proveedor
-    JSONB wtr_auditoria
     TIMESTAMPTZ wtr_creacion
-    TIMESTAMPTZ wtr_actualizacion
   }
 
   TBL_PERSONAS ||--o| TBL_USUARIOS : persona_id

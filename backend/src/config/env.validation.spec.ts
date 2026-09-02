@@ -19,6 +19,19 @@ describe('validateEnv security policy', () => {
     });
   });
 
+  it('accepts a CockroachDB Cloud production configuration', () => {
+    expect(
+      validateEnv({
+        ...productionConfig,
+        DATABASE_URL:
+          'postgresql://cobrod_app:strong-password@aerial-sage-33148.j77.aws-us-east-1.cockroachlabs.cloud:26257/cobrod?sslmode=verify-full',
+      }),
+    ).toMatchObject({
+      DATABASE_URL:
+        'postgresql://cobrod_app:strong-password@aerial-sage-33148.j77.aws-us-east-1.cockroachlabs.cloud:26257/cobrod?sslmode=verify-full',
+    });
+  });
+
   it('rejects wildcard CORS in production', () => {
     expect(() =>
       validateEnv({ ...productionConfig, CORS_ORIGIN: '*' }),
@@ -35,6 +48,16 @@ describe('validateEnv security policy', () => {
     ).toThrow('least-privilege');
   });
 
+  it('rejects CockroachDB root users in production', () => {
+    expect(() =>
+      validateEnv({
+        ...productionConfig,
+        DATABASE_URL:
+          'postgresql://root:password@aerial-sage-33148.j77.aws-us-east-1.cockroachlabs.cloud:26257/cobrod?sslmode=verify-full',
+      }),
+    ).toThrow('least-privilege');
+  });
+
   it('rejects database connections without TLS in production', () => {
     expect(() =>
       validateEnv({
@@ -43,6 +66,16 @@ describe('validateEnv security policy', () => {
           'postgresql://cobro_api:password@db.abcdefghijklmnopqrst.supabase.co:5432/postgres?schema=public',
       }),
     ).toThrow('sslmode=require');
+  });
+
+  it('rejects unsupported database hosts', () => {
+    expect(() =>
+      validateEnv({
+        ...productionConfig,
+        DATABASE_URL:
+          'postgresql://cobro_api:password@db.example.com:5432/postgres?sslmode=require',
+      }),
+    ).toThrow('supported database host');
   });
 
   it('rejects short token secrets in production', () => {

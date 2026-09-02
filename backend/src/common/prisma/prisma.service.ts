@@ -22,7 +22,7 @@ export class PrismaService
       }
 
       this.logger.warn(
-        'No hay conexion inicial con la base de datos; la API iniciara y las consultas responderan 503 hasta que Supabase este disponible.',
+        'No hay conexion inicial con la base de datos; la API iniciara y las consultas responderan 503 hasta que la base configurada este disponible.',
       );
     }
   }

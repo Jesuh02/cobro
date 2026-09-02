@@ -2843,11 +2843,14 @@ export class AuthService {
   private async usarEsquemaTbl() {
     try {
       const rows = await this.prisma.$queryRaw<Array<{ disponible: boolean }>>`
-        SELECT (
-          to_regclass('public.tbl_usuarios') IS NOT NULL
-          AND to_regclass('public.tbl_roles') IS NOT NULL
-          AND to_regclass('public.tbl_usuarios_organizaciones') IS NOT NULL
-        ) AS disponible
+        SELECT COUNT(*) = 3 AS disponible
+        FROM information_schema.tables
+        WHERE table_schema = 'public'
+          AND table_name IN (
+            'tbl_usuarios',
+            'tbl_roles',
+            'tbl_usuarios_organizaciones'
+          )
       `;
 
       return rows[0]?.disponible ?? false;

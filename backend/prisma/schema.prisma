@@ -604,7 +604,7 @@ model PresupuestoPeriodo {
 }
 
 model TblPersona {
-  idPer        BigInt   @id @default(autoincrement()) @map("id_per")
+  idPer        String   @id @default(dbgenerated("gen_random_uuid()")) @map("id_per") @db.Uuid
   primerNombre String   @map("per_primer_nombre")
   apellido     String   @map("per_apellido")
   documento    String   @unique @map("per_documento")
@@ -623,12 +623,12 @@ model TblPersona {
 }
 
 model TblUsuario {
-  idUsu     BigInt   @id @default(autoincrement()) @map("id_usu")
+  idUsu     String   @id @default(dbgenerated("gen_random_uuid()")) @map("id_usu") @db.Uuid
   usuario   String   @unique @map("usu_usuario")
   password  String   @map("usu_password")
   creacion  DateTime @default(now()) @map("usu_creacion") @db.Timestamptz(6)
   activo    Boolean  @default(true) @map("usu_activo")
-  personaId BigInt   @unique @map("persona_id")
+  personaId String   @unique @map("persona_id") @db.Uuid
 
   persona         TblPersona               @relation(fields: [personaId], references: [idPer])
   organizaciones  TblUsuarioOrganizacion[]
@@ -643,7 +643,7 @@ model TblUsuario {
 }
 
 model TblRol {
-  idRol    BigInt   @id @default(autoincrement()) @map("id_rol")
+  idRol    String   @id @default(dbgenerated("gen_random_uuid()")) @map("id_rol") @db.Uuid
   tipo     String   @unique @map("rol_tip")
   nivel    BigInt   @map("rol_nivel")
   creacion DateTime @default(now()) @map("rol_creacion") @db.Timestamptz(6)
@@ -656,7 +656,7 @@ model TblRol {
 }
 
 model TblRecurso {
-  idRec     BigInt  @id @default(autoincrement()) @map("id_rec")
+  idRec     String  @id @default(dbgenerated("gen_random_uuid()")) @map("id_rec") @db.Uuid
   nombre    String  @map("nom")
   icono     String? @map("rec_icono")
   orden     BigInt  @default(0) @map("rec_orden")
@@ -669,9 +669,9 @@ model TblRecurso {
 }
 
 model TblRolRecurso {
-  idRor BigInt @id @default(autoincrement()) @map("id_ror")
-  recId BigInt @map("rec_id")
-  rolId BigInt @map("rol_id")
+  idRor String @id @default(dbgenerated("gen_random_uuid()")) @map("id_ror") @db.Uuid
+  recId String @map("rec_id") @db.Uuid
+  rolId String @map("rol_id") @db.Uuid
 
   recurso TblRecurso @relation(fields: [recId], references: [idRec])
   rol     TblRol     @relation(fields: [rolId], references: [idRol])
@@ -681,7 +681,7 @@ model TblRolRecurso {
 }
 
 model TblOrganizacion {
-  idOrg            BigInt    @id @default(autoincrement()) @map("id_org")
+  idOrg            String    @id @default(dbgenerated("gen_random_uuid()")) @map("id_org") @db.Uuid
   nombre           String    @unique @map("org_nombre")
   telefono         String?   @map("org_telefono")
   email            String?   @map("org_email")
@@ -694,24 +694,22 @@ model TblOrganizacion {
   esSistema        Boolean   @default(false) @map("org_es_sistema")
   creacion         DateTime  @default(now()) @map("org_creacion") @db.Timestamptz(6)
 
-  usuarios         TblUsuarioOrganizacion[]
-  clientes         TblCliente[]
-  rutas            TblRuta[]
-  productosCredito TblProductoCredito[]
-  cajas            TblCaja[]
-  mediosPago       TblMedioPago[]
-  movimientosCaja  TblMovimientoCaja[]
+  usuarios        TblUsuarioOrganizacion[]
+  clientes        TblCliente[]
+  rutas           TblRuta[]
+  cajas           TblCaja[]
+  movimientosCaja TblMovimientoCaja[]
 
   @@map("tbl_organizaciones")
   @@schema("public")
 }
 
 model TblUsuarioOrganizacion {
-  idUrg  BigInt  @id @default(autoincrement()) @map("id_urg")
+  idUrg  String  @id @default(dbgenerated("gen_random_uuid()")) @map("id_urg") @db.Uuid
   activo Boolean @default(true) @map("urg_activo")
-  rolId  BigInt  @map("rol_id")
-  usuId  BigInt  @map("usu_id")
-  orgId  BigInt  @map("org_id")
+  rolId  String  @map("rol_id") @db.Uuid
+  usuId  String  @map("usu_id") @db.Uuid
+  orgId  String  @map("org_id") @db.Uuid
 
   rol          TblRol          @relation(fields: [rolId], references: [idRol])
   usuario      TblUsuario      @relation(fields: [usuId], references: [idUsu])
@@ -722,12 +720,12 @@ model TblUsuarioOrganizacion {
 }
 
 model TblCliente {
-  idCli      BigInt   @id @default(autoincrement()) @map("id_cli")
+  idCli      String   @id @default(dbgenerated("gen_random_uuid()")) @map("id_cli") @db.Uuid
   referencia String?  @map("cli_referencia")
   activo     Boolean  @default(true) @map("cli_activo")
   creacion   DateTime @default(now()) @map("cli_creacion") @db.Timestamptz(6)
-  orgId      BigInt   @map("org_id")
-  personaId  BigInt   @map("cli_persona")
+  orgId      String   @map("org_id") @db.Uuid
+  personaId  String   @map("cli_persona") @db.Uuid
 
   organizacion TblOrganizacion  @relation(fields: [orgId], references: [idOrg])
   persona      TblPersona       @relation("TblClientePersona", fields: [personaId], references: [idPer])
@@ -739,13 +737,13 @@ model TblCliente {
 }
 
 model TblRuta {
-  idRut       BigInt   @id @default(autoincrement()) @map("id_rut")
+  idRut       String   @id @default(dbgenerated("gen_random_uuid()")) @map("id_rut") @db.Uuid
   nombre      String   @map("rut_nombre")
   descripcion String?  @map("rut_descripcion")
   activa      Boolean  @default(true) @map("rut_activa")
   creacion    DateTime @default(now()) @map("rut_creacion") @db.Timestamptz(6)
-  usuId       BigInt   @map("usu_id")
-  orgId       BigInt   @map("org_id")
+  usuId       String   @map("usu_id") @db.Uuid
+  orgId       String   @map("org_id") @db.Uuid
 
   usuario      TblUsuario       @relation(fields: [usuId], references: [idUsu])
   organizacion TblOrganizacion  @relation(fields: [orgId], references: [idOrg])
@@ -756,11 +754,11 @@ model TblRuta {
 }
 
 model TblRutaCliente {
-  idRcl    BigInt   @id @default(autoincrement()) @map("id_rcl")
+  idRcl    String   @id @default(dbgenerated("gen_random_uuid()")) @map("id_rcl") @db.Uuid
   activo   Boolean  @default(true) @map("rcl_activo")
   creacion DateTime @default(now()) @map("rcl_creacion") @db.Timestamptz(6)
-  rutId    BigInt   @map("rut_id")
-  cliId    BigInt   @map("cli_id")
+  rutId    String   @map("rut_id") @db.Uuid
+  cliId    String   @map("cli_id") @db.Uuid
 
   ruta    TblRuta    @relation(fields: [rutId], references: [idRut])
   cliente TblCliente @relation(fields: [cliId], references: [idCli])
@@ -770,21 +768,19 @@ model TblRutaCliente {
 }
 
 model TblProductoCredito {
-  idPcr       BigInt  @id @default(autoincrement()) @map("id_pcr")
-  nombre      String  @map("pcr_nombre")
+  idPcr       String  @id @default(dbgenerated("gen_random_uuid()")) @map("id_pcr") @db.Uuid
+  nombre      String  @unique @map("pcr_nombre")
   frecuencia  String  @map("pcr_frecuencia")
   tasaInteres Decimal @map("pcr_tasa_interes")
-  orgId       BigInt  @map("org_id")
 
-  organizacion TblOrganizacion @relation(fields: [orgId], references: [idOrg])
-  creditos     TblCredito[]
+  creditos TblCredito[]
 
   @@map("tbl_productos_creditos")
   @@schema("public")
 }
 
 model TblCategoriaGasto {
-  idCga       BigInt  @id @default(autoincrement()) @map("id_cga")
+  idCga       String  @id @default(dbgenerated("gen_random_uuid()")) @map("id_cga") @db.Uuid
   nombre      String  @unique @map("cga_nombre")
   descripcion String? @map("cga_descripcion")
 
@@ -795,13 +791,13 @@ model TblCategoriaGasto {
 }
 
 model TblCaja {
-  idCaj    BigInt   @id @default(autoincrement()) @map("id_caj")
+  idCaj    String   @id @default(dbgenerated("gen_random_uuid()")) @map("id_caj") @db.Uuid
   nombre   String   @map("caj_nombre")
   tipo     String   @default("MENOR") @map("caj_tipo")
   activa   Boolean  @default(true) @map("caj_activa")
   creacion DateTime @default(now()) @map("caj_creacion") @db.Timestamptz(6)
-  orgId    BigInt   @map("org_id")
-  gasId    BigInt?  @map("gas_id")
+  orgId    String   @map("org_id") @db.Uuid
+  gasId    String?  @map("gas_id") @db.Uuid
 
   organizacion TblOrganizacion @relation(fields: [orgId], references: [idOrg])
   gasto        TblGasto?       @relation("TblCajaGasto", fields: [gasId], references: [idGas])
@@ -813,12 +809,12 @@ model TblCaja {
 }
 
 model TblGasto {
-  idGas BigInt   @id @default(autoincrement()) @map("id_gas")
+  idGas String   @id @default(dbgenerated("gen_random_uuid()")) @map("id_gas") @db.Uuid
   fecha DateTime @default(now()) @map("gas_fecha") @db.Timestamptz(6)
   monto Decimal  @map("gas_monto")
-  cajId BigInt   @map("caj_id")
-  usuId BigInt   @map("usu_id")
-  cgaId BigInt   @map("cga_id")
+  cajId String   @map("caj_id") @db.Uuid
+  usuId String   @map("usu_id") @db.Uuid
+  cgaId String   @map("cga_id") @db.Uuid
 
   caja      TblCaja           @relation("TblGastoCaja", fields: [cajId], references: [idCaj])
   usuario   TblUsuario        @relation(fields: [usuId], references: [idUsu])
@@ -830,15 +826,15 @@ model TblGasto {
 }
 
 model TblSesionCaja {
-  idSca         BigInt    @id @default(autoincrement()) @map("id_sca")
+  idSca         String    @id @default(dbgenerated("gen_random_uuid()")) @map("id_sca") @db.Uuid
   fechaApertura DateTime  @default(now()) @map("sca_fecha_apertura") @db.Timestamptz(6)
   fechaCierre   DateTime? @map("sca_fecha_cierre") @db.Timestamptz(6)
   montoInicial  Decimal   @default(0) @map("sca_monto_inicial")
   totalCobrado  Decimal   @default(0) @map("sca_total_cobrado")
   totalGasto    Decimal   @default(0) @map("sca_total_gasto")
   estado        String    @default("ABIERTA") @map("sca_estado")
-  cajId         BigInt    @map("caj_id")
-  usuId         BigInt    @map("usu_id")
+  cajId         String    @map("caj_id") @db.Uuid
+  usuId         String    @map("usu_id") @db.Uuid
 
   caja            TblCaja             @relation(fields: [cajId], references: [idCaj])
   usuario         TblUsuario          @relation(fields: [usuId], references: [idUsu])
@@ -849,15 +845,15 @@ model TblSesionCaja {
 }
 
 model TblMovimientoCaja {
-  idMca          BigInt   @id @default(autoincrement()) @map("id_mca")
+  idMca          String   @id @default(dbgenerated("gen_random_uuid()")) @map("id_mca") @db.Uuid
   tipo           String   @map("mca_tipo")
   monto          Decimal  @map("mca_monto")
-  referenciaId   BigInt?  @map("mca_referencia_id")
+  referenciaId   String?  @map("mca_referencia_id") @db.Uuid
   referenciaTipo String?  @map("mca_referencia_tipo")
   creacion       DateTime @default(now()) @map("mca_creacion") @db.Timestamptz(6)
-  orgId          BigInt   @map("org_id")
-  usuId          BigInt   @map("usu_id")
-  scaId          BigInt?  @map("sca_id")
+  orgId          String   @map("org_id") @db.Uuid
+  usuId          String   @map("usu_id") @db.Uuid
+  scaId          String?  @map("sca_id") @db.Uuid
 
   organizacion TblOrganizacion @relation(fields: [orgId], references: [idOrg])
   usuario      TblUsuario      @relation(fields: [usuId], references: [idUsu])
@@ -868,7 +864,7 @@ model TblMovimientoCaja {
 }
 
 model TblCredito {
-  idCre        BigInt   @id @default(autoincrement()) @map("id_cre")
+  idCre        String   @id @default(dbgenerated("gen_random_uuid()")) @map("id_cre") @db.Uuid
   total        Decimal  @map("cre_total")
   estado       String   @default("ACTIVO") @map("cre_estado")
   tasaInteres  Decimal  @map("cre_tasa_interes")
@@ -876,9 +872,9 @@ model TblCredito {
   totalPagar   Decimal  @map("cre_total_pagar")
   fechaInicio  DateTime @map("cre_fecha_inicio") @db.Date
   fechaFin     DateTime @map("cre_fecha_fin") @db.Date
-  usuId        BigInt   @map("usu_id")
-  pcrId        BigInt   @map("pcr_id")
-  cliId        BigInt   @map("cli_id")
+  usuId        String   @map("usu_id") @db.Uuid
+  pcrId        String   @map("pcr_id") @db.Uuid
+  cliId        String   @map("cli_id") @db.Uuid
 
   usuario  TblUsuario         @relation(fields: [usuId], references: [idUsu])
   producto TblProductoCredito @relation(fields: [pcrId], references: [idPcr])
@@ -890,13 +886,13 @@ model TblCredito {
 }
 
 model TblCuota {
-  idCuo            BigInt   @id @default(autoincrement()) @map("id_cuo")
+  idCuo            String   @id @default(dbgenerated("gen_random_uuid()")) @map("id_cuo") @db.Uuid
   numero           BigInt   @map("cuo_numero")
   valor            Decimal  @map("cuo_valor")
   totalPagado      Decimal  @default(0) @map("cuo_total_pagado")
   estado           String   @default("PENDIENTE") @map("cuo_estado")
   fechaVencimiento DateTime @map("cuo_fecha_vencimiento") @db.Date
-  creId            BigInt   @map("cre_id")
+  creId            String   @map("cre_id") @db.Uuid
 
   credito TblCredito     @relation(fields: [creId], references: [idCre])
   pagos   TblCuotaPago[]
@@ -906,32 +902,30 @@ model TblCuota {
 }
 
 model TblMedioPago {
-  idMed            BigInt   @id @default(autoincrement()) @map("id_med")
-  nombre           String   @map("med_nombre")
-  tipo             String   @map("med_tipo")
+  idMed            String   @id @default(dbgenerated("gen_random_uuid()")) @map("id_med") @db.Uuid
+  nombre           String   @unique @map("med_nombre")
+  tipo             String   @unique @map("med_tipo")
   proveedor        String?  @map("med_proveedor")
   referenciaCuenta String?  @map("med_referencia_cuenta")
   titular          String?  @map("med_titular")
   activo           Boolean  @default(true) @map("med_activo")
   creacion         DateTime @default(now()) @map("med_creacion") @db.Timestamptz(6)
   actualizacion    DateTime @default(now()) @map("med_actualizacion") @db.Timestamptz(6)
-  orgId            BigInt   @map("org_id")
 
-  organizacion TblOrganizacion @relation(fields: [orgId], references: [idOrg])
-  pagos        TblPago[]
+  pagos TblPago[]
 
   @@map("tbl_medios_pagos")
   @@schema("public")
 }
 
 model TblPago {
-  idPag            BigInt   @id @default(autoincrement()) @map("id_pag")
+  idPag            String   @id @default(dbgenerated("gen_random_uuid()")) @map("id_pag") @db.Uuid
   monto            Decimal  @map("pag_monto")
   fecha            DateTime @default(now()) @map("pag_fecha") @db.Timestamptz(6)
   referencia       String?  @map("pag_referencia")
   idempotencyLlave String   @unique @default(dbgenerated("gen_random_uuid()")) @map("pag_idempotency_llave") @db.Uuid
   estado           String   @default("REGISTRADO") @map("pag_estado")
-  medId            BigInt   @map("med_id")
+  medId            String   @map("med_id") @db.Uuid
 
   medioPago TblMedioPago   @relation(fields: [medId], references: [idMed])
   cuotas    TblCuotaPago[]
@@ -941,13 +935,13 @@ model TblPago {
 }
 
 model TblCuotaPago {
-  idCpa   BigInt  @id @default(autoincrement()) @map("id_cpa")
+  idCpa   String  @id @default(dbgenerated("gen_random_uuid()")) @map("id_cpa") @db.Uuid
   numero  BigInt? @map("cpa_numero")
   capital Decimal @default(0) @map("cpa_capital")
   interes Decimal @default(0) @map("cpa_interes")
   total   Decimal @default(dbgenerated()) @map("cpa_total")
-  cuoId   BigInt  @map("cuo_id")
-  pagosId BigInt  @map("pagos_id")
+  cuoId   String  @map("cuo_id") @db.Uuid
+  pagosId String  @map("pagos_id") @db.Uuid
 
   cuota TblCuota @relation(fields: [cuoId], references: [idCuo])
   pago  TblPago  @relation(fields: [pagosId], references: [idPag])

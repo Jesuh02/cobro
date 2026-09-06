@@ -11,7 +11,7 @@ erDiagram
   }
 
   TBL_PERSONAS {
-    BIGINT id_per PK
+    UUID id_per PK
     VARCHAR per_primer_nombre
     VARCHAR per_apellido
     VARCHAR per_documento UK
@@ -24,23 +24,23 @@ erDiagram
   }
 
   TBL_USUARIOS {
-    BIGINT id_usu PK
+    UUID id_usu PK
     VARCHAR usu_usuario UK
     VARCHAR usu_password
     TIMESTAMPTZ usu_creacion
     BOOLEAN usu_activo
-    BIGINT persona_id FK_UK
+    UUID persona_id FK_UK
   }
 
   TBL_ROLES {
-    BIGINT id_rol PK
+    UUID id_rol PK
     ENUM rol_tip UK
     BIGINT rol_nivel
     TIMESTAMPTZ rol_creacion
   }
 
   TBL_RECURSOS {
-    BIGINT id_rec PK
+    UUID id_rec PK
     VARCHAR nom
     VARCHAR rec_icono
     BIGINT rec_orden
@@ -48,13 +48,13 @@ erDiagram
   }
 
   TBL_ROLES_RECURSOS {
-    BIGINT id_ror PK
-    BIGINT rec_id FK
-    BIGINT rol_id FK
+    UUID id_ror PK
+    UUID rec_id FK
+    UUID rol_id FK
   }
 
   TBL_ORGANIZACIONES {
-    BIGINT id_org PK
+    UUID id_org PK
     VARCHAR org_nombre UK
     VARCHAR org_telefono
     VARCHAR org_email UK
@@ -69,50 +69,49 @@ erDiagram
   }
 
   TBL_USUARIOS_ORGANIZACIONES {
-    BIGINT id_urg PK
+    UUID id_urg PK
     BOOLEAN urg_activo
-    BIGINT rol_id FK
-    BIGINT usu_id FK
-    BIGINT org_id FK
+    UUID rol_id FK
+    UUID usu_id FK
+    UUID org_id FK
   }
 
   TBL_CLIENTES {
-    BIGINT id_cli PK
+    UUID id_cli PK
     VARCHAR cli_referencia
     BOOLEAN cli_activo
     TIMESTAMPTZ cli_creacion
-    BIGINT org_id FK
-    BIGINT cli_persona FK
+    UUID org_id FK
+    UUID cli_persona FK
   }
 
   TBL_RUTAS {
-    BIGINT id_rut PK
+    UUID id_rut PK
     VARCHAR rut_nombre
     VARCHAR rut_descripcion
     BOOLEAN rut_activa
     TIMESTAMPTZ rut_creacion
-    BIGINT usu_id FK
-    BIGINT org_id FK
+    UUID usu_id FK
+    UUID org_id FK
   }
 
   TBL_RUTAS_CLIENTES {
-    BIGINT id_rcl PK
+    UUID id_rcl PK
     BOOLEAN rcl_activo
     TIMESTAMPTZ rcl_creacion
-    BIGINT rut_id FK
-    BIGINT cli_id FK
+    UUID rut_id FK
+    UUID cli_id FK
   }
 
   TBL_PRODUCTOS_CREDITOS {
-    BIGINT id_pcr PK
+    UUID id_pcr PK
     VARCHAR pcr_nombre
     ENUM pcr_frecuencia
     NUMERIC pcr_tasa_interes
-    BIGINT org_id FK
   }
 
   TBL_CREDITOS {
-    BIGINT id_cre PK
+    UUID id_cre PK
     NUMERIC cre_total
     ENUM cre_estado
     NUMERIC cre_tasa_interes
@@ -120,24 +119,24 @@ erDiagram
     NUMERIC cre_total_pagar
     DATE cre_fecha_inicio
     DATE cre_fecha_fin
-    BIGINT usu_id FK
-    BIGINT pcr_id FK
-    BIGINT cli_id FK
-    BIGINT mon_id FK
+    UUID usu_id FK
+    UUID pcr_id FK
+    UUID cli_id FK
+    UUID mon_id FK
   }
 
   TBL_CUOTAS {
-    BIGINT id_cuo PK
+    UUID id_cuo PK
     BIGINT cuo_numero
     NUMERIC cuo_valor
     NUMERIC cuo_total_pagado
     ENUM cuo_estado
     DATE cuo_fecha_vencimiento
-    BIGINT cre_id FK
+    UUID cre_id FK
   }
 
   TBL_MEDIOS_PAGOS {
-    BIGINT id_med PK
+    UUID id_med PK
     VARCHAR med_nombre
     ENUM med_tipo
     VARCHAR med_proveedor
@@ -146,38 +145,37 @@ erDiagram
     BOOLEAN med_activo
     TIMESTAMPTZ med_creacion
     TIMESTAMPTZ med_actualizacion
-    BIGINT org_id FK
   }
 
   TBL_PAGOS {
-    BIGINT id_pag PK
+    UUID id_pag PK
     NUMERIC pag_monto
     TIMESTAMPTZ pag_fecha
     VARCHAR pag_referencia
     UUID pag_idempotency_llave UK
     ENUM pag_estado
-    BIGINT med_id FK
-    BIGINT mon_id FK
+    UUID med_id FK
+    UUID mon_id FK
   }
 
   TBL_CUOTAS_PAGOS {
-    BIGINT id_cpa PK
+    UUID id_cpa PK
     BIGINT cpa_numero
     NUMERIC cpa_capital
     NUMERIC cpa_interes
     NUMERIC cpa_total
-    BIGINT cuo_id FK
-    BIGINT pagos_id FK
+    UUID cuo_id FK
+    UUID pagos_id FK
   }
 
   TBL_CATEGORIAS_GASTOS {
-    BIGINT id_cga PK
+    UUID id_cga PK
     VARCHAR cga_nombre UK
     VARCHAR cga_descripcion
   }
 
   TBL_MONEDAS {
-    BIGINT id_mon PK
+    UUID id_mon PK
     CHAR mon_codigo UK
     VARCHAR mon_nombre
     VARCHAR mon_simbolo
@@ -187,55 +185,55 @@ erDiagram
   }
 
   TBL_CAJAS {
-    BIGINT id_caj PK
+    UUID id_caj PK
     VARCHAR caj_nombre
     ENUM caj_tipo
     BOOLEAN caj_activa
     TIMESTAMPTZ caj_creacion
-    BIGINT org_id FK
-    BIGINT mon_id FK
-    BIGINT gas_id FK
+    UUID org_id FK
+    UUID mon_id FK
+    UUID gas_id FK
   }
 
   TBL_GASTOS {
-    BIGINT id_gas PK
+    UUID id_gas PK
     TIMESTAMPTZ gas_fecha
     NUMERIC gas_monto
-    BIGINT caj_id FK
-    BIGINT usu_id FK
-    BIGINT cga_id FK
+    UUID caj_id FK
+    UUID usu_id FK
+    UUID cga_id FK
   }
 
   TBL_SESIONES_CAJAS {
-    BIGINT id_sca PK
+    UUID id_sca PK
     TIMESTAMPTZ sca_fecha_apertura
     TIMESTAMPTZ sca_fecha_cierre
     NUMERIC sca_monto_inicial
     NUMERIC sca_total_cobrado
     NUMERIC sca_total_gasto
     ENUM sca_estado
-    BIGINT caj_id FK
-    BIGINT usu_id FK
+    UUID caj_id FK
+    UUID usu_id FK
   }
 
   TBL_MOVIMIENTOS_CAJAS {
-    BIGINT id_mca PK
+    UUID id_mca PK
     ENUM mca_tipo
     NUMERIC mca_monto
-    BIGINT mca_referencia_id
+    UUID mca_referencia_id
     ENUM mca_referencia_tipo
     TIMESTAMPTZ mca_creacion
-    BIGINT org_id FK
-    BIGINT usu_id FK
-    BIGINT sca_id FK
+    UUID org_id FK
+    UUID usu_id FK
+    UUID sca_id FK
   }
 
   TBL_NOTIFICACIONES {
-    BIGINT id_not PK
-    BIGINT org_id FK
-    BIGINT cli_id FK
-    BIGINT cre_id FK
-    BIGINT pag_id FK
+    UUID id_not PK
+    UUID org_id FK
+    UUID cli_id FK
+    UUID cre_id FK
+    UUID pag_id FK
     ENUM not_tipo
     ENUM not_canal
     ENUM not_estado
@@ -247,10 +245,10 @@ erDiagram
   }
 
   TBL_WOMPI_TRANSACCIONES {
-    BIGINT id_wtr PK
-    BIGINT org_id FK
-    BIGINT pag_id FK
-    BIGINT mon_id FK
+    UUID id_wtr PK
+    UUID org_id FK
+    UUID pag_id FK
+    UUID mon_id FK
     ENUM wtr_tipo_pago
     ENUM wtr_estado
     NUMERIC wtr_monto
@@ -274,9 +272,7 @@ erDiagram
 
   TBL_ORGANIZACIONES ||--o{ TBL_CLIENTES : org_id
   TBL_ORGANIZACIONES ||--o{ TBL_RUTAS : org_id
-  TBL_ORGANIZACIONES ||--o{ TBL_PRODUCTOS_CREDITOS : org_id
   TBL_ORGANIZACIONES ||--o{ TBL_CAJAS : org_id
-  TBL_ORGANIZACIONES ||--o{ TBL_MEDIOS_PAGOS : org_id
   TBL_ORGANIZACIONES ||--o{ TBL_MOVIMIENTOS_CAJAS : org_id
   TBL_ORGANIZACIONES ||--o{ TBL_NOTIFICACIONES : org_id
   TBL_ORGANIZACIONES ||--o{ TBL_WOMPI_TRANSACCIONES : org_id

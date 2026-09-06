@@ -29,8 +29,13 @@ export class DomainExceptionFilter implements ExceptionFilter<unknown> {
         exception instanceof Prisma.PrismaClientKnownRequestError
           ? ` code=${exception.code}`
           : '';
+      const errorMessage =
+        exception instanceof Error ? exception.message : String(exception);
+      const errorStack =
+        exception instanceof Error ? exception.stack : undefined;
       this.logger.error(
-        `Unhandled error requestId=${requestId} method=${request.method} path=${request.path} type=${errorType}${prismaCode}`,
+        `Unhandled error requestId=${requestId} method=${request.method} path=${request.path} type=${errorType}${prismaCode} message="${errorMessage}"`,
+        errorStack,
       );
     }
 

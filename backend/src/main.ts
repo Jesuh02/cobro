@@ -9,6 +9,11 @@ import 'reflect-metadata';
 
 import { AppModule } from './app.module';
 
+// Permite serializar campos BigInt a JSON como strings sin arrojar TypeError
+(BigInt.prototype as any).toJSON = function () {
+  return this.toString();
+};
+
 async function bootstrap() {
   const requestLogger = new Logger('HTTP');
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {

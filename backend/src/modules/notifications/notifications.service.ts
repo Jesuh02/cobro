@@ -46,7 +46,7 @@ export class NotificationsService {
         JOIN tbl_clientes cli ON cli.id_cli = c.cli_id
         JOIN tbl_personas per ON per.id_per = cli.cli_persona
         JOIN tbl_monedas m ON m.id_mon = c.mon_id
-        WHERE c.id_cre = ${BigInt(creditId)}
+        WHERE c.id_cre = ${String(creditId)}::uuid
       `;
 
       if (!credit) {
@@ -102,7 +102,7 @@ export class NotificationsService {
         JOIN tbl_creditos c ON c.id_cre = cu_pago.cre_id
         JOIN tbl_clientes cli ON cli.id_cli = c.cli_id
         JOIN tbl_personas per ON per.id_per = cli.cli_persona
-        WHERE p.id_pag = ${BigInt(paymentId)}
+        WHERE p.id_pag = ${String(paymentId)}::uuid
         ORDER BY c.id_cre
         LIMIT 1
       `;
@@ -283,10 +283,10 @@ export class NotificationsService {
               INSERT INTO tbl_notificaciones (
                 org_id, cli_id, cre_id, pag_id, not_tipo, not_canal, not_estado, not_destinatario, not_error, not_envio
               ) VALUES (
-                ${BigInt(notification.orgId)},
-                ${BigInt(notification.cliId)},
-                ${creId ? BigInt(creId) : null},
-                ${pagId ? BigInt(pagId) : null},
+                ${notification.orgId}::uuid,
+                ${notification.cliId}::uuid,
+                ${creId ? creId : null}::uuid,
+                ${pagId ? pagId : null}::uuid,
                 ${notification.kind.toUpperCase()}::notificacion_tipo_enum,
                 ${canal}::notificacion_canal_enum,
                 ${estado}::notificacion_estado_enum,
@@ -492,7 +492,7 @@ export class NotificationsService {
         ORDER BY cu.cuo_fecha_vencimiento ASC, cu.cuo_numero ASC
         LIMIT 1
       ) prox ON TRUE
-      WHERE tu.id_usu = ${BigInt(collectorId)}
+      WHERE tu.id_usu = ${String(collectorId)}::uuid
         AND UPPER(cr.cre_estado::text) NOT IN ('ANULADO', 'PAGADO')
         AND prox.cuo_fecha_vencimiento < CURRENT_DATE
       ORDER BY prox.cuo_fecha_vencimiento ASC, cliente ASC

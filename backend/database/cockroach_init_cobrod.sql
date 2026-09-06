@@ -10,6 +10,37 @@
 -- Evita bloques PL/pgSQL de compatibilidad con Supabase/PostgreSQL y usa
 -- unique_rowid() para llaves numericas distribuidas.
 
+-- Limpieza inicial para asegurar una instalacion limpia con UUIDs nativos (idempotente)
+DROP VIEW IF EXISTS vista_presupuesto_actual CASCADE;
+DROP VIEW IF EXISTS vista_saldo_caja_menor CASCADE;
+DROP VIEW IF EXISTS vista_creditos_saldos CASCADE;
+
+DROP TABLE IF EXISTS tbl_notificaciones CASCADE;
+DROP TABLE IF EXISTS tbl_wompi_transacciones CASCADE;
+DROP TABLE IF EXISTS tbl_cuotas_pagos CASCADE;
+DROP TABLE IF EXISTS tbl_pagos CASCADE;
+DROP TABLE IF EXISTS tbl_cuotas CASCADE;
+DROP TABLE IF EXISTS tbl_creditos CASCADE;
+DROP TABLE IF EXISTS tbl_movimientos_cajas CASCADE;
+DROP TABLE IF EXISTS tbl_sesiones_cajas CASCADE;
+DROP TABLE IF EXISTS tbl_gastos CASCADE;
+DROP TABLE IF EXISTS tbl_cajas CASCADE;
+DROP TABLE IF EXISTS tbl_rutas_clientes CASCADE;
+DROP TABLE IF EXISTS tbl_rutas CASCADE;
+DROP TABLE IF EXISTS tbl_clientes CASCADE;
+DROP TABLE IF EXISTS tbl_usuarios_organizaciones CASCADE;
+DROP TABLE IF EXISTS tbl_organizaciones CASCADE;
+DROP TABLE IF EXISTS tbl_roles_recursos CASCADE;
+DROP TABLE IF EXISTS tbl_recursos CASCADE;
+DROP TABLE IF EXISTS tbl_roles CASCADE;
+DROP TABLE IF EXISTS tbl_usuarios CASCADE;
+DROP TABLE IF EXISTS tbl_personas CASCADE;
+DROP TABLE IF EXISTS tbl_monedas CASCADE;
+DROP TABLE IF EXISTS tbl_categorias_gastos CASCADE;
+DROP TABLE IF EXISTS tbl_productos_creditos CASCADE;
+DROP TABLE IF EXISTS tbl_medios_pagos CASCADE;
+DROP TABLE IF EXISTS public._prisma_migrations CASCADE;
+
 CREATE SCHEMA IF NOT EXISTS public;
 
 CREATE TABLE IF NOT EXISTS public._prisma_migrations (
@@ -136,7 +167,7 @@ CREATE TYPE IF NOT EXISTS notificacion_estado_enum AS ENUM (
 );
 
 CREATE TABLE IF NOT EXISTS tbl_personas (
-  id_per INT8 PRIMARY KEY DEFAULT unique_rowid(),
+  id_per UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   per_primer_nombre VARCHAR(120) NOT NULL,
   per_apellido VARCHAR(120) NOT NULL,
   per_documento VARCHAR(60) NOT NULL,
@@ -158,18 +189,18 @@ CREATE UNIQUE INDEX IF NOT EXISTS ix_tbl_personas_email_normalizado
   WHERE per_email IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS tbl_usuarios (
-  id_usu INT8 PRIMARY KEY DEFAULT unique_rowid(),
+  id_usu UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   usu_usuario VARCHAR(80) NOT NULL,
   usu_password VARCHAR(255) NOT NULL,
   usu_creacion TIMESTAMPTZ NOT NULL DEFAULT now(),
   usu_activo BOOL NOT NULL DEFAULT true,
-  persona_id INT8 NOT NULL REFERENCES tbl_personas (id_per) ON DELETE RESTRICT,
+  persona_id UUID NOT NULL REFERENCES tbl_personas (id_per) ON DELETE RESTRICT,
   CONSTRAINT ux_tbl_usuarios_usuario UNIQUE (usu_usuario),
   CONSTRAINT ux_tbl_usuarios_persona UNIQUE (persona_id)
 );
 
 CREATE TABLE IF NOT EXISTS tbl_roles (
-  id_rol INT8 PRIMARY KEY DEFAULT unique_rowid(),
+  id_rol UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   rol_tip rol_tipo_enum NOT NULL,
   rol_nivel INT8 NOT NULL,
   rol_creacion TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -178,7 +209,7 @@ CREATE TABLE IF NOT EXISTS tbl_roles (
 );
 
 CREATE TABLE IF NOT EXISTS tbl_recursos (
-  id_rec INT8 PRIMARY KEY DEFAULT unique_rowid(),
+  id_rec UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   nom VARCHAR(120) NOT NULL,
   rec_icono VARCHAR(80),
   rec_orden INT8 NOT NULL DEFAULT 0,
@@ -188,14 +219,14 @@ CREATE TABLE IF NOT EXISTS tbl_recursos (
 );
 
 CREATE TABLE IF NOT EXISTS tbl_roles_recursos (
-  id_ror INT8 PRIMARY KEY DEFAULT unique_rowid(),
-  rec_id INT8 NOT NULL REFERENCES tbl_recursos (id_rec) ON DELETE CASCADE,
-  rol_id INT8 NOT NULL REFERENCES tbl_roles (id_rol) ON DELETE CASCADE,
+  id_ror UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  rec_id UUID NOT NULL REFERENCES tbl_recursos (id_rec) ON DELETE CASCADE,
+  rol_id UUID NOT NULL REFERENCES tbl_roles (id_rol) ON DELETE CASCADE,
   CONSTRAINT ux_tbl_roles_recursos UNIQUE (rec_id, rol_id)
 );
 
 CREATE TABLE IF NOT EXISTS tbl_organizaciones (
-  id_org INT8 PRIMARY KEY DEFAULT unique_rowid(),
+  id_org UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   org_nombre VARCHAR(160) NOT NULL,
   org_telefono VARCHAR(40),
   org_email VARCHAR(180),
@@ -224,33 +255,33 @@ CREATE INDEX IF NOT EXISTS ix_tbl_organizaciones_acceso
   WHERE NOT org_es_sistema;
 
 CREATE TABLE IF NOT EXISTS tbl_usuarios_organizaciones (
-  id_urg INT8 PRIMARY KEY DEFAULT unique_rowid(),
+  id_urg UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   urg_activo BOOL NOT NULL DEFAULT true,
-  rol_id INT8 NOT NULL REFERENCES tbl_roles (id_rol) ON DELETE RESTRICT,
-  usu_id INT8 NOT NULL REFERENCES tbl_usuarios (id_usu) ON DELETE CASCADE,
-  org_id INT8 NOT NULL REFERENCES tbl_organizaciones (id_org) ON DELETE CASCADE,
+  rol_id UUID NOT NULL REFERENCES tbl_roles (id_rol) ON DELETE RESTRICT,
+  usu_id UUID NOT NULL REFERENCES tbl_usuarios (id_usu) ON DELETE CASCADE,
+  org_id UUID NOT NULL REFERENCES tbl_organizaciones (id_org) ON DELETE CASCADE,
   CONSTRAINT ux_tbl_usuarios_organizaciones UNIQUE (usu_id, org_id, rol_id)
 );
 
 CREATE TABLE IF NOT EXISTS tbl_clientes (
-  id_cli INT8 PRIMARY KEY DEFAULT unique_rowid(),
+  id_cli UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   cli_referencia VARCHAR(120),
   cli_activo BOOL NOT NULL DEFAULT true,
   cli_creacion TIMESTAMPTZ NOT NULL DEFAULT now(),
-  org_id INT8 NOT NULL REFERENCES tbl_organizaciones (id_org) ON DELETE CASCADE,
-  cli_persona INT8 NOT NULL REFERENCES tbl_personas (id_per) ON DELETE RESTRICT,
+  org_id UUID NOT NULL REFERENCES tbl_organizaciones (id_org) ON DELETE CASCADE,
+  cli_persona UUID NOT NULL REFERENCES tbl_personas (id_per) ON DELETE RESTRICT,
   CONSTRAINT ux_tbl_clientes_org_persona UNIQUE (org_id, cli_persona),
   CONSTRAINT ux_tbl_clientes_org_referencia UNIQUE (org_id, cli_referencia)
 );
 
 CREATE TABLE IF NOT EXISTS tbl_rutas (
-  id_rut INT8 PRIMARY KEY DEFAULT unique_rowid(),
+  id_rut UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   rut_nombre VARCHAR(120) NOT NULL,
   rut_descripcion VARCHAR(500),
   rut_activa BOOL NOT NULL DEFAULT true,
   rut_creacion TIMESTAMPTZ NOT NULL DEFAULT now(),
-  usu_id INT8 NOT NULL REFERENCES tbl_usuarios (id_usu) ON DELETE RESTRICT,
-  org_id INT8 NOT NULL REFERENCES tbl_organizaciones (id_org) ON DELETE CASCADE,
+  usu_id UUID NOT NULL REFERENCES tbl_usuarios (id_usu) ON DELETE RESTRICT,
+  org_id UUID NOT NULL REFERENCES tbl_organizaciones (id_org) ON DELETE CASCADE,
   CONSTRAINT ux_tbl_rutas_org_nombre UNIQUE (org_id, rut_nombre)
 );
 
@@ -258,11 +289,11 @@ CREATE INDEX IF NOT EXISTS ix_tbl_rutas_usuario
   ON tbl_rutas (usu_id);
 
 CREATE TABLE IF NOT EXISTS tbl_rutas_clientes (
-  id_rcl INT8 PRIMARY KEY DEFAULT unique_rowid(),
+  id_rcl UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   rcl_activo BOOL NOT NULL DEFAULT true,
   rcl_creacion TIMESTAMPTZ NOT NULL DEFAULT now(),
-  rut_id INT8 NOT NULL REFERENCES tbl_rutas (id_rut) ON DELETE CASCADE,
-  cli_id INT8 NOT NULL REFERENCES tbl_clientes (id_cli) ON DELETE CASCADE,
+  rut_id UUID NOT NULL REFERENCES tbl_rutas (id_rut) ON DELETE CASCADE,
+  cli_id UUID NOT NULL REFERENCES tbl_clientes (id_cli) ON DELETE CASCADE,
   CONSTRAINT ux_tbl_rutas_clientes UNIQUE (rut_id, cli_id)
 );
 
@@ -270,7 +301,7 @@ CREATE INDEX IF NOT EXISTS ix_tbl_rutas_clientes_cliente
   ON tbl_rutas_clientes (cli_id);
 
 CREATE TABLE IF NOT EXISTS tbl_productos_creditos (
-  id_pcr INT8 PRIMARY KEY DEFAULT unique_rowid(),
+  id_pcr UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   pcr_nombre VARCHAR(120) NOT NULL,
   pcr_frecuencia producto_credito_frecuencia_enum NOT NULL,
   pcr_tasa_interes DECIMAL(7, 4) NOT NULL,
@@ -279,14 +310,14 @@ CREATE TABLE IF NOT EXISTS tbl_productos_creditos (
 );
 
 CREATE TABLE IF NOT EXISTS tbl_categorias_gastos (
-  id_cga INT8 PRIMARY KEY DEFAULT unique_rowid(),
+  id_cga UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   cga_nombre VARCHAR(120) NOT NULL,
   cga_descripcion VARCHAR(500),
   CONSTRAINT ux_tbl_categorias_gastos_nombre UNIQUE (cga_nombre)
 );
 
 CREATE TABLE IF NOT EXISTS tbl_monedas (
-  id_mon INT8 PRIMARY KEY DEFAULT unique_rowid(),
+  id_mon UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   mon_codigo CHAR(3) NOT NULL,
   mon_nombre VARCHAR(80) NOT NULL,
   mon_simbolo VARCHAR(8) NOT NULL,
@@ -300,24 +331,24 @@ CREATE TABLE IF NOT EXISTS tbl_monedas (
 );
 
 CREATE TABLE IF NOT EXISTS tbl_cajas (
-  id_caj INT8 PRIMARY KEY DEFAULT unique_rowid(),
+  id_caj UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   caj_nombre VARCHAR(120) NOT NULL,
   caj_tipo caja_tipo_enum NOT NULL DEFAULT 'MENOR',
   caj_activa BOOL NOT NULL DEFAULT true,
   caj_creacion TIMESTAMPTZ NOT NULL DEFAULT now(),
-  org_id INT8 NOT NULL REFERENCES tbl_organizaciones (id_org) ON DELETE CASCADE,
-  mon_id INT8 NOT NULL REFERENCES tbl_monedas (id_mon) ON DELETE RESTRICT,
-  gas_id INT8,
+  org_id UUID NOT NULL REFERENCES tbl_organizaciones (id_org) ON DELETE CASCADE,
+  mon_id UUID NOT NULL REFERENCES tbl_monedas (id_mon) ON DELETE RESTRICT,
+  gas_id UUID,
   CONSTRAINT ux_tbl_cajas_org_nombre UNIQUE (org_id, caj_nombre)
 );
 
 CREATE TABLE IF NOT EXISTS tbl_gastos (
-  id_gas INT8 PRIMARY KEY DEFAULT unique_rowid(),
+  id_gas UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   gas_fecha TIMESTAMPTZ NOT NULL DEFAULT now(),
   gas_monto DECIMAL(14, 2) NOT NULL,
-  caj_id INT8 NOT NULL REFERENCES tbl_cajas (id_caj) ON DELETE RESTRICT,
-  usu_id INT8 NOT NULL REFERENCES tbl_usuarios (id_usu) ON DELETE RESTRICT,
-  cga_id INT8 NOT NULL REFERENCES tbl_categorias_gastos (id_cga) ON DELETE RESTRICT,
+  caj_id UUID NOT NULL REFERENCES tbl_cajas (id_caj) ON DELETE RESTRICT,
+  usu_id UUID NOT NULL REFERENCES tbl_usuarios (id_usu) ON DELETE RESTRICT,
+  cga_id UUID NOT NULL REFERENCES tbl_categorias_gastos (id_cga) ON DELETE RESTRICT,
   CONSTRAINT chk_tbl_gastos_monto CHECK (gas_monto > 0)
 );
 
@@ -326,15 +357,15 @@ ALTER TABLE tbl_cajas
   FOREIGN KEY (gas_id) REFERENCES tbl_gastos (id_gas) ON DELETE SET NULL;
 
 CREATE TABLE IF NOT EXISTS tbl_sesiones_cajas (
-  id_sca INT8 PRIMARY KEY DEFAULT unique_rowid(),
+  id_sca UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   sca_fecha_apertura TIMESTAMPTZ NOT NULL DEFAULT now(),
   sca_fecha_cierre TIMESTAMPTZ,
   sca_monto_inicial DECIMAL(14, 2) NOT NULL DEFAULT 0,
   sca_total_cobrado DECIMAL(14, 2) NOT NULL DEFAULT 0,
   sca_total_gasto DECIMAL(14, 2) NOT NULL DEFAULT 0,
   sca_estado sesion_caja_estado_enum NOT NULL DEFAULT 'ABIERTA',
-  caj_id INT8 NOT NULL REFERENCES tbl_cajas (id_caj) ON DELETE RESTRICT,
-  usu_id INT8 NOT NULL REFERENCES tbl_usuarios (id_usu) ON DELETE RESTRICT,
+  caj_id UUID NOT NULL REFERENCES tbl_cajas (id_caj) ON DELETE RESTRICT,
+  usu_id UUID NOT NULL REFERENCES tbl_usuarios (id_usu) ON DELETE RESTRICT,
   CONSTRAINT chk_tbl_sesiones_cajas_montos
     CHECK (
       sca_monto_inicial >= 0
@@ -350,15 +381,15 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_tbl_sesiones_cajas_abierta
   WHERE sca_estado = 'ABIERTA';
 
 CREATE TABLE IF NOT EXISTS tbl_movimientos_cajas (
-  id_mca INT8 PRIMARY KEY DEFAULT unique_rowid(),
+  id_mca UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   mca_tipo movimiento_caja_tipo_enum NOT NULL,
   mca_monto DECIMAL(14, 2) NOT NULL,
-  mca_referencia_id INT8,
+  mca_referencia_id UUID,
   mca_referencia_tipo movimiento_referencia_tipo_enum,
   mca_creacion TIMESTAMPTZ NOT NULL DEFAULT now(),
-  org_id INT8 NOT NULL REFERENCES tbl_organizaciones (id_org) ON DELETE CASCADE,
-  usu_id INT8 NOT NULL REFERENCES tbl_usuarios (id_usu) ON DELETE RESTRICT,
-  sca_id INT8 REFERENCES tbl_sesiones_cajas (id_sca) ON DELETE SET NULL,
+  org_id UUID NOT NULL REFERENCES tbl_organizaciones (id_org) ON DELETE CASCADE,
+  usu_id UUID NOT NULL REFERENCES tbl_usuarios (id_usu) ON DELETE RESTRICT,
+  sca_id UUID REFERENCES tbl_sesiones_cajas (id_sca) ON DELETE SET NULL,
   CONSTRAINT chk_tbl_movimientos_cajas_monto CHECK (mca_monto > 0),
   CONSTRAINT chk_tbl_movimientos_cajas_referencia
     CHECK (
@@ -371,7 +402,7 @@ CREATE INDEX IF NOT EXISTS ix_tbl_movimientos_cajas_org_fecha
   ON tbl_movimientos_cajas (org_id, mca_creacion DESC);
 
 CREATE TABLE IF NOT EXISTS tbl_creditos (
-  id_cre INT8 PRIMARY KEY DEFAULT unique_rowid(),
+  id_cre UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   cre_total DECIMAL(14, 2) NOT NULL,
   cre_estado credito_estado_enum NOT NULL DEFAULT 'ACTIVO',
   cre_tasa_interes DECIMAL(7, 4) NOT NULL,
@@ -379,10 +410,10 @@ CREATE TABLE IF NOT EXISTS tbl_creditos (
   cre_total_pagar DECIMAL(14, 2) NOT NULL,
   cre_fecha_inicio DATE NOT NULL,
   cre_fecha_fin DATE NOT NULL,
-  usu_id INT8 NOT NULL REFERENCES tbl_usuarios (id_usu) ON DELETE RESTRICT,
-  pcr_id INT8 NOT NULL REFERENCES tbl_productos_creditos (id_pcr) ON DELETE RESTRICT,
-  cli_id INT8 NOT NULL REFERENCES tbl_clientes (id_cli) ON DELETE RESTRICT,
-  mon_id INT8 NOT NULL REFERENCES tbl_monedas (id_mon) ON DELETE RESTRICT,
+  usu_id UUID NOT NULL REFERENCES tbl_usuarios (id_usu) ON DELETE RESTRICT,
+  pcr_id UUID NOT NULL REFERENCES tbl_productos_creditos (id_pcr) ON DELETE RESTRICT,
+  cli_id UUID NOT NULL REFERENCES tbl_clientes (id_cli) ON DELETE RESTRICT,
+  mon_id UUID NOT NULL REFERENCES tbl_monedas (id_mon) ON DELETE RESTRICT,
   CONSTRAINT chk_tbl_creditos_valores
     CHECK (
       cre_total > 0
@@ -400,13 +431,13 @@ CREATE INDEX IF NOT EXISTS ix_tbl_creditos_usuario_estado
   ON tbl_creditos (usu_id, cre_estado);
 
 CREATE TABLE IF NOT EXISTS tbl_cuotas (
-  id_cuo INT8 PRIMARY KEY DEFAULT unique_rowid(),
+  id_cuo UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   cuo_numero INT8 NOT NULL,
   cuo_valor DECIMAL(14, 2) NOT NULL,
   cuo_total_pagado DECIMAL(14, 2) NOT NULL DEFAULT 0,
   cuo_estado cuota_estado_enum NOT NULL DEFAULT 'PENDIENTE',
   cuo_fecha_vencimiento DATE NOT NULL,
-  cre_id INT8 NOT NULL REFERENCES tbl_creditos (id_cre) ON DELETE CASCADE,
+  cre_id UUID NOT NULL REFERENCES tbl_creditos (id_cre) ON DELETE CASCADE,
   CONSTRAINT ux_tbl_cuotas_credito_numero UNIQUE (cre_id, cuo_numero),
   CONSTRAINT chk_tbl_cuotas_valores
     CHECK (
@@ -421,7 +452,7 @@ CREATE INDEX IF NOT EXISTS ix_tbl_cuotas_vencimiento_estado
   ON tbl_cuotas (cuo_fecha_vencimiento, cuo_estado);
 
 CREATE TABLE IF NOT EXISTS tbl_medios_pagos (
-  id_med INT8 PRIMARY KEY DEFAULT unique_rowid(),
+  id_med UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   med_nombre VARCHAR(120) NOT NULL,
   med_tipo medio_pago_tipo_enum NOT NULL,
   med_proveedor VARCHAR(120),
@@ -435,14 +466,14 @@ CREATE TABLE IF NOT EXISTS tbl_medios_pagos (
 );
 
 CREATE TABLE IF NOT EXISTS tbl_pagos (
-  id_pag INT8 PRIMARY KEY DEFAULT unique_rowid(),
+  id_pag UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   pag_monto DECIMAL(14, 2) NOT NULL,
   pag_fecha TIMESTAMPTZ NOT NULL DEFAULT now(),
   pag_referencia VARCHAR(120),
   pag_idempotency_llave UUID NOT NULL DEFAULT gen_random_uuid(),
   pag_estado pago_estado_enum NOT NULL DEFAULT 'REGISTRADO',
-  med_id INT8 NOT NULL REFERENCES tbl_medios_pagos (id_med) ON DELETE RESTRICT,
-  mon_id INT8 NOT NULL REFERENCES tbl_monedas (id_mon) ON DELETE RESTRICT,
+  med_id UUID NOT NULL REFERENCES tbl_medios_pagos (id_med) ON DELETE RESTRICT,
+  mon_id UUID NOT NULL REFERENCES tbl_monedas (id_mon) ON DELETE RESTRICT,
   CONSTRAINT ux_tbl_pagos_idempotency UNIQUE (pag_idempotency_llave),
   CONSTRAINT chk_tbl_pagos_monto CHECK (pag_monto > 0)
 );
@@ -451,13 +482,13 @@ CREATE INDEX IF NOT EXISTS ix_tbl_pagos_fecha
   ON tbl_pagos (pag_fecha DESC);
 
 CREATE TABLE IF NOT EXISTS tbl_cuotas_pagos (
-  id_cpa INT8 PRIMARY KEY DEFAULT unique_rowid(),
+  id_cpa UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   cpa_numero INT8,
   cpa_capital DECIMAL(14, 2) NOT NULL DEFAULT 0,
   cpa_interes DECIMAL(14, 2) NOT NULL DEFAULT 0,
   cpa_total DECIMAL(14, 2) AS (cpa_capital + cpa_interes) STORED,
-  cuo_id INT8 NOT NULL REFERENCES tbl_cuotas (id_cuo) ON DELETE RESTRICT,
-  pagos_id INT8 NOT NULL REFERENCES tbl_pagos (id_pag) ON DELETE CASCADE,
+  cuo_id UUID NOT NULL REFERENCES tbl_cuotas (id_cuo) ON DELETE RESTRICT,
+  pagos_id UUID NOT NULL REFERENCES tbl_pagos (id_pag) ON DELETE CASCADE,
   CONSTRAINT ux_tbl_cuotas_pagos UNIQUE (cuo_id, pagos_id),
   CONSTRAINT chk_tbl_cuotas_pagos_montos
     CHECK (cpa_capital >= 0 AND cpa_interes >= 0 AND cpa_total > 0)
@@ -467,10 +498,10 @@ CREATE INDEX IF NOT EXISTS ix_tbl_cuotas_pagos_pago
   ON tbl_cuotas_pagos (pagos_id);
 
 CREATE TABLE IF NOT EXISTS tbl_wompi_transacciones (
-  id_wtr INT8 PRIMARY KEY DEFAULT unique_rowid(),
-  org_id INT8 NOT NULL REFERENCES tbl_organizaciones (id_org) ON DELETE CASCADE,
-  pag_id INT8 REFERENCES tbl_pagos (id_pag) ON DELETE SET NULL,
-  mon_id INT8 NOT NULL REFERENCES tbl_monedas (id_mon) ON DELETE RESTRICT,
+  id_wtr UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id UUID NOT NULL REFERENCES tbl_organizaciones (id_org) ON DELETE CASCADE,
+  pag_id UUID REFERENCES tbl_pagos (id_pag) ON DELETE SET NULL,
+  mon_id UUID NOT NULL REFERENCES tbl_monedas (id_mon) ON DELETE RESTRICT,
   wtr_tipo_pago wompi_tipo_pago_enum NOT NULL,
   wtr_estado wompi_estado_enum NOT NULL DEFAULT 'PENDIENTE',
   wtr_monto DECIMAL(14, 2) NOT NULL,
@@ -501,11 +532,11 @@ CREATE INDEX IF NOT EXISTS ix_tbl_wompi_transacciones_estado
   ON tbl_wompi_transacciones (wtr_estado);
 
 CREATE TABLE IF NOT EXISTS tbl_notificaciones (
-  id_not INT8 PRIMARY KEY DEFAULT unique_rowid(),
-  org_id INT8 NOT NULL REFERENCES tbl_organizaciones (id_org) ON DELETE CASCADE,
-  cli_id INT8 NOT NULL REFERENCES tbl_clientes (id_cli) ON DELETE CASCADE,
-  cre_id INT8 REFERENCES tbl_creditos (id_cre) ON DELETE CASCADE,
-  pag_id INT8 REFERENCES tbl_pagos (id_pag) ON DELETE CASCADE,
+  id_not UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id UUID NOT NULL REFERENCES tbl_organizaciones (id_org) ON DELETE CASCADE,
+  cli_id UUID NOT NULL REFERENCES tbl_clientes (id_cli) ON DELETE CASCADE,
+  cre_id UUID REFERENCES tbl_creditos (id_cre) ON DELETE CASCADE,
+  pag_id UUID REFERENCES tbl_pagos (id_pag) ON DELETE CASCADE,
   not_tipo notificacion_tipo_enum NOT NULL,
   not_canal notificacion_canal_enum NOT NULL,
   not_estado notificacion_estado_enum NOT NULL DEFAULT 'PENDIENTE',
@@ -648,12 +679,12 @@ VALUES
   ('USD', 'Dolar estadounidense', '$', 2)
 ON CONFLICT (mon_codigo) DO NOTHING;
 
-INSERT INTO tbl_roles (id_rol, rol_tip, rol_nivel)
+INSERT INTO tbl_roles (rol_tip, rol_nivel)
 VALUES
-  (1, 'ADMINISTRADOR'::rol_tipo_enum, 1),
-  (2, 'COBRADOR'::rol_tipo_enum, 2),
-  (3, 'AUDITOR'::rol_tipo_enum, 3),
-  (4, 'SUPER_ADMIN'::rol_tipo_enum, 4)
+  ('ADMINISTRADOR'::rol_tipo_enum, 1),
+  ('COBRADOR'::rol_tipo_enum, 2),
+  ('AUDITOR'::rol_tipo_enum, 3),
+  ('SUPER_ADMIN'::rol_tipo_enum, 4)
 ON CONFLICT (rol_tip) DO UPDATE
 SET rol_nivel = excluded.rol_nivel;
 

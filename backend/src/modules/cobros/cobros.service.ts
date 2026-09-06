@@ -1285,7 +1285,7 @@ export class CobrosService {
       FROM public.tbl_clientes c
       JOIN public.tbl_personas p ON p.id_per = c.cli_persona
       WHERE c.id_cli::text = ${clienteId}
-        AND c.org_id = ${scope.organizacionId}::bigint
+        AND c.org_id = ${scope.organizacionId}::uuid
         AND ${
           this.esAdministrador(usuario)
             ? Prisma.sql`TRUE`
@@ -2442,9 +2442,9 @@ export class CobrosService {
             TRIM(CONCAT_WS(' ', p.per_primer_nombre, p.per_apellido)) AS nombre
           FROM public.tbl_clientes c
           JOIN public.tbl_personas p ON p.id_per = c.cli_persona
-          WHERE c.id_cli = ${dto.clienteId}::bigint
+          WHERE c.id_cli = ${dto.clienteId}::uuid
             AND c.cli_activo
-            AND c.org_id = ${scope.org_id}::bigint
+            AND c.org_id = ${scope.org_id}::uuid
           LIMIT 1
         `);
 
@@ -2475,14 +2475,18 @@ export class CobrosService {
           );
         }
 
+        const frecuenciaMap: Record<number, string> = {
+          1: 'DIARIO',
+          2: 'SEMANAL',
+          3: 'QUINCENAL',
+          4: 'MENSUAL',
+        };
+        const frecuenciaCodigo =
+          frecuenciaMap[Number(dto.frecuenciaPagoId)] ?? 'DIARIO';
+
         const [producto] = await tx.$queryRaw<
           Array<{ id: string; dias_intervalo: number }>
         >(Prisma.sql`
-          WITH seleccionado AS (
-            SELECT pcr_frecuencia
-            FROM public.tbl_productos_creditos
-            WHERE id_pcr = ${dto.frecuenciaPagoId}::bigint
-          )
           SELECT
             pc.id_pcr::text AS id,
             CASE pc.pcr_frecuencia::text
@@ -2492,15 +2496,9 @@ export class CobrosService {
               ELSE 1
             END AS dias_intervalo
           FROM public.tbl_productos_creditos pc
-          LEFT JOIN seleccionado s ON TRUE
-          WHERE pc.org_id = ${cliente.org_id}::bigint
-            AND (
-              pc.id_pcr = ${dto.frecuenciaPagoId}::bigint
-              OR pc.pcr_frecuencia = s.pcr_frecuencia
-            )
-          ORDER BY
-            (pc.id_pcr = ${dto.frecuenciaPagoId}::bigint) DESC,
-            pc.id_pcr ASC
+          WHERE pc.pcr_frecuencia::text = ${frecuenciaCodigo}
+             OR pc.id_pcr::text = ${String(dto.frecuenciaPagoId)}
+          ORDER BY (pc.pcr_frecuencia::text = ${frecuenciaCodigo}) DESC
           LIMIT 1
         `);
 
@@ -2527,9 +2525,9 @@ export class CobrosService {
             ORDER BY sca.sca_fecha_apertura DESC, sca.id_sca DESC
             LIMIT 1
           ) sc ON TRUE
-          WHERE c.id_caj = ${dto.cajaMenorId}::bigint
-            AND c.org_id = ${cliente.org_id}::bigint
-            AND c.mon_id = ${moneda.id}::bigint
+          WHERE c.id_caj = ${dto.cajaMenorId}::uuid
+            AND c.org_id = ${cliente.org_id}::uuid
+            AND c.mon_id = ${moneda.id}::uuid
             AND c.caj_tipo::text = 'MENOR'
             AND c.caj_activa
           LIMIT 1
@@ -2606,10 +2604,10 @@ export class CobrosService {
             ${this.decimal(plan.valorTotal)},
             ${fechaInicio}::date,
             ${plan.fechaMaxima}::date,
-            ${scope.usuario_id}::bigint,
-            ${producto.id}::bigint,
-            ${cliente.id}::bigint,
-            ${moneda.id}::bigint
+            ${scope.usuario_id}::uuid,
+            ${producto.id}::uuid,
+            ${cliente.id}::uuid,
+            ${moneda.id}::uuid
           )
           RETURNING id_cre::text AS id
         `);
@@ -2628,14 +2626,14 @@ export class CobrosService {
               ${this.decimal(cuota.valorCapital + cuota.valorInteres)},
               'PENDIENTE'::public.cuota_estado_enum,
               ${cuota.fechaVencimiento}::date,
-              ${credito.id}::bigint
+              ${credito.id}::uuid
             )
           `);
         }
 
         await tx.$executeRaw(Prisma.sql`
           INSERT INTO public.tbl_rutas_clientes (rut_id, cli_id)
-          VALUES (${rutaId}::bigint, ${cliente.id}::bigint)
+          VALUES (${rutaId}::uuid, ${cliente.id}::uuid)
           ON CONFLICT (rut_id, cli_id) DO UPDATE
           SET rcl_activo = TRUE
         `);
@@ -2653,8 +2651,8 @@ export class CobrosService {
               VALUES (
                 ${fechaInicio},
                 0,
-                ${caja.id}::bigint,
-                ${scope.usuario_id}::bigint
+                ${caja.id}::uuid,
+                ${scope.usuario_id}::uuid
               )
               RETURNING id_sca::text AS id
             `)
@@ -2681,19 +2679,19 @@ export class CobrosService {
           VALUES (
             'DESEMBOLSO_CREDITO'::public.movimiento_caja_tipo_enum,
             ${this.decimal(valorPrincipal)},
-            ${credito.id}::bigint,
+            ${credito.id}::uuid,
             'CREDITO'::public.movimiento_referencia_tipo_enum,
             ${fechaInicio},
-            ${cliente.org_id}::bigint,
-            ${scope.usuario_id}::bigint,
-            ${sesionId}::bigint
+            ${cliente.org_id}::uuid,
+            ${scope.usuario_id}::uuid,
+            ${sesionId}::uuid
           )
         `);
 
         await tx.$executeRaw(Prisma.sql`
           UPDATE public.tbl_sesiones_cajas
           SET sca_total_gasto = sca_total_gasto + ${this.decimal(valorPrincipal)}
-          WHERE id_sca = ${sesionId}::bigint
+          WHERE id_sca = ${sesionId}::uuid
         `);
 
         return credito.id;
@@ -4030,7 +4028,7 @@ export class CobrosService {
         await tx.$queryRaw(Prisma.sql`
           SELECT id_cuo
           FROM public.tbl_cuotas
-          WHERE id_cuo = ${dto.creditoCuotaId}::bigint
+          WHERE id_cuo = ${dto.creditoCuotaId}::uuid
           FOR UPDATE
         `);
 
@@ -4067,7 +4065,7 @@ export class CobrosService {
           JOIN public.tbl_personas p ON p.id_per = cl.cli_persona
           JOIN public.tbl_usuarios tu ON tu.id_usu = cr.usu_id
           JOIN public.tbl_monedas mon ON mon.id_mon = cr.mon_id
-          WHERE cu.id_cuo = ${dto.creditoCuotaId}::bigint
+          WHERE cu.id_cuo = ${dto.creditoCuotaId}::uuid
           LIMIT 1
         `);
 
@@ -4108,8 +4106,7 @@ export class CobrosService {
             UPPER(med_tipo::text) AS codigo,
             med_nombre AS nombre
           FROM public.tbl_medios_pagos
-          WHERE org_id = ${cuota.org_id}::bigint
-            AND med_activo
+          WHERE med_activo
             AND (
               UPPER(med_tipo::text) = ${codigoMedioPago}
               OR UPPER(TRIM(med_nombre)) = ${codigoMedioPago}
@@ -4140,17 +4137,15 @@ export class CobrosService {
           >(Prisma.sql`
             INSERT INTO public.tbl_medios_pagos (
               med_nombre,
-              med_tipo,
-              org_id
+              med_tipo
             )
             VALUES (
               ${this.nombreDesdeCodigo(codigoMedioPago)},
-              ${codigoMedioPago}::public.medio_pago_tipo_enum,
-              ${cuota.org_id}::bigint
+              ${codigoMedioPago}::public.medio_pago_tipo_enum
             )
-            ON CONFLICT (org_id, med_nombre) DO UPDATE
+            ON CONFLICT (med_tipo) DO UPDATE
             SET
-              med_tipo = EXCLUDED.med_tipo,
+              med_nombre = EXCLUDED.med_nombre,
               med_activo = TRUE
             RETURNING
               id_med::text AS id,
@@ -4165,7 +4160,7 @@ export class CobrosService {
           SELECT pa.id_pag::text AS id
           FROM public.tbl_pagos pa
           JOIN public.tbl_cuotas_pagos cp ON cp.pagos_id = pa.id_pag
-          WHERE cp.cuo_id = ${dto.creditoCuotaId}::bigint
+          WHERE cp.cuo_id = ${dto.creditoCuotaId}::uuid
             AND pa.pag_monto = ${this.decimal(montoPagado)}
             AND pa.pag_fecha >= ${this.segundosAtras(30)}
           ORDER BY pa.pag_fecha DESC, pa.id_pag DESC
@@ -4179,7 +4174,7 @@ export class CobrosService {
         await tx.$queryRaw(Prisma.sql`
           SELECT id_cuo
           FROM public.tbl_cuotas
-          WHERE cre_id = ${cuota.credito_id}::bigint
+          WHERE cre_id = ${cuota.credito_id}::uuid
           FOR UPDATE
         `);
 
@@ -4203,7 +4198,7 @@ export class CobrosService {
             UPPER(cu.cuo_estado::text) AS estado
           FROM public.tbl_cuotas cu
           LEFT JOIN public.tbl_cuotas_pagos cp ON cp.cuo_id = cu.id_cuo
-          WHERE cu.cre_id = ${cuota.credito_id}::bigint
+          WHERE cu.cre_id = ${cuota.credito_id}::uuid
             AND UPPER(cu.cuo_estado::text) <> 'ANULADA'
           GROUP BY cu.id_cuo
           ORDER BY cu.cuo_numero ASC
@@ -4246,8 +4241,8 @@ export class CobrosService {
           VALUES (
             ${this.decimal(montoPagado)},
             ${referenciaPago},
-            ${medioPago.id}::bigint,
-            ${cuota.moneda_id}::bigint
+            ${medioPago.id}::uuid,
+            ${cuota.moneda_id}::uuid
           )
           RETURNING id_pag::text AS id
         `);
@@ -4275,8 +4270,8 @@ export class CobrosService {
               ${Number(cuotaConSaldo.cuota.numero)},
               ${this.decimal(montoCuota)},
               0,
-              ${cuotaConSaldo.cuota.cuota_id}::bigint,
-              ${pago.id}::bigint
+              ${cuotaConSaldo.cuota.cuota_id}::uuid,
+              ${pago.id}::uuid
             )
           `);
 
@@ -4314,7 +4309,7 @@ export class CobrosService {
                   THEN 'PAGADA'::public.cuota_estado_enum
                 ELSE 'PENDIENTE'::public.cuota_estado_enum
               END
-            WHERE cu.id_cuo = ${cuotaId}::bigint
+            WHERE cu.id_cuo = ${cuotaId}::uuid
               AND UPPER(cu.cuo_estado::text) <> 'ANULADA'
           `);
         }
@@ -4332,7 +4327,7 @@ export class CobrosService {
               THEN 'PAGADO'::public.credito_estado_enum
             ELSE 'ACTIVO'::public.credito_estado_enum
           END
-          WHERE cr.id_cre = ${cuota.credito_id}::bigint
+          WHERE cr.id_cre = ${cuota.credito_id}::uuid
             AND UPPER(cr.cre_estado::text) <> 'ANULADO'
         `);
 
@@ -4437,12 +4432,12 @@ export class CobrosService {
         ORDER BY (r.usu_id = cr.usu_id) DESC, r.rut_activa DESC
         LIMIT 1
       ) ruta_credito ON TRUE
-      WHERE pa.id_pag = ${pagoId}::bigint
-        AND cl.org_id = ${scope.organizacionId}::bigint
+      WHERE pa.id_pag = ${pagoId}::uuid
+        AND cl.org_id = ${scope.organizacionId}::uuid
         AND ${
           this.puedeVerDatosOrganizacion(usuario)
             ? Prisma.sql`TRUE`
-            : Prisma.sql`tu.id_usu = ${scope.usuarioId}::bigint`
+            : Prisma.sql`tu.id_usu = ${scope.usuarioId}::uuid`
         }
       ORDER BY cr.id_cre
       LIMIT 1
@@ -4465,7 +4460,7 @@ export class CobrosService {
           0::numeric AS monto_descuento
         FROM public.tbl_cuotas_pagos cp
         JOIN public.tbl_cuotas cu ON cu.id_cuo = cp.cuo_id
-        WHERE cp.pagos_id = ${pagoId}::bigint
+        WHERE cp.pagos_id = ${pagoId}::uuid
         ORDER BY cu.cuo_numero ASC
       `,
     );
@@ -5114,11 +5109,11 @@ export class CobrosService {
           LIMIT 1
         ) sc ON TRUE
         WHERE c.id_caj::text = ${dto.cajaMenorId}
-          AND c.org_id = ${scope.organizacionId}::bigint
+          AND c.org_id = ${scope.organizacionId}::uuid
           AND c.caj_tipo::text = 'MENOR'
           AND uo.urg_activo
           AND tu.usu_activo
-          AND tu.id_usu = ${scope.usuarioId}::bigint
+          AND tu.id_usu = ${scope.usuarioId}::uuid
         LIMIT 1
       `);
 
@@ -5149,8 +5144,8 @@ export class CobrosService {
             VALUES (
               ${fechaMovimiento},
               0,
-              ${caja.caja_menor_id}::bigint,
-              ${caja.usuario_id}::bigint
+              ${caja.caja_menor_id}::uuid,
+              ${caja.usuario_id}::uuid
             )
             RETURNING id_sca::text AS id
           `)
@@ -5178,9 +5173,9 @@ export class CobrosService {
           ${this.decimal(monto)},
           NULL::public.movimiento_referencia_tipo_enum,
           ${fechaMovimiento},
-          ${caja.org_id}::bigint,
-          ${caja.usuario_id}::bigint,
-          ${sesionId}::bigint
+          ${caja.org_id}::uuid,
+          ${caja.usuario_id}::uuid,
+          ${sesionId}::uuid
         )
         RETURNING id_mca::text AS id
       `);
@@ -5194,7 +5189,7 @@ export class CobrosService {
           sca_total_gasto = sca_total_gasto + ${
             tipo.naturaleza === 'S' ? this.decimal(monto) : 0
           }
-        WHERE id_sca = ${sesionId}::bigint
+        WHERE id_sca = ${sesionId}::uuid
       `);
 
       return this.obtenerMovimientoCajaTblPorId(tx, creado.id, motivo);
@@ -5580,10 +5575,10 @@ export class CobrosService {
           FROM public.tbl_usuarios tu
           JOIN public.tbl_personas p ON p.id_per = tu.persona_id
           JOIN public.tbl_usuarios_organizaciones uo ON uo.usu_id = tu.id_usu
-          WHERE tu.id_usu = ${scope.usuarioId}::bigint
+          WHERE tu.id_usu = ${scope.usuarioId}::uuid
             AND tu.usu_activo
             AND uo.urg_activo
-            AND uo.org_id = ${scope.organizacionId}::bigint
+            AND uo.org_id = ${scope.organizacionId}::uuid
           ORDER BY uo.id_urg ASC
           LIMIT 1
         `,
@@ -5626,7 +5621,7 @@ export class CobrosService {
       const [existente] = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
         SELECT id_caj::text AS id
         FROM public.tbl_cajas
-        WHERE org_id = ${responsable.organizacion_id}::bigint
+        WHERE org_id = ${responsable.organizacion_id}::uuid
           AND caj_tipo::text = 'MENOR'
           AND UPPER(TRIM(caj_nombre)) = UPPER(${nombre})
         LIMIT 1
@@ -5652,8 +5647,8 @@ export class CobrosService {
             ${nombre},
             TRUE,
             ${fechaApertura},
-            ${responsable.organizacion_id}::bigint,
-            ${moneda.id}::bigint
+            ${responsable.organizacion_id}::uuid,
+            ${moneda.id}::uuid
           )
           RETURNING
             id_caj::text AS id,
@@ -5675,8 +5670,8 @@ export class CobrosService {
           ${fechaApertura},
           ${fechaCierre},
           0,
-          ${cajaCreada.id}::bigint,
-          ${responsable.id}::bigint
+          ${cajaCreada.id}::uuid,
+          ${responsable.id}::uuid
         )
       `);
 
@@ -5980,7 +5975,7 @@ export class CobrosService {
     const conditions: Prisma.Sql[] = [Prisma.sql`tu.usu_activo`];
 
     if (this.esIdTbl(usuario.usuarioId)) {
-      conditions.push(Prisma.sql`tu.id_usu = ${usuario.usuarioId}::bigint`);
+      conditions.push(Prisma.sql`tu.id_usu = ${usuario.usuarioId}::uuid`);
     } else {
       conditions.push(
         Prisma.sql`lower(tu.usu_usuario) = lower(${usuario.usuario})`,
@@ -5989,7 +5984,7 @@ export class CobrosService {
 
     if (usuario.organizacionId && this.esIdTbl(usuario.organizacionId)) {
       conditions.push(
-        Prisma.sql`uo.org_id = ${usuario.organizacionId}::bigint`,
+        Prisma.sql`uo.org_id = ${usuario.organizacionId}::uuid`,
       );
     }
 
@@ -6037,7 +6032,13 @@ export class CobrosService {
           FROM (
             SELECT
               'frecuencia_pago' AS tipo,
-              MIN(id_pcr)::text AS id,
+              CASE pcr_frecuencia::text
+                WHEN 'DIARIO' THEN '1'
+                WHEN 'SEMANAL' THEN '2'
+                WHEN 'QUINCENAL' THEN '3'
+                WHEN 'MENSUAL' THEN '4'
+                ELSE '1'
+              END AS id,
               pcr_frecuencia::text AS codigo,
               INITCAP(REPLACE(pcr_frecuencia::text, '_', ' ')) AS nombre,
               CASE pcr_frecuencia::text
@@ -6049,7 +6050,6 @@ export class CobrosService {
               END AS extra,
               TRUE AS activo
             FROM public.tbl_productos_creditos
-            WHERE org_id = ${scope.organizacionId}::bigint
             GROUP BY pcr_frecuencia::text
             UNION ALL
             SELECT
@@ -6060,7 +6060,7 @@ export class CobrosService {
               NULL,
               med_activo
             FROM public.tbl_medios_pagos
-            WHERE org_id = ${scope.organizacionId}::bigint
+            WHERE med_activo
             UNION ALL
             SELECT
               'medio_pago',
@@ -6118,7 +6118,7 @@ export class CobrosService {
             FROM (
               SELECT DISTINCT UPPER(mca_tipo::text) AS codigo
               FROM public.tbl_movimientos_cajas
-              WHERE org_id = ${scope.organizacionId}::bigint
+              WHERE org_id = ${scope.organizacionId}::uuid
                 AND UPPER(mca_tipo::text) NOT IN (${Prisma.join(
                   codigosMovimientoCajaTblBase,
                 )})
@@ -6133,22 +6133,23 @@ export class CobrosService {
             c.id_caj::text AS id,
             c.id_caj::text AS codigo,
             c.caj_nombre AS nombre,
-            COALESCE(u.id_usu::text, '') AS extra,
+            COALESCE(
+              (
+                SELECT sc.usu_id::text
+                FROM public.tbl_sesiones_cajas sc
+                WHERE sc.caj_id = c.id_caj
+                ORDER BY
+                  (sc.sca_estado::text = 'ABIERTA') DESC,
+                  sc.sca_fecha_apertura DESC,
+                  sc.id_sca DESC
+                LIMIT 1
+              ),
+              ''
+            ) AS extra,
             c.caj_activa AS activo
           FROM public.tbl_cajas c
-          LEFT JOIN LATERAL (
-            SELECT tu.id_usu
-            FROM public.tbl_sesiones_cajas sc
-            JOIN public.tbl_usuarios tu ON tu.id_usu = sc.usu_id
-            WHERE sc.caj_id = c.id_caj
-            ORDER BY
-              (sc.sca_estado::text = 'ABIERTA') DESC,
-              sc.sca_fecha_apertura DESC,
-              sc.id_sca DESC
-            LIMIT 1
-          ) u ON TRUE
           WHERE c.caj_tipo::text = 'MENOR'
-            AND c.org_id = ${scope.organizacionId}::bigint
+            AND c.org_id = ${scope.organizacionId}::uuid
             AND ${
               puedeVerTodo
                 ? Prisma.sql`TRUE`
@@ -6156,7 +6157,7 @@ export class CobrosService {
                     SELECT 1
                     FROM public.tbl_sesiones_cajas sc_acl
                     WHERE sc_acl.caj_id = c.id_caj
-                      AND sc_acl.usu_id = ${scope.usuarioId}::bigint
+                      AND sc_acl.usu_id = ${scope.usuarioId}::uuid
                   )`
             }
           ORDER BY c.caj_activa DESC, c.caj_nombre ASC
@@ -6174,12 +6175,12 @@ export class CobrosService {
           JOIN public.tbl_usuarios_organizaciones uo
             ON uo.usu_id = tu.id_usu
            AND uo.urg_activo
-           AND uo.org_id = ${scope.organizacionId}::bigint
+           AND uo.org_id = ${scope.organizacionId}::uuid
           WHERE tu.usu_activo
             AND ${
               puedeVerTodo
                 ? Prisma.sql`TRUE`
-                : Prisma.sql`tu.id_usu = ${scope.usuarioId}::bigint`
+                : Prisma.sql`tu.id_usu = ${scope.usuarioId}::uuid`
             }
           ORDER BY p.per_primer_nombre ASC, p.per_apellido ASC
         `),
@@ -6188,13 +6189,17 @@ export class CobrosService {
     const frecuenciasPago = catalogos.filter(
       (catalogo) => catalogo.tipo === 'frecuencia_pago',
     );
+    let medioPagoSeq = 1;
     const mediosPago = new Map(
       catalogos
         .filter((catalogo) => catalogo.tipo === 'medio_pago' && catalogo.activo)
         .map((medio) => [
           medio.codigo,
           {
-            id: Number(medio.id),
+            id:
+              Number.isFinite(Number(medio.id)) && Number(medio.id) > 0
+                ? Number(medio.id)
+                : medioPagoSeq++,
             codigo: medio.codigo,
             nombre: medio.nombre,
           },
@@ -6224,21 +6229,30 @@ export class CobrosService {
                 decimales: 2,
               },
             ],
-      frecuenciasPago: frecuenciasPago.map((frecuencia) => ({
-        id: Number(frecuencia.id),
+      frecuenciasPago: frecuenciasPago.map((frecuencia, index) => ({
+        id:
+          Number.isFinite(Number(frecuencia.id)) && Number(frecuencia.id) > 0
+            ? Number(frecuencia.id)
+            : index + 1,
         codigo: frecuencia.codigo,
         nombre: frecuencia.nombre,
         diasIntervalo: Number(frecuencia.extra ?? 1),
       })),
       mediosPago: [...mediosPago.values()],
-      tiposMovimientoCaja: tiposMovimientoCaja.map((tipo) => ({
-        id: Number(tipo.id),
+      tiposMovimientoCaja: tiposMovimientoCaja.map((tipo, index) => ({
+        id:
+          Number.isFinite(Number(tipo.id)) && Number(tipo.id) > 0
+            ? Number(tipo.id)
+            : index + 1,
         codigo: tipo.codigo,
         nombre: tipo.nombre,
         naturaleza: tipo.extra ?? 'E',
       })),
-      categoriasGasto: categoriasGasto.map((categoria) => ({
-        id: Number(categoria.id),
+      categoriasGasto: categoriasGasto.map((categoria, index) => ({
+        id:
+          Number.isFinite(Number(categoria.id)) && Number(categoria.id) > 0
+            ? Number(categoria.id)
+            : index + 1,
         codigo: categoria.codigo,
         nombre: categoria.nombre,
         activa: categoria.activo ?? true,
@@ -6246,7 +6260,9 @@ export class CobrosService {
       rutas,
       cajasMenores: cajasMenores.map((caja) => {
         const responsable =
-          usuarios.find((item) => item.id === caja.extra) ?? usuarios[0];
+          usuarios.find((item) => item.id === caja.extra) ??
+          usuarios[0] ??
+          null;
 
         return {
           id: caja.id,
@@ -6258,7 +6274,10 @@ export class CobrosService {
             : this.formatearUsuarioAutenticado(usuario),
         };
       }),
-      usuarios: usuarios.map((item) => this.formatearUsuarioTbl(item)),
+      usuarios:
+        usuarios.length > 0
+          ? usuarios.map((item) => this.formatearUsuarioTbl(item))
+          : [this.formatearUsuarioAutenticado(usuario)],
     };
   }
 
@@ -6293,7 +6312,7 @@ export class CobrosService {
     const scope = await this.obtenerScopeOrganizacionTbl(usuario);
     const search = this.normalizarTextoOpcional(query.search);
     const conditions: Prisma.Sql[] = [
-      Prisma.sql`c.org_id = ${scope.organizacionId}::bigint`,
+      Prisma.sql`c.org_id = ${scope.organizacionId}::uuid`,
     ];
 
     if (!this.puedeVerDatosOrganizacion(usuario)) {
@@ -6304,7 +6323,7 @@ export class CobrosService {
         WHERE rc_acl.cli_id = c.id_cli
           AND rc_acl.rcl_activo
           AND r_acl.org_id = c.org_id
-          AND r_acl.usu_id = ${scope.usuarioId}::bigint
+          AND r_acl.usu_id = ${scope.usuarioId}::uuid
       )`);
     }
 
@@ -6421,8 +6440,8 @@ export class CobrosService {
             )
             VALUES (
               ${input.nombreComercial},
-              ${scope.organizacionId}::bigint,
-              ${BigInt(persona.id)}
+              ${scope.organizacionId}::uuid,
+              ${persona.id}::uuid
             )
             RETURNING id_cli::text AS id
           `,
@@ -6438,7 +6457,7 @@ export class CobrosService {
 
         await tx.$executeRaw(Prisma.sql`
           INSERT INTO public.tbl_rutas_clientes (rut_id, cli_id)
-          VALUES (${rutaId}::bigint, ${cliente.id}::bigint)
+          VALUES (${rutaId}::uuid, ${cliente.id}::uuid)
           ON CONFLICT (rut_id, cli_id) DO UPDATE
           SET rcl_activo = TRUE
         `);
@@ -6563,7 +6582,7 @@ export class CobrosService {
         FROM public.tbl_clientes c
         JOIN public.tbl_personas p ON p.id_per = c.cli_persona
         WHERE c.id_cli::text = ${clienteId}
-          AND c.org_id = ${scope.organizacionId}::bigint
+          AND c.org_id = ${scope.organizacionId}::uuid
         FOR UPDATE OF c, p
       `);
         const actual = rows[0];
@@ -6665,7 +6684,7 @@ export class CobrosService {
       FROM public.tbl_clientes c
       JOIN public.tbl_personas p ON p.id_per = c.cli_persona
       WHERE c.id_cli::text = ${clienteId}
-        AND c.org_id = ${scope.organizacionId}::bigint
+        AND c.org_id = ${scope.organizacionId}::uuid
     `);
     const cliente = actualizados[0];
 
@@ -6706,7 +6725,7 @@ export class CobrosService {
         FROM public.tbl_clientes c
         JOIN public.tbl_personas p ON p.id_per = c.cli_persona
         WHERE c.id_cli::text = ${clienteId}
-          AND c.org_id = ${scope.organizacionId}::bigint
+          AND c.org_id = ${scope.organizacionId}::uuid
         FOR UPDATE OF c, p
       `);
       const cliente = rows[0];
@@ -6730,7 +6749,7 @@ export class CobrosService {
         LEFT JOIN public.tbl_cuotas_pagos cp ON cp.cuo_id = cu.id_cuo
         LEFT JOIN public.tbl_pagos pa ON pa.id_pag = cp.pagos_id
         WHERE c.id_cli::text = ${clienteId}
-          AND c.org_id = ${scope.organizacionId}::bigint
+          AND c.org_id = ${scope.organizacionId}::uuid
       `);
       const conteo = relaciones[0];
 
@@ -6755,12 +6774,12 @@ export class CobrosService {
         USING public.tbl_rutas r
         WHERE tbl_rutas_clientes.rut_id = r.id_rut
           AND tbl_rutas_clientes.cli_id::text = ${clienteId}
-          AND r.org_id = ${scope.organizacionId}::bigint
+          AND r.org_id = ${scope.organizacionId}::uuid
       `);
       await tx.$executeRaw(Prisma.sql`
         DELETE FROM public.tbl_clientes
         WHERE id_cli::text = ${clienteId}
-          AND org_id = ${scope.organizacionId}::bigint
+          AND org_id = ${scope.organizacionId}::uuid
       `);
       await tx.$executeRaw(Prisma.sql`
         DELETE FROM public.tbl_personas
@@ -6797,11 +6816,11 @@ export class CobrosService {
       LEFT JOIN public.tbl_creditos cr
         ON cr.cli_id = rc.cli_id
         AND cr.usu_id = r.usu_id
-      WHERE r.org_id = ${scope.organizacionId}::bigint
+      WHERE r.org_id = ${scope.organizacionId}::uuid
         AND ${
           this.puedeVerDatosOrganizacion(usuario)
             ? Prisma.sql`TRUE`
-            : Prisma.sql`tu.id_usu = ${scope.usuarioId}::bigint`
+            : Prisma.sql`tu.id_usu = ${scope.usuarioId}::uuid`
         }
       GROUP BY r.id_rut, tu.id_usu, p.id_per
       ORDER BY r.rut_activa DESC, r.rut_nombre ASC
@@ -6837,17 +6856,17 @@ export class CobrosService {
     const scope = await this.obtenerScopeOrganizacionTbl(usuario);
     const search = this.normalizarTextoOpcional(query.search);
     const conditions: Prisma.Sql[] = [
-      Prisma.sql`cl.org_id = ${scope.organizacionId}::bigint`,
+      Prisma.sql`cl.org_id = ${scope.organizacionId}::uuid`,
       Prisma.sql`UPPER(cr.cre_estado::text) <> 'ANULADO'`,
     ];
 
     if (!this.puedeVerDatosOrganizacion(usuario)) {
-      conditions.push(Prisma.sql`tu.id_usu = ${scope.usuarioId}::bigint`);
+      conditions.push(Prisma.sql`tu.id_usu = ${scope.usuarioId}::uuid`);
     }
 
     if (query.rutaId) {
       conditions.push(
-        Prisma.sql`ruta_credito.ruta_id = ${query.rutaId}::bigint`,
+        Prisma.sql`ruta_credito.ruta_id = ${query.rutaId}::uuid`,
       );
     }
 
@@ -7006,16 +7025,16 @@ export class CobrosService {
     const search = this.normalizarTextoOpcional(query.search);
     const estado = query.estado ?? 'todos';
     const conditions: Prisma.Sql[] = [
-      Prisma.sql`cl.org_id = ${scope.organizacionId}::bigint`,
+      Prisma.sql`cl.org_id = ${scope.organizacionId}::uuid`,
     ];
 
     if (!this.puedeVerDatosOrganizacion(usuario)) {
-      conditions.push(Prisma.sql`tu.id_usu = ${scope.usuarioId}::bigint`);
+      conditions.push(Prisma.sql`tu.id_usu = ${scope.usuarioId}::uuid`);
     }
 
     if (query.rutaId) {
       conditions.push(
-        Prisma.sql`ruta_credito.ruta_id = ${query.rutaId}::bigint`,
+        Prisma.sql`ruta_credito.ruta_id = ${query.rutaId}::uuid`,
       );
     }
 
@@ -7193,17 +7212,17 @@ export class CobrosService {
     const scope = await this.obtenerScopeOrganizacionTbl(usuario);
     const search = this.normalizarTextoOpcional(query.search);
     const conditions: Prisma.Sql[] = [
-      Prisma.sql`cl.org_id = ${scope.organizacionId}::bigint`,
+      Prisma.sql`cl.org_id = ${scope.organizacionId}::uuid`,
     ];
     const fechaConditions: Prisma.Sql[] = [Prisma.sql`1 = 1`];
 
     if (!this.puedeVerDatosOrganizacion(usuario)) {
-      conditions.push(Prisma.sql`tu.id_usu = ${scope.usuarioId}::bigint`);
+      conditions.push(Prisma.sql`tu.id_usu = ${scope.usuarioId}::uuid`);
     }
 
     if (query.rutaId) {
       conditions.push(
-        Prisma.sql`ruta_credito.ruta_id = ${query.rutaId}::bigint`,
+        Prisma.sql`ruta_credito.ruta_id = ${query.rutaId}::uuid`,
       );
     }
 
@@ -7327,7 +7346,7 @@ export class CobrosService {
           ) AS abonado
         FROM public.tbl_cuotas cu
         LEFT JOIN public.tbl_cuotas_pagos cp ON cp.cuo_id = cu.id_cuo
-        WHERE cu.cre_id = ${creditoId}::bigint
+        WHERE cu.cre_id = ${creditoId}::uuid
         GROUP BY cu.id_cuo, cu.cuo_total_pagado
       )
       SELECT
@@ -7343,7 +7362,7 @@ export class CobrosService {
         GREATEST(cu.cuo_valor - COALESCE(ac.abonado, 0), 0) AS saldo
       FROM public.tbl_cuotas cu
       LEFT JOIN abonos_cuota ac ON ac.id_cuo = cu.id_cuo
-      WHERE cu.cre_id = ${creditoId}::bigint
+      WHERE cu.cre_id = ${creditoId}::uuid
       ORDER BY cu.cuo_numero ASC
     `);
 
@@ -7425,7 +7444,7 @@ export class CobrosService {
         ORDER BY mc.id_mca DESC
         LIMIT 1
       ) caja_credito ON TRUE
-      WHERE cr.id_cre = ${creditoId}::bigint
+      WHERE cr.id_cre = ${creditoId}::uuid
       GROUP BY
         cr.id_cre,
         cl.id_cli,
@@ -7812,7 +7831,7 @@ export class CobrosService {
     const condicionesCajas: Prisma.Sql[] = [
       Prisma.sql`c.caj_tipo::text = 'MENOR'`,
       Prisma.sql`c.caj_activa`,
-      Prisma.sql`c.org_id = ${scope.organizacionId}::bigint`,
+      Prisma.sql`c.org_id = ${scope.organizacionId}::uuid`,
     ];
     const filtrosFechaPagos: Prisma.Sql[] = [];
     const filtrosFechaGastos: Prisma.Sql[] = [];
@@ -7827,7 +7846,7 @@ export class CobrosService {
         SELECT 1
         FROM public.tbl_sesiones_cajas sc_acl
         WHERE sc_acl.caj_id = c.id_caj
-          AND sc_acl.usu_id = ${scope.usuarioId}::bigint
+          AND sc_acl.usu_id = ${scope.usuarioId}::uuid
       )`);
     }
 
@@ -7863,16 +7882,16 @@ export class CobrosService {
       : Prisma.empty;
     const usuarioMovimientosWhere = puedeVerTodo
       ? Prisma.empty
-      : Prisma.sql`AND m.usu_id = ${scope.usuarioId}::bigint`;
+      : Prisma.sql`AND m.usu_id = ${scope.usuarioId}::uuid`;
     const usuarioPagosWhere = puedeVerTodo
       ? Prisma.empty
-      : Prisma.sql`AND cr.usu_id = ${scope.usuarioId}::bigint`;
+      : Prisma.sql`AND cr.usu_id = ${scope.usuarioId}::uuid`;
     const usuarioGastosWhere = puedeVerTodo
       ? Prisma.empty
-      : Prisma.sql`AND g.usu_id = ${scope.usuarioId}::bigint`;
+      : Prisma.sql`AND g.usu_id = ${scope.usuarioId}::uuid`;
     const usuarioCreditosWhere = puedeVerTodo
       ? Prisma.empty
-      : Prisma.sql`AND cr.usu_id = ${scope.usuarioId}::bigint`;
+      : Prisma.sql`AND cr.usu_id = ${scope.usuarioId}::uuid`;
     const fechaPagosWhere =
       filtrosFechaPagos.length > 0
         ? Prisma.sql`AND ${Prisma.join(filtrosFechaPagos, ' AND ')}`
@@ -7895,7 +7914,7 @@ export class CobrosService {
           ${
             puedeVerTodo
               ? Prisma.sql`COALESCE(tu.id_usu, responsable.id_usu)`
-              : Prisma.sql`${scope.usuarioId}::bigint`
+              : Prisma.sql`${scope.usuarioId}::uuid`
           } AS responsable_id
         FROM public.tbl_cajas c
         LEFT JOIN LATERAL (
@@ -8038,12 +8057,12 @@ export class CobrosService {
           FROM public.tbl_creditos cr
           JOIN public.tbl_usuarios tu ON tu.id_usu = cr.usu_id
           JOIN public.tbl_clientes cl ON cl.id_cli = cr.cli_id
-          WHERE cr.id_cre = ${creditoId}::bigint
-            AND cl.org_id = ${scope.organizacionId}::bigint
+          WHERE cr.id_cre = ${creditoId}::uuid
+            AND cl.org_id = ${scope.organizacionId}::uuid
             AND ${
               this.puedeVerDatosOrganizacion(usuario)
                 ? Prisma.sql`TRUE`
-                : Prisma.sql`tu.id_usu = ${scope.usuarioId}::bigint`
+                : Prisma.sql`tu.id_usu = ${scope.usuarioId}::uuid`
             }
         ) AS existe
       `,
@@ -8184,7 +8203,7 @@ export class CobrosService {
   }
 
   private esIdTbl(value: string) {
-    return /^\d+$/.test(value);
+    return /^\d+$/.test(value) || /^[0-9a-fA-F-]{36}$/.test(value);
   }
 
   private diasIntervaloFrecuencia(codigo: string) {
@@ -8636,8 +8655,8 @@ export class CobrosService {
       const [ruta] = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
         SELECT id_rut::text AS id
         FROM public.tbl_rutas
-        WHERE id_rut = ${rutaId}::bigint
-          AND org_id = ${organizacionId}::bigint
+        WHERE id_rut = ${rutaId}::uuid
+          AND org_id = ${organizacionId}::uuid
           AND rut_activa
         LIMIT 1
       `);
@@ -8652,8 +8671,8 @@ export class CobrosService {
     const [existente] = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
       SELECT id_rut::text AS id
       FROM public.tbl_rutas
-      WHERE org_id = ${organizacionId}::bigint
-        AND usu_id = ${usuarioId}::bigint
+      WHERE org_id = ${organizacionId}::uuid
+        AND usu_id = ${usuarioId}::uuid
         AND rut_activa
       ORDER BY id_rut ASC
       LIMIT 1
@@ -8674,8 +8693,8 @@ export class CobrosService {
       VALUES (
         ${nombre},
         'Creada automaticamente al registrar un credito',
-        ${usuarioId}::bigint,
-        ${organizacionId}::bigint
+        ${usuarioId}::uuid,
+        ${organizacionId}::uuid
       )
       ON CONFLICT (org_id, rut_nombre) DO UPDATE
       SET

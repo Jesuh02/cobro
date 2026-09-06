@@ -261,7 +261,7 @@ export class AuthService {
         VALUES (
           ${nombreUsuario},
           ${passwordHash},
-          ${BigInt(persona.id)}
+          ${persona.id}::uuid
         )
         RETURNING id_usu::text AS id
       `;
@@ -282,9 +282,9 @@ export class AuthService {
           org_id
         )
         VALUES (
-          ${BigInt(rolAdministradorId)},
-          ${BigInt(usuario.id)},
-          ${BigInt(organizacion.id)}
+          ${rolAdministradorId}::uuid,
+          ${usuario.id}::uuid,
+          ${organizacion.id}::uuid
         )
       `;
 
@@ -434,7 +434,7 @@ export class AuthService {
             SELECT 1
             FROM public.tbl_organizaciones
             WHERE lower(org_nombre) = lower(${nombre})
-              AND id_org <> ${BigInt(organizacionId)}
+              AND id_org <> ${organizacionId}::uuid
           ) AS existe
         `,
       );
@@ -500,7 +500,7 @@ export class AuthService {
         WITH actualizada AS (
           UPDATE public.tbl_organizaciones
           SET ${Prisma.join(setters, ', ')}
-          WHERE id_org = ${BigInt(organizacionId)}
+          WHERE id_org = ${organizacionId}::uuid
             AND NOT COALESCE(org_es_sistema, FALSE)
           RETURNING *
         )
@@ -580,7 +580,7 @@ export class AuthService {
               + ${dto.dias}::integer,
             org_suspendida_en = NULL,
             org_motivo_suspension = NULL
-          WHERE id_org = ${BigInt(organizacionId)}
+          WHERE id_org = ${organizacionId}::uuid
             AND NOT COALESCE(org_es_sistema, FALSE)
           RETURNING *
         )
@@ -657,7 +657,7 @@ export class AuthService {
       >(Prisma.sql`
         SELECT id_org::text AS id
         FROM public.tbl_organizaciones
-        WHERE id_org = ${BigInt(dto.organizacionId)}
+        WHERE id_org = ${dto.organizacionId}::uuid
           AND NOT COALESCE(org_es_sistema, FALSE)
         LIMIT 1
       `);
@@ -709,7 +709,7 @@ export class AuthService {
           VALUES (
             ${nombreUsuario},
             ${passwordHash},
-            ${persona.id}::bigint
+            ${persona.id}::uuid
           )
           RETURNING id_usu::text AS id
         `,
@@ -723,9 +723,9 @@ export class AuthService {
           urg_activo
         )
         VALUES (
-          ${rolAdministradorId}::bigint,
-          ${usuarioCreado.id}::bigint,
-          ${organizacion.id}::bigint,
+          ${rolAdministradorId}::uuid,
+          ${usuarioCreado.id}::uuid,
+          ${organizacion.id}::uuid,
           TRUE
         )
       `);
@@ -1378,7 +1378,7 @@ export class AuthService {
       JOIN public.tbl_usuarios_organizaciones uo
         ON uo.usu_id = tu.id_usu
        AND uo.urg_activo
-       AND uo.org_id = ${BigInt(orgId)}
+       AND uo.org_id = ${orgId}::uuid
       JOIN public.tbl_roles tr ON tr.id_rol = uo.rol_id
       LEFT JOIN public.tbl_roles_recursos rr ON rr.rol_id = tr.id_rol
       LEFT JOIN public.tbl_recursos rec ON rec.id_rec = rr.rec_id
@@ -1389,7 +1389,7 @@ export class AuthService {
           ON rol_cobrador.id_rol = uo_cobrador.rol_id
         WHERE uo_cobrador.usu_id = tu.id_usu
           AND uo_cobrador.urg_activo
-          AND uo_cobrador.org_id = ${BigInt(orgId)}
+          AND uo_cobrador.org_id = ${orgId}::uuid
           AND rol_cobrador.rol_tip::text = 'COBRADOR'
       )
       GROUP BY
@@ -1432,7 +1432,7 @@ export class AuthService {
         JOIN public.tbl_usuarios_organizaciones uo
           ON uo.usu_id = tu.id_usu
          AND uo.urg_activo
-         AND uo.org_id = ${BigInt(orgId)}
+         AND uo.org_id = ${orgId}::uuid
         JOIN public.tbl_roles r
           ON r.id_rol = uo.rol_id
          AND r.rol_tip::text = 'COBRADOR'
@@ -1461,7 +1461,7 @@ export class AuthService {
           ORDER BY (r.usu_id = cr.usu_id) DESC, r.rut_activa DESC, r.rut_nombre ASC
           LIMIT 1
         ) ruta_credito ON TRUE
-        WHERE cl.org_id = ${BigInt(orgId)}
+        WHERE cl.org_id = ${orgId}::uuid
           AND UPPER(cr.cre_estado::text) <> 'ANULADO'
       ),
       cuotas_estado AS (
@@ -1588,7 +1588,7 @@ export class AuthService {
           ORDER BY (r.usu_id = cr.usu_id) DESC, r.rut_activa DESC, r.rut_nombre ASC
           LIMIT 1
         ) ruta_credito ON TRUE
-        WHERE cl.org_id = ${BigInt(orgId)}
+        WHERE cl.org_id = ${orgId}::uuid
         GROUP BY cr.usu_id, ruta_credito.ruta_id
       ),
       rutas_creditos AS (
@@ -1708,12 +1708,10 @@ export class AuthService {
         COALESCE(ar.pendientes_hoy, 0) AS pendientes_hoy,
         COALESCE(atrasos_total.atrasados, 0) AS atrasados,
         CASE
-          WHEN cr.ultima_actividad IS NULL AND pt.ultima_actividad IS NULL
-            THEN NULL
-          ELSE GREATEST(
-            COALESCE(cr.ultima_actividad, '-infinity'::timestamp),
-            COALESCE(pt.ultima_actividad, '-infinity'::timestamp)
-          )
+          WHEN cr.ultima_actividad IS NULL THEN pt.ultima_actividad
+          WHEN pt.ultima_actividad IS NULL THEN cr.ultima_actividad
+          WHEN cr.ultima_actividad >= pt.ultima_actividad THEN cr.ultima_actividad
+          ELSE pt.ultima_actividad
         END AS ultima_actividad
       FROM empleados e
       LEFT JOIN rutas_json rj
@@ -1846,7 +1844,7 @@ export class AuthService {
         JOIN public.tbl_usuarios_organizaciones uo
           ON uo.usu_id = tu.id_usu
          AND uo.urg_activo
-         AND uo.org_id = ${BigInt(orgId)}
+         AND uo.org_id = ${orgId}::uuid
         JOIN public.tbl_roles rol ON rol.id_rol = uo.rol_id
         WHERE rol.rol_tip::text = 'COBRADOR'
       `);
@@ -1901,7 +1899,7 @@ export class AuthService {
 
       await tx.$executeRaw(Prisma.sql`
         INSERT INTO public.tbl_roles_recursos (rol_id, rec_id)
-        SELECT ${rolCobrador.id}::bigint, recurso.id_rec
+        SELECT ${rolCobrador.id}::uuid, recurso.id_rec
         FROM public.tbl_recursos recurso
         WHERE recurso.rec_interface = 'WEB'
           AND recurso.nom IN (${Prisma.join(permisos)})
@@ -1942,9 +1940,9 @@ export class AuthService {
         JOIN public.tbl_usuarios_organizaciones uo
           ON uo.usu_id = tu.id_usu
          AND uo.urg_activo
-         AND uo.org_id = ${BigInt(orgId)}
+         AND uo.org_id = ${orgId}::uuid
         JOIN public.tbl_roles rol ON rol.id_rol = uo.rol_id
-        WHERE tu.id_usu = ${BigInt(empleadoId)}
+        WHERE tu.id_usu = ${empleadoId}::uuid
           AND rol.rol_tip::text = 'COBRADOR'
         LIMIT 1
       `);
@@ -1958,7 +1956,7 @@ export class AuthService {
           SELECT tu.id_usu::text AS id
           FROM public.tbl_usuarios
           WHERE lower(usu_usuario) = lower(${nombreUsuario})
-            AND id_usu <> ${BigInt(empleadoId)}
+            AND id_usu <> ${empleadoId}::uuid
           LIMIT 1
         `),
         tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
@@ -1966,7 +1964,7 @@ export class AuthService {
           FROM public.tbl_usuarios tu
           JOIN public.tbl_personas p ON p.id_per = tu.persona_id
           WHERE lower(p.per_email) = lower(${correo})
-            AND tu.id_usu <> ${BigInt(empleadoId)}
+            AND tu.id_usu <> ${empleadoId}::uuid
           LIMIT 1
         `),
       ]);
@@ -1985,7 +1983,7 @@ export class AuthService {
           per_primer_nombre = ${nombre.nombres},
           per_apellido = ${nombre.apellidos || ' '},
           per_email = ${correo}
-        WHERE id_per = ${BigInt(empleado.persona_id)}
+        WHERE id_per = ${empleado.persona_id}::uuid
       `);
 
       if (passwordHash) {
@@ -1994,7 +1992,7 @@ export class AuthService {
           SET
             usu_usuario = ${nombreUsuario},
             usu_password = ${passwordHash}
-          WHERE id_usu = ${BigInt(empleadoId)}
+          WHERE id_usu = ${empleadoId}::uuid
         `);
         return;
       }
@@ -2002,7 +2000,7 @@ export class AuthService {
       await tx.$executeRaw(Prisma.sql`
         UPDATE public.tbl_usuarios
         SET usu_usuario = ${nombreUsuario}
-        WHERE id_usu = ${BigInt(empleadoId)}
+        WHERE id_usu = ${empleadoId}::uuid
       `);
     });
 
@@ -2034,9 +2032,9 @@ export class AuthService {
         JOIN public.tbl_usuarios_organizaciones uo
           ON uo.usu_id = tu.id_usu
          AND uo.urg_activo
-         AND uo.org_id = ${BigInt(orgId)}
+         AND uo.org_id = ${orgId}::uuid
         JOIN public.tbl_roles rol ON rol.id_rol = uo.rol_id
-        WHERE tu.id_usu = ${BigInt(empleadoId)}
+        WHERE tu.id_usu = ${empleadoId}::uuid
           AND rol.rol_tip::text = 'COBRADOR'
         LIMIT 1
       `);
@@ -2048,7 +2046,7 @@ export class AuthService {
       await tx.$executeRaw(Prisma.sql`
         UPDATE public.tbl_usuarios
         SET usu_activo = ${dto.activo}
-        WHERE id_usu = ${BigInt(empleadoId)}
+        WHERE id_usu = ${empleadoId}::uuid
       `);
     });
 
@@ -2400,7 +2398,7 @@ export class AuthService {
           VALUES (
             ${nombreUsuario},
             ${passwordHash},
-            ${persona.id}::bigint
+            ${persona.id}::uuid
           )
           RETURNING id_usu::text AS id
         `,
@@ -2413,9 +2411,9 @@ export class AuthService {
           org_id
         )
         VALUES (
-          ${rol.id}::bigint,
-          ${usuarioCreado.id}::bigint,
-          ${orgId}::bigint
+          ${rol.id}::uuid,
+          ${usuarioCreado.id}::uuid,
+          ${orgId}::uuid
         )
       `);
 
@@ -2437,7 +2435,7 @@ export class AuthService {
     const filtroOrganizacionSesion =
       administrador?.organizacionId &&
       this.esIdTbl(administrador.organizacionId)
-        ? Prisma.sql`AND uo.org_id = ${BigInt(administrador.organizacionId)}`
+        ? Prisma.sql`AND uo.org_id = ${administrador.organizacionId}::uuid`
         : Prisma.empty;
     const [scope] = administrador
       ? await tx.$queryRaw<Array<{ org_id: string }>>(Prisma.sql`
@@ -2666,7 +2664,7 @@ export class AuthService {
       await this.prisma.$executeRaw`
         UPDATE public.tbl_usuarios
         SET usu_password = ${upgradedHash}
-        WHERE id_usu = ${BigInt(usuarioTbl.id)}
+        WHERE id_usu = ${usuarioTbl.id}::uuid
           AND usu_password = ${usuarioTbl.passwordHash}
       `;
     }
@@ -2820,7 +2818,7 @@ export class AuthService {
       LEFT JOIN public.tbl_roles tr ON tr.id_rol = uo.rol_id
       LEFT JOIN public.tbl_roles_recursos rr ON rr.rol_id = tr.id_rol
       LEFT JOIN public.tbl_recursos rec ON rec.id_rec = rr.rec_id
-      WHERE tu.id_usu = ${BigInt(usuarioId)}
+      WHERE tu.id_usu = ${usuarioId}::uuid
       GROUP BY
         tu.id_usu,
         tu.usu_usuario,
@@ -2837,7 +2835,7 @@ export class AuthService {
   }
 
   private esIdTbl(value: string) {
-    return /^[1-9]\d{0,18}$/.test(value);
+    return /^[1-9]\d{0,18}$/.test(value) || /^[0-9a-fA-F-]{36}$/.test(value);
   }
 
   private async usarEsquemaTbl() {
@@ -3085,7 +3083,7 @@ export class AuthService {
        AND uo.urg_activo
       LEFT JOIN public.tbl_usuarios tu ON tu.id_usu = uo.usu_id
       LEFT JOIN public.tbl_roles rol ON rol.id_rol = uo.rol_id
-      WHERE org.id_org = ${BigInt(organizacionId)}
+      WHERE org.id_org = ${organizacionId}::uuid
         AND NOT COALESCE(org.org_es_sistema, FALSE)
       GROUP BY org.id_org
       LIMIT 1

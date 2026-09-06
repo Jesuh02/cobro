@@ -274,8 +274,7 @@ CREATE TABLE IF NOT EXISTS tbl_productos_creditos (
   pcr_nombre VARCHAR(120) NOT NULL,
   pcr_frecuencia producto_credito_frecuencia_enum NOT NULL,
   pcr_tasa_interes DECIMAL(7, 4) NOT NULL,
-  org_id INT8 NOT NULL REFERENCES tbl_organizaciones (id_org) ON DELETE CASCADE,
-  CONSTRAINT ux_tbl_productos_creditos_org_nombre UNIQUE (org_id, pcr_nombre),
+  CONSTRAINT ux_tbl_productos_creditos_nombre UNIQUE (pcr_nombre),
   CONSTRAINT chk_tbl_productos_creditos_tasa CHECK (pcr_tasa_interes >= 0)
 );
 
@@ -431,10 +430,8 @@ CREATE TABLE IF NOT EXISTS tbl_medios_pagos (
   med_activo BOOL NOT NULL DEFAULT true,
   med_creacion TIMESTAMPTZ NOT NULL DEFAULT now(),
   med_actualizacion TIMESTAMPTZ NOT NULL DEFAULT now(),
-  org_id INT8 NOT NULL REFERENCES tbl_organizaciones (id_org) ON DELETE CASCADE,
-  CONSTRAINT ux_tbl_medios_pagos_org_nombre UNIQUE (org_id, med_nombre),
-  CONSTRAINT ux_tbl_medios_pagos_org_referencia
-    UNIQUE (org_id, med_referencia_cuenta)
+  CONSTRAINT ux_tbl_medios_pagos_med_tipo UNIQUE (med_tipo),
+  CONSTRAINT ux_tbl_medios_pagos_nombre UNIQUE (med_nombre)
 );
 
 CREATE TABLE IF NOT EXISTS tbl_pagos (
@@ -729,39 +726,32 @@ ON CONFLICT (rec_id, rol_id) DO NOTHING;
 INSERT INTO tbl_productos_creditos (
   pcr_nombre,
   pcr_frecuencia,
-  pcr_tasa_interes,
-  org_id
+  pcr_tasa_interes
 )
 SELECT
   producto.nombre,
   producto.frecuencia::producto_credito_frecuencia_enum,
-  producto.tasa_interes,
-  organizacion.id_org
-FROM tbl_organizaciones organizacion
-CROSS JOIN (
+  producto.tasa_interes
+FROM (
   VALUES
     ('Credito diario', 'DIARIO', 20.0000),
     ('Credito semanal', 'SEMANAL', 20.0000),
     ('Credito quincenal', 'QUINCENAL', 20.0000),
     ('Credito mensual', 'MENSUAL', 20.0000)
 ) AS producto(nombre, frecuencia, tasa_interes)
-WHERE NOT COALESCE(organizacion.org_es_sistema, false)
-ON CONFLICT (org_id, pcr_nombre) DO UPDATE
+ON CONFLICT (pcr_nombre) DO UPDATE
 SET
   pcr_frecuencia = excluded.pcr_frecuencia,
   pcr_tasa_interes = excluded.pcr_tasa_interes;
 
 INSERT INTO tbl_medios_pagos (
   med_nombre,
-  med_tipo,
-  org_id
+  med_tipo
 )
 SELECT
   medio.nombre,
-  medio.tipo::medio_pago_tipo_enum,
-  organizacion.id_org
-FROM tbl_organizaciones organizacion
-CROSS JOIN (
+  medio.tipo::medio_pago_tipo_enum
+FROM (
   VALUES
     ('Efectivo', 'EFECTIVO'),
     ('Transferencia', 'TRANSFERENCIA'),
@@ -769,11 +759,10 @@ CROSS JOIN (
     ('Billetera', 'BILLETERA'),
     ('Otro', 'OTRO')
 ) AS medio(nombre, tipo)
-WHERE NOT COALESCE(organizacion.org_es_sistema, false)
-ON CONFLICT (org_id, med_nombre) DO UPDATE
+ON CONFLICT (med_tipo) DO UPDATE
 SET
-  med_tipo = excluded.med_tipo,
-  med_activo = true;
+  med_nombre = excluded.med_nombre,
+  med_activo = TRUE;
 
 INSERT INTO tbl_categorias_gastos (cga_nombre, cga_descripcion)
 VALUES

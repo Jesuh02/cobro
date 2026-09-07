@@ -1557,29 +1557,30 @@ class _HomePageState extends State<HomePage> {
         if (cajas.isNotEmpty)
           SizedBox(
             width: 260,
-            child: DropdownButtonFormField<String>(
+            child: CobroDropdownField<String>(
               key: ValueKey<String>(
                 'filtro-caja-${_cajaMenorFiltroId ?? _todasLasCajasFiltro}',
               ),
-              initialValue:
+              labelText: 'Caja',
+              prefixIcon: const Icon(Icons.account_balance_wallet_outlined),
+              value:
                   filtroCajaValido ? _cajaMenorFiltroId : _todasLasCajasFiltro,
-              isExpanded: true,
-              decoration: const InputDecoration(
-                labelText: 'Caja',
-                prefixIcon: Icon(Icons.account_balance_wallet_outlined),
-              ),
-              items: <DropdownMenuItem<String>>[
-                const DropdownMenuItem<String>(
+              menuWidth: 260,
+              items: <CobroDropdownItem<String>>[
+                const CobroDropdownItem<String>(
                   value: _todasLasCajasFiltro,
-                  child: Text('Todas las cajas'),
+                  label: 'Todas las cajas',
+                  subtitle: 'Ver movimientos globales',
+                  icon: Icons.all_inbox_rounded,
+                  iconColor: Color(0xFF6366F1),
                 ),
                 ...cajas.map(
-                  (CajaMenorCatalogo caja) => DropdownMenuItem<String>(
+                  (CajaMenorCatalogo caja) => CobroDropdownItem<String>(
                     value: caja.id,
-                    child: Text(
-                      caja.nombre,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    label: caja.nombre,
+                    subtitle: 'Moneda: ${caja.monedaCodigo}',
+                    icon: Icons.savings_rounded,
+                    iconColor: const Color(0xFF2563EB),
                   ),
                 ),
               ],
@@ -3012,20 +3013,25 @@ class _HomePageState extends State<HomePage> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      initialValue: moneda,
-                      decoration: const InputDecoration(
-                        labelText: 'Moneda',
-                        prefixIcon: Icon(Icons.attach_money_rounded),
-                      ),
-                      items: const <DropdownMenuItem<String>>[
-                        DropdownMenuItem<String>(
+                    CobroDropdownField<String>(
+                      labelText: 'Moneda',
+                      prefixIcon: const Icon(Icons.attach_money_rounded),
+                      value: moneda,
+                      menuWidth: 280,
+                      items: const <CobroDropdownItem<String>>[
+                        CobroDropdownItem<String>(
                           value: 'COP',
-                          child: Text('COP'),
+                          label: 'COP',
+                          subtitle: 'Peso colombiano',
+                          icon: Icons.monetization_on_rounded,
+                          iconColor: Color(0xFF10B981),
                         ),
-                        DropdownMenuItem<String>(
+                        CobroDropdownItem<String>(
                           value: 'USD',
-                          child: Text('USD'),
+                          label: 'USD',
+                          subtitle: 'Dolar estadounidense',
+                          icon: Icons.attach_money_rounded,
+                          iconColor: Color(0xFF3B82F6),
                         ),
                       ],
                       onChanged: (String? value) {
@@ -8548,44 +8554,31 @@ class _FiltrosInicioPresupuesto extends StatelessWidget {
           ),
           SizedBox(
             width: 270,
-            child: DropdownButtonFormField<String?>(
+            child: CobroDropdownField<String?>(
               key: ValueKey<String?>('inicio-caja-$value'),
-              initialValue: value,
-              isExpanded: true,
-              decoration: const InputDecoration(
-                labelText: 'Caja',
-                prefixIcon: Icon(Icons.account_balance_wallet_outlined),
-              ),
-              hint: const Text('Selecciona una caja'),
-              items: <DropdownMenuItem<String?>>[
-                const DropdownMenuItem<String?>(
+              labelText: 'Caja',
+              prefixIcon: const Icon(Icons.account_balance_wallet_outlined),
+              value: value,
+              hintText: 'Selecciona una caja',
+              menuWidth: 270,
+              items: <CobroDropdownItem<String?>>[
+                const CobroDropdownItem<String?>(
                   value: _HomePageState._todasLasCajasFiltro,
-                  child: Text('Todas las cajas'),
+                  label: 'Todas las cajas',
+                  subtitle: 'Ver movimientos globales',
+                  icon: Icons.all_inbox_rounded,
+                  iconColor: Color(0xFF6366F1),
                 ),
                 ...cajasMenores.map(
-                  (CajaMenorCatalogo caja) => DropdownMenuItem<String?>(
+                  (CajaMenorCatalogo caja) => CobroDropdownItem<String?>(
                     value: caja.id,
-                    child: Text(
-                      caja.nombre,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    label: caja.nombre,
+                    subtitle: 'Moneda: ${caja.monedaCodigo}',
+                    icon: Icons.savings_rounded,
+                    iconColor: const Color(0xFF2563EB),
                   ),
                 ),
               ],
-              selectedItemBuilder: (BuildContext context) {
-                return <Widget>[
-                  const Text(
-                    'Todas las cajas',
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  ...cajasMenores.map(
-                    (CajaMenorCatalogo caja) => Text(
-                      caja.nombre,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ];
-              },
               onChanged: onCajaChanged,
             ),
           ),
@@ -9645,23 +9638,27 @@ class _FiltrosRuta extends StatelessWidget {
             labelText: 'Buscar cliente, cedula o negocio',
           ),
         );
-        final Widget selectorRuta = DropdownButtonFormField<String?>(
+        final Widget selectorRuta = CobroDropdownField<String?>(
           key: ValueKey<String?>(rutaSeleccionadaId),
-          initialValue: rutaSeleccionadaId,
-          isExpanded: true,
-          decoration: const InputDecoration(
-            prefixIcon: Icon(Icons.route_rounded),
-            labelText: 'Ruta',
-          ),
-          items: <DropdownMenuItem<String?>>[
-            const DropdownMenuItem<String?>(
+          labelText: 'Ruta',
+          prefixIcon: const Icon(Icons.route_rounded),
+          value: rutaSeleccionadaId,
+          hintText: 'Todas',
+          menuWidth: 260,
+          items: <CobroDropdownItem<String?>>[
+            const CobroDropdownItem<String?>(
               value: null,
-              child: Text('Todas'),
+              label: 'Todas',
+              subtitle: 'Todas las rutas',
+              icon: Icons.all_inclusive_rounded,
+              iconColor: Color(0xFF6366F1),
             ),
             ...rutas.map(
-              (RutaCatalogo ruta) => DropdownMenuItem<String?>(
+              (RutaCatalogo ruta) => CobroDropdownItem<String?>(
                 value: ruta.id,
-                child: Text(ruta.nombre),
+                label: ruta.nombre,
+                icon: Icons.alt_route_rounded,
+                iconColor: const Color(0xFF3B82F6),
               ),
             ),
           ],
@@ -14344,9 +14341,8 @@ class _GestionEmpleadosPageState extends State<_GestionEmpleadosPage> {
           ),
           if (!_aplicarATodos && _empleados.isNotEmpty) ...<Widget>[
             const SizedBox(height: 8),
-            DropdownButtonFormField<String>(
+            CobroDropdownField<String>(
               key: ValueKey<String?>(_empleadoSeleccionadoId),
-<<<<<<< HEAD
               labelText: 'Empleado',
               prefixIcon: const Icon(Icons.person_rounded),
               value: _empleadoSeleccionadoId,
@@ -14362,24 +14358,6 @@ class _GestionEmpleadosPageState extends State<_GestionEmpleadosPage> {
                   avatarText: inicial,
                 );
               }).toList(growable: false),
-=======
-              initialValue: _empleadoSeleccionadoId,
-              decoration: const InputDecoration(
-                labelText: 'Empleado',
-                prefixIcon: Icon(Icons.person_rounded),
-              ),
-              items: _empleados
-                  .map(
-                    (EmpleadoGestion empleado) => DropdownMenuItem<String>(
-                      value: empleado.id,
-                      child: Text(
-                        empleado.nombreCompleto,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  )
-                  .toList(growable: false),
->>>>>>> c216eaff5ff4c4611e9670d0a362162c666a19cd
               onChanged: _guardando ? null : _seleccionarEmpleado,
             ),
           ],
@@ -16427,7 +16405,6 @@ class _SelectorCobroRutaBuscableState
 
 class _SelectorMedioPagoBuscable extends StatelessWidget {
   const _SelectorMedioPagoBuscable({
-    super.key,
     required this.mediosPago,
     required this.medioPagoCodigo,
     required this.enabled,

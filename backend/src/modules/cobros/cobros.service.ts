@@ -255,6 +255,7 @@ type ClienteTblRow = {
   notas: string | null;
   cedula: string;
   direccion: string | null;
+  correo?: string | null;
   latitud: Prisma.Decimal | null;
   longitud: Prisma.Decimal | null;
   telefono: string | null;
@@ -6353,6 +6354,7 @@ export class CobrosService {
         p.per_latitud AS latitud,
         p.per_longitud AS longitud,
         p.per_num_celular AS telefono,
+        p.per_email AS correo,
         c.cli_creacion AS creado_en,
         c.cli_creacion AS actualizado_en,
         c.cli_activo AS activo
@@ -6843,8 +6845,8 @@ export class CobrosService {
         correo: ruta.responsable_correo,
         telefono: ruta.responsable_telefono,
       }),
-      clientes: ruta.clientes,
-      creditos: ruta.creditos,
+      clientes: Number(ruta.clientes),
+      creditos: Number(ruta.creditos),
     }));
   }
 
@@ -7131,7 +7133,13 @@ export class CobrosService {
         caja_credito.caja_menor_id::text AS caja_menor_id,
         caja_credito.caja_menor AS caja_menor,
         mon.mon_codigo::text AS moneda_codigo,
-        pc.id_pcr::int AS frecuencia_pago_id,
+        CASE pc.pcr_frecuencia::text
+          WHEN 'DIARIO' THEN 1
+          WHEN 'SEMANAL' THEN 2
+          WHEN 'QUINCENAL' THEN 3
+          WHEN 'MENSUAL' THEN 4
+          ELSE 1
+        END AS frecuencia_pago_id,
         pc.pcr_frecuencia::text AS frecuencia_codigo,
         INITCAP(REPLACE(pc.pcr_frecuencia::text, '_', ' ')) AS frecuencia_nombre,
         CASE pc.pcr_frecuencia::text
@@ -7197,10 +7205,10 @@ export class CobrosService {
     return rows.map((row) => ({
       ...this.formatearCreditoListado(row),
       frecuenciaPago: {
-        id: row.frecuencia_pago_id,
+        id: Number(row.frecuencia_pago_id),
         codigo: row.frecuencia_codigo,
         nombre: row.frecuencia_nombre,
-        diasIntervalo: this.diasIntervaloFrecuencia(row.frecuencia_codigo),
+        diasIntervalo: Number(this.diasIntervaloFrecuencia(row.frecuencia_codigo)),
       },
     }));
   }
@@ -8096,12 +8104,15 @@ export class CobrosService {
       valorCuota: this.decimalANumero(row.valor_cuota),
       totalAbonado: this.decimalANumero(row.total_abonado),
       saldo: this.decimalANumero(row.saldo),
-      numeroCuotas: row.numero_cuotas,
-      cuotasRestantes: row.cuotas_restantes,
+      numeroCuotas: Number(row.numero_cuotas),
+      cuotasRestantes: Number(row.cuotas_restantes),
       fechaInicio: this.fechaIso(row.fecha_inicio),
       fechaMaxima: this.fechaIso(row.fecha_maxima),
       proximaCuotaId: row.proxima_cuota_id,
-      proximaNumeroCuota: row.proxima_numero_cuota,
+      proximaNumeroCuota:
+        row.proxima_numero_cuota !== null && row.proxima_numero_cuota !== undefined
+          ? Number(row.proxima_numero_cuota)
+          : null,
       proximaFechaPago: row.proxima_fecha_pago
         ? this.fechaIso(row.proxima_fecha_pago)
         : null,
@@ -8123,7 +8134,7 @@ export class CobrosService {
       notas: cliente.notas,
       cedula,
       direccion: cliente.direccion,
-      correo: null,
+      correo: cliente.correo ?? null,
       telefono: cliente.telefono,
       whatsapp: cliente.telefono,
       estado: {
@@ -10472,10 +10483,10 @@ export class CobrosService {
       cajaMenor: row.caja_menor,
       monedaCodigo: row.moneda_codigo,
       frecuenciaPago: {
-        id: row.frecuencia_pago_id,
+        id: Number(row.frecuencia_pago_id),
         codigo: row.frecuencia_codigo,
         nombre: row.frecuencia_nombre,
-        diasIntervalo: row.dias_intervalo,
+        diasIntervalo: Number(row.dias_intervalo),
       },
       estado: {
         codigo: row.estado_codigo,
@@ -10484,14 +10495,14 @@ export class CobrosService {
       fechaInicio: this.fechaIso(row.fecha_inicio),
       valorPrincipal: this.decimalANumero(row.valor_principal),
       porcentajeInteres: this.decimalANumero(row.porcentaje_interes),
-      plazoDias: row.plazo_dias,
-      omitirDomingos: row.omitir_domingos,
+      plazoDias: Number(row.plazo_dias),
+      omitirDomingos: Boolean(row.omitir_domingos),
       valorTotal: this.decimalANumero(row.valor_total),
       valorCuota: this.decimalANumero(row.valor_cuota),
       totalAbonado: this.decimalANumero(row.total_abonado),
       saldo: this.decimalANumero(row.saldo),
-      numeroCuotas: row.numero_cuotas,
-      cuotasRestantes: row.cuotas_restantes,
+      numeroCuotas: Number(row.numero_cuotas),
+      cuotasRestantes: Number(row.cuotas_restantes),
       fechaMaxima: this.fechaIso(row.fecha_maxima),
       refinanciacion:
         row.refinanciado_en &&

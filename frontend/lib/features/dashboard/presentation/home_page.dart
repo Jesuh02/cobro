@@ -2790,10 +2790,11 @@ class _HomePageState extends State<HomePage> {
         _ajustarSelecciones();
       });
       unawaited(_sincronizarAccionesOffline());
-    } catch (error) {
+    } catch (error, stackTrace) {
       if (!mounted || cargaActual != _cargaSerial) {
         return;
       }
+      debugPrint('[ErrorCargaInicial] $error\n$stackTrace');
       _manejarErrorCarga(error);
     } finally {
       if (mounted && cargaActual == _cargaSerial) {
@@ -3729,10 +3730,11 @@ class _HomePageState extends State<HomePage> {
         }
         _ajustarSelecciones();
       });
-    } catch (error) {
+    } catch (error, stackTrace) {
       if (!mounted || cargaActual != _cargaSerial) {
         return;
       }
+      debugPrint('[ErrorCarga] $error\n$stackTrace');
       _manejarErrorCarga(error);
     } finally {
       if (mounted && cargaActual == _cargaSerial) {
@@ -8185,7 +8187,7 @@ class _PaginaDatos<T> {
     return _PaginaDatos<T>(
       items: _lista(json['items']).map(itemBuilder).toList(growable: false),
       hasMore: json['hasMore'] as bool? ?? false,
-      nextOffset: json['nextOffset'] as int?,
+      nextOffset: _enteroNullableJson(json['nextOffset']),
     );
   }
 
@@ -15173,7 +15175,7 @@ class ExportacionExcel {
       archivo: json['archivo'] as String,
       key: json['key'] as String? ?? '',
       url: json['url'] as String,
-      filas: json['filas'] as int,
+      filas: _enteroJson(json['filas']),
       generadoEn: _fechaNullable(json['generadoEn']),
       vistaPrevia: ExportacionVistaPrevia.fromJson(json['vistaPrevia']),
     );
@@ -15723,10 +15725,10 @@ class FrecuenciaPago {
 
   factory FrecuenciaPago.fromJson(Map<String, dynamic> json) {
     return FrecuenciaPago(
-      id: json['id'] as int,
+      id: _enteroJson(json['id']),
       codigo: json['codigo'] as String,
       nombre: json['nombre'] as String,
-      diasIntervalo: json['diasIntervalo'] as int,
+      diasIntervalo: _enteroJson(json['diasIntervalo']),
     );
   }
 
@@ -15935,11 +15937,11 @@ class CreditoRegistro {
       cedula: json['cedula'] as String?,
       negocio: json['negocio'] as String?,
       direccion: json['direccion'] as String?,
-      rutaId: json['rutaId'] as String,
-      ruta: json['ruta'] as String,
+      rutaId: json['rutaId'] as String? ?? '',
+      ruta: json['ruta'] as String? ?? 'Sin ruta',
       cajaMenorId: json['cajaMenorId'] as String?,
       cajaMenor: json['cajaMenor'] as String?,
-      monedaCodigo: json['monedaCodigo'] as String,
+      monedaCodigo: json['monedaCodigo'] as String? ?? 'COP',
       frecuenciaPago: FrecuenciaPago.fromJson(
         json['frecuenciaPago'] as Map<String, dynamic>,
       ),
@@ -15949,14 +15951,14 @@ class CreditoRegistro {
       fechaInicio: DateTime.parse(json['fechaInicio'] as String),
       valorPrincipal: _doble(json['valorPrincipal']),
       porcentajeInteres: _doble(json['porcentajeInteres']),
-      plazoDias: json['plazoDias'] as int,
+      plazoDias: _enteroJson(json['plazoDias']),
       omitirDomingos: json['omitirDomingos'] as bool? ?? true,
       valorTotal: _doble(json['valorTotal']),
       valorCuota: _doble(json['valorCuota']),
       totalAbonado: _doble(json['totalAbonado']),
       saldo: _doble(json['saldo']),
-      numeroCuotas: json['numeroCuotas'] as int,
-      cuotasRestantes: json['cuotasRestantes'] as int,
+      numeroCuotas: _enteroJson(json['numeroCuotas']),
+      cuotasRestantes: _enteroJson(json['cuotasRestantes']),
       fechaMaxima: DateTime.parse(json['fechaMaxima'] as String),
       refinanciacion: refinanciacion is Map<String, dynamic>
           ? CreditoRefinanciacion.fromJson(refinanciacion)
@@ -16554,16 +16556,16 @@ class CobroRuta {
       direccion: json['direccion'] as String?,
       latitude: _dobleNullable(json['latitud']),
       longitude: _dobleNullable(json['longitud']),
-      rutaId: json['rutaId'] as String,
-      ruta: json['ruta'] as String,
+      rutaId: json['rutaId'] as String? ?? '',
+      ruta: json['ruta'] as String? ?? 'Sin ruta',
       valorTotal: _doble(json['valorTotal']),
       valorCuota: _doble(json['valorCuota']),
       totalAbonado: _doble(json['totalAbonado']),
       saldo: _doble(json['saldo']),
-      numeroCuotas: json['numeroCuotas'] as int,
-      cuotasRestantes: json['cuotasRestantes'] as int,
+      numeroCuotas: _enteroJson(json['numeroCuotas']),
+      cuotasRestantes: _enteroJson(json['cuotasRestantes']),
       proximaCuotaId: json['proximaCuotaId'] as String?,
-      proximaNumeroCuota: json['proximaNumeroCuota'] as int?,
+      proximaNumeroCuota: _enteroNullableJson(json['proximaNumeroCuota']),
       proximaFechaPago: _fechaNullable(json['proximaFechaPago']),
       proximoSaldoCuota: _doble(json['proximoSaldoCuota']),
       estadoCobro: EstadoCobro.fromWire(json['estadoCobro'] as String),

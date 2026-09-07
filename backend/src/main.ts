@@ -9,9 +9,10 @@ import 'reflect-metadata';
 
 import { AppModule } from './app.module';
 
-// Permite serializar campos BigInt a JSON como strings sin arrojar TypeError
+// Permite serializar campos BigInt a JSON como numeros seguros (evitando TypeErrors de serializacion y en frontend)
 (BigInt.prototype as any).toJSON = function () {
-  return this.toString();
+  const num = Number(this);
+  return Number.isSafeInteger(num) ? num : this.toString();
 };
 
 async function bootstrap() {

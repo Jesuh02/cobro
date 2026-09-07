@@ -1654,7 +1654,7 @@ export class AuthService {
               AND (SELECT fecha_fin FROM parametros)
           ), 0) AS valor_creditos_hoy,
           COALESCE(SUM(cre_total), 0) AS valor_creditos_total,
-          MAX(cre_fecha_inicio::timestamp) FILTER (
+          MAX(cre_fecha_inicio::timestamptz) FILTER (
             WHERE cre_fecha_inicio
               BETWEEN (SELECT fecha_inicio FROM parametros)
               AND (SELECT fecha_fin FROM parametros)

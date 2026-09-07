@@ -260,6 +260,14 @@ export class CobrosController {
     return this.cobros.crearCajaMenor(body, usuario);
   }
 
+  @Post('caja-menor/:id/cerrar')
+  cerrarCajaMenor(
+    @CurrentUser() usuario: AuthenticatedUser,
+    @Param('id', new ResourceIdPipe(true)) id: string,
+  ) {
+    return this.cobros.cerrarCajaMenor(id, usuario);
+  }
+
   @Get('presupuesto')
   obtenerPresupuesto(
     @CurrentUser() usuario: AuthenticatedUser,

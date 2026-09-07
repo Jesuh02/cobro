@@ -117,7 +117,8 @@ describe('CobrosService organization scope', () => {
         },
       ])
       .mockResolvedValueOnce([{ id: 'mon-1', codigo: 'COP' }])
-      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]) // cajaAbierta (ninguna)
+      .mockResolvedValueOnce([]) // existente por nombre
       .mockResolvedValueOnce([
         {
           id: 'caj-1',
@@ -159,7 +160,8 @@ describe('CobrosService organization scope', () => {
         },
       ])
       .mockResolvedValueOnce([{ id: 'mon-1', codigo: 'COP' }])
-      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]) // cajaAbierta (ninguna)
+      .mockResolvedValueOnce([]) // existente por nombre
       .mockResolvedValueOnce([
         {
           id: 'caj-7',
@@ -190,6 +192,70 @@ describe('CobrosService organization scope', () => {
     const [, responsableQuery] = queryRaw.mock.calls;
     expect(sqlValues(responsableQuery[0])).toContain('7');
     expect(sqlValues(responsableQuery[0])).not.toContain('99');
+  });
+
+  it('rejects creating caja menor if target employee already has an open unexpired caja menor', async () => {
+    const queryRaw = jest
+      .fn<Promise<unknown[]>, [unknown]>()
+      .mockResolvedValueOnce([{ usuario_id: '7', organizacion_id: '10' }])
+      .mockResolvedValueOnce([
+        {
+          id: '22',
+          usuario: 'empleado1',
+          nombres: 'Carlos',
+          apellidos: 'Ruiz',
+          correo: 'carlos@mail.com',
+          telefono: '3001234567',
+          organizacion_id: '10',
+        },
+      ])
+      .mockResolvedValueOnce([{ id: 'mon-1', codigo: 'COP' }])
+      .mockResolvedValueOnce([
+        {
+          id: 'caj-existente',
+          nombre: 'Caja Carlos Activa',
+          fecha_cierre: new Date(Date.now() + 86400000),
+        },
+      ]); // cajaAbierta existente
+    const executeRaw = jest.fn().mockResolvedValue(1);
+    const service = createService(queryRaw, executeRaw);
+    (service as unknown as { esquemaTblDisponible: boolean }).esquemaTblDisponible = true;
+
+    await expect(
+      service.crearCajaMenor(
+        { nombre: 'Caja Carlos 2', responsableUsuarioId: '22' },
+        usuarioOrganizacion('10') as never,
+      ),
+    ).rejects.toThrow(
+      'El usuario Carlos Ruiz ya tiene una caja menor abierta (Caja Carlos Activa)',
+    );
+  });
+
+  it('allows administrator to close a caja menor', async () => {
+    const queryRaw = jest
+      .fn<Promise<unknown[]>, [unknown]>()
+      .mockResolvedValueOnce([{ usuario_id: '7', organizacion_id: '10' }])
+      .mockResolvedValueOnce([
+        {
+          id: 'caj-1',
+          nombre: 'Caja Carlos',
+          activa: true,
+          usuario_id: '22',
+        },
+      ]);
+    const executeRaw = jest.fn().mockResolvedValue(1);
+    const service = createService(queryRaw, executeRaw);
+    (service as unknown as { esquemaTblDisponible: boolean }).esquemaTblDisponible = true;
+
+    const result = await service.cerrarCajaMenor(
+      'caj-1',
+      usuarioOrganizacion('10') as never,
+    );
+
+    expect(result.id).toBe('caj-1');
+    expect(result.activa).toBe(false);
+    expect(result.mensaje).toBe('Caja menor cerrada exitosamente');
+    expect(executeRaw).toHaveBeenCalled();
   });
 });
 

@@ -1454,7 +1454,15 @@ class _HomePageState extends State<HomePage> {
       onRefresh: _cargar,
       onNearEnd: _cargarMasMovimientosCajaSiHaceFalta,
       acciones: <Widget>[
-        if (hayCajaMenor && _puedeCrearCajaMenor)
+        if (hayCajaMenor && _puedeRegistrarFlujoCaja)
+          OutlinedButton.icon(
+            onPressed: _guardando ? null : _confirmarCerrarCajaMenorSeleccionada,
+            icon: const Icon(Icons.lock_clock_rounded),
+            label: const Text('Cerrar caja'),
+          ),
+        if (hayCajaMenor &&
+            _puedeCrearCajaMenor &&
+            (_usuarioSesion?.esAdministrador ?? false))
           OutlinedButton.icon(
             onPressed: _guardando ? null : _abrirCrearCajaMenor,
             icon: const Icon(Icons.account_balance_wallet_outlined),
@@ -1575,13 +1583,25 @@ class _HomePageState extends State<HomePage> {
                   iconColor: Color(0xFF6366F1),
                 ),
                 ...cajas.map(
-                  (CajaMenorCatalogo caja) => CobroDropdownItem<String>(
-                    value: caja.id,
-                    label: caja.nombre,
-                    subtitle: 'Moneda: ${caja.monedaCodigo}',
-                    icon: Icons.savings_rounded,
-                    iconColor: const Color(0xFF2563EB),
-                  ),
+                  (CajaMenorCatalogo caja) {
+                    final String estadoTexto =
+                        caja.estaAbierta ? 'Abierta' : 'Cerrada';
+                    final String resp = caja.responsable != null &&
+                            caja.responsable!.nombreCompleto.trim().isNotEmpty
+                        ? '${caja.responsable!.nombreCompleto.trim()} • '
+                        : '';
+                    return CobroDropdownItem<String>(
+                      value: caja.id,
+                      label: caja.nombre,
+                      subtitle: '$estadoTexto • $resp${caja.monedaCodigo}',
+                      icon: caja.estaAbierta
+                          ? Icons.savings_rounded
+                          : Icons.lock_outline_rounded,
+                      iconColor: caja.estaAbierta
+                          ? const Color(0xFF2563EB)
+                          : const Color(0xFF6B7280),
+                    );
+                  },
                 ),
               ],
               onChanged: (String? value) {
@@ -6854,6 +6874,26 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  CajaMenorCatalogo? _obtenerCajaMenorAbiertaDeUsuario(String? usuarioId) {
+    if (usuarioId == null || usuarioId.isEmpty) {
+      return null;
+    }
+    final List<CajaMenorCatalogo> cajas =
+        _catalogos?.cajasMenores ?? const <CajaMenorCatalogo>[];
+    return cajas.cast<CajaMenorCatalogo?>().firstWhere(
+      (CajaMenorCatalogo? c) {
+        if (c == null || !c.estaAbierta) {
+          return false;
+        }
+        if (c.responsable != null) {
+          return c.responsable!.id == usuarioId;
+        }
+        return usuarioId == _usuarioSesion?.id;
+      },
+      orElse: () => null,
+    );
+  }
+
   Future<void> _abrirCrearCajaMenor() async {
     if (!_puedeCrearCajaMenor) {
       _mostrarMensaje('No tienes permiso para crear caja menor');
@@ -6868,6 +6908,19 @@ class _HomePageState extends State<HomePage> {
     final bool esAdmin = _usuarioSesion?.esAdministrador ?? false;
     final List<UsuarioCatalogo> usuariosDisponibles =
         _catalogos?.usuarios ?? <UsuarioCatalogo>[];
+
+    final CajaMenorCatalogo? cajaAbiertaPropia =
+        _obtenerCajaMenorAbiertaDeUsuario(_usuarioSesion?.id);
+    if (!esAdmin && cajaAbiertaPropia != null) {
+      final String cierreStr = cajaAbiertaPropia.fechaCierre != null
+          ? _fechaHoraEtiqueta(cajaAbiertaPropia.fechaCierre!)
+          : 'horario configurado';
+      _mostrarMensaje(
+        'Ya tienes la caja menor "${cajaAbiertaPropia.nombre}" abierta hasta $cierreStr. Debes cerrarla antes de crear una nueva.',
+      );
+      return;
+    }
+
     String? usuarioResponsableId = usuariosDisponibles
             .any((UsuarioCatalogo u) => u.id == _usuarioSesion?.id)
         ? _usuarioSesion?.id
@@ -6896,6 +6949,12 @@ class _HomePageState extends State<HomePage> {
 
         return StatefulBuilder(
           builder: (BuildContext context, StateSetter setDialogState) {
+            final String? usuarioDestinoId =
+                esAdmin ? usuarioResponsableId : _usuarioSesion?.id;
+            final CajaMenorCatalogo? cajaAbiertaExistente =
+                _obtenerCajaMenorAbiertaDeUsuario(usuarioDestinoId);
+            final bool tieneCajaAbierta = cajaAbiertaExistente != null;
+
             return AlertDialog(
               title: const Text('Crear caja menor'),
               content: SingleChildScrollView(
@@ -6903,6 +6962,7 @@ class _HomePageState extends State<HomePage> {
                   constraints: const BoxConstraints(maxWidth: 400),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
                       if (esAdmin && usuariosDisponibles.isNotEmpty) ...<Widget>[
                         CobroDropdownField<String>(
@@ -6911,6 +6971,9 @@ class _HomePageState extends State<HomePage> {
                               const Icon(Icons.person_outline_rounded),
                           value: usuarioResponsableId,
                           items: usuariosDisponibles.map((UsuarioCatalogo u) {
+                            final CajaMenorCatalogo? cajaDelUsuario =
+                                _obtenerCajaMenorAbiertaDeUsuario(u.id);
+                            final bool abierta = cajaDelUsuario != null;
                             final String inicial =
                                 u.nombreCompleto.trim().isNotEmpty
                                     ? u.nombreCompleto
@@ -6918,15 +6981,18 @@ class _HomePageState extends State<HomePage> {
                                         .substring(0, 1)
                                         .toUpperCase()
                                     : '?';
+                            final String subtitulo = abierta
+                                ? 'Caja activa: ${cajaDelUsuario.nombre}'
+                                : ((u.usuario.isNotEmpty &&
+                                        u.usuario != u.nombreCompleto)
+                                    ? '@${u.usuario}'
+                                    : 'Sin caja abierta');
                             return CobroDropdownItem<String>(
                               value: u.id,
                               label: u.nombreCompleto.trim().isNotEmpty
                                   ? u.nombreCompleto
                                   : u.id,
-                              subtitle: (u.usuario.isNotEmpty &&
-                                      u.usuario != u.nombreCompleto)
-                                  ? '@${u.usuario}'
-                                  : null,
+                              subtitle: subtitulo,
                               avatarText: inicial,
                             );
                           }).toList(growable: false),
@@ -6940,97 +7006,164 @@ class _HomePageState extends State<HomePage> {
                         ),
                         const SizedBox(height: 12),
                       ],
-                    TextField(
-                      controller: nombreController,
-                      autofocus: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Nombre',
-                        prefixIcon: Icon(Icons.savings_rounded),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    InputDecorator(
-                      decoration: const InputDecoration(
-                        labelText: 'Apertura',
-                        prefixIcon: Icon(Icons.lock_clock_rounded),
-                      ),
-                      child: Text(_fechaHoraEtiqueta(fechaApertura)),
-                    ),
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: () async {
-                          final DateTime? selected =
-                              await _seleccionarFechaHora(
-                            context: context,
-                            initialDateTime: fechaCierre,
-                          );
-
-                          if (selected != null) {
-                            setDialogState(() => fechaCierre = selected);
-                          }
-                        },
-                        icon: const Icon(Icons.event_available_rounded),
-                        label: Text(
-                          'Cierre ${_fechaHoraEtiqueta(fechaCierre)}',
+                      if (tieneCajaAbierta) ...<Widget>[
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .errorContainer
+                                .withOpacity(0.5),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .error
+                                  .withOpacity(0.6),
+                            ),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              Icon(
+                                Icons.error_outline_rounded,
+                                color: Theme.of(context).colorScheme.error,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: <Widget>[
+                                    Text(
+                                      'Usuario con caja menor activa',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color:
+                                            Theme.of(context).colorScheme.error,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'Tiene abierta la caja "${cajaAbiertaExistente.nombre}" hasta ${cajaAbiertaExistente.fechaCierre != null ? _fechaHoraEtiqueta(cajaAbiertaExistente.fechaCierre!) : 'su horario configurado'}. No se le puede abrir otra caja menor hasta que la anterior sea cerrada.',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onErrorContainer,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                      TextField(
+                        controller: nombreController,
+                        autofocus: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Nombre',
+                          prefixIcon: Icon(Icons.savings_rounded),
                         ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 12),
+                      InputDecorator(
+                        decoration: const InputDecoration(
+                          labelText: 'Apertura',
+                          prefixIcon: Icon(Icons.lock_clock_rounded),
+                        ),
+                        child: Text(_fechaHoraEtiqueta(fechaApertura)),
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () async {
+                            final DateTime? selected =
+                                await _seleccionarFechaHora(
+                              context: context,
+                              initialDateTime: fechaCierre,
+                            );
+
+                            if (selected != null) {
+                              setDialogState(() => fechaCierre = selected);
+                            }
+                          },
+                          icon: const Icon(Icons.event_available_rounded),
+                          label: Text(
+                            'Cierre ${_fechaHoraEtiqueta(fechaCierre)}',
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-            actions: <Widget>[
+              actions: <Widget>[
                 TextButton(
                   onPressed: () => Navigator.of(dialogContext).pop(false),
                   child: const Text('Cancelar'),
                 ),
                 FilledButton.icon(
-                  onPressed: () async {
-                    final String nombre = nombreController.text.trim();
-                    if (nombre.length < 2) {
-                      _mostrarMensaje('Escribe un nombre para la caja menor');
-                      return;
-                    }
-                    final DateTime fechaAperturaActual = DateTime.now();
-                    if (!fechaCierre.isAfter(fechaAperturaActual)) {
-                      setDialogState(() => fechaApertura = fechaAperturaActual);
-                      _mostrarMensaje(
-                        'El cierre debe ser posterior a la apertura',
-                      );
-                      return;
-                    }
+                  onPressed: tieneCajaAbierta
+                      ? null
+                      : () async {
+                          final String nombre = nombreController.text.trim();
+                          if (nombre.length < 2) {
+                            _mostrarMensaje(
+                              'Escribe un nombre para la caja menor',
+                            );
+                            return;
+                          }
+                          final DateTime fechaAperturaActual = DateTime.now();
+                          if (!fechaCierre.isAfter(fechaAperturaActual)) {
+                            setDialogState(
+                              () => fechaApertura = fechaAperturaActual,
+                            );
+                            _mostrarMensaje(
+                              'El cierre debe ser posterior a la apertura',
+                            );
+                            return;
+                          }
 
-                    final bool guardada = await _ejecutarAccion(() async {
-                      final CajaMenorCatalogo caja = CajaMenorCatalogo.fromJson(
-                        await _apiClient.postObject(
-                          '/caja-menor',
-                          <String, dynamic>{
-                            'nombre': nombre,
-                            if (esAdmin &&
-                                usuarioResponsableId != null &&
-                                usuarioResponsableId!.isNotEmpty)
-                              'responsableUsuarioId': usuarioResponsableId,
-                            'fechaApertura':
-                                _fechaHoraValor(fechaAperturaActual),
-                            'fechaCierre': _fechaHoraValor(fechaCierre),
-                          },
-                          queueOffline: true,
-                        ),
-                      );
-                      _guardarCajaMenorLocal(caja);
-                      _recargarEnSegundoPlano(
-                        catalogos: true,
-                        cobrosRuta: false,
-                        movimientosCaja: true,
-                      );
-                    });
+                          final bool guardada = await _ejecutarAccion(() async {
+                            final CajaMenorCatalogo caja =
+                                CajaMenorCatalogo.fromJson(
+                              await _apiClient.postObject(
+                                '/caja-menor',
+                                <String, dynamic>{
+                                  'nombre': nombre,
+                                  if (esAdmin &&
+                                      usuarioResponsableId != null &&
+                                      usuarioResponsableId!.isNotEmpty)
+                                    'responsableUsuarioId': usuarioResponsableId,
+                                  'fechaApertura':
+                                      _fechaHoraValor(fechaAperturaActual),
+                                  'fechaCierre': _fechaHoraValor(fechaCierre),
+                                },
+                                queueOffline: true,
+                              ),
+                            );
+                            _guardarCajaMenorLocal(caja);
+                            _recargarEnSegundoPlano(
+                              catalogos: true,
+                              cobrosRuta: false,
+                              movimientosCaja: true,
+                            );
+                          });
 
-                    if (guardada && dialogContext.mounted) {
-                      Navigator.of(dialogContext).pop(true);
-                    }
-                  },
+                          if (guardada && dialogContext.mounted) {
+                            Navigator.of(dialogContext).pop(true);
+                          }
+                        },
                   icon: const Icon(Icons.check_rounded),
                   label: const Text('Crear'),
                 ),
@@ -7046,11 +7179,130 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  Future<void> _confirmarCerrarCajaMenorSeleccionada() async {
+    final List<CajaMenorCatalogo> cajasActivas =
+        _catalogos?.cajasMenoresActivas ?? <CajaMenorCatalogo>[];
+    if (cajasActivas.isEmpty) {
+      _mostrarMensaje('No hay ninguna caja menor abierta para cerrar');
+      return;
+    }
+
+    CajaMenorCatalogo? cajaSeleccionada;
+    if (_cajaMenorFiltroId != null) {
+      cajaSeleccionada = cajasActivas.cast<CajaMenorCatalogo?>().firstWhere(
+        (CajaMenorCatalogo? c) => c?.id == _cajaMenorFiltroId,
+        orElse: () => null,
+      );
+    }
+    cajaSeleccionada ??= cajasActivas.length == 1 ? cajasActivas.first : null;
+
+    String? idCajaACerrar = cajaSeleccionada?.id ?? cajasActivas.first.id;
+
+    final bool? confirmar = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setDialogState) {
+            final CajaMenorCatalogo? cajaActual =
+                cajasActivas.cast<CajaMenorCatalogo?>().firstWhere(
+              (CajaMenorCatalogo? c) => c?.id == idCajaACerrar,
+              orElse: () => null,
+            );
+
+            return AlertDialog(
+              title: const Row(
+                children: <Widget>[
+                  Icon(Icons.lock_clock_rounded, color: Colors.orange),
+                  SizedBox(width: 8),
+                  Text('Cerrar caja menor'),
+                ],
+              ),
+              content: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    if (cajasActivas.length > 1) ...<Widget>[
+                      CobroDropdownField<String>(
+                        labelText: 'Selecciona la caja a cerrar',
+                        prefixIcon:
+                            const Icon(Icons.account_balance_wallet_outlined),
+                        value: idCajaACerrar,
+                        items: cajasActivas
+                            .map(_itemCajaMenor)
+                            .toList(growable: false),
+                        onChanged: (String? val) {
+                          if (val != null) {
+                            setDialogState(() => idCajaACerrar = val);
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                    Text(
+                      '¿Estás seguro de que deseas cerrar la caja "${cajaActual?.nombre ?? idCajaACerrar}"?',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      cajaActual?.fechaCierre != null
+                          ? 'Estaba programada para cerrar el ${_fechaHoraEtiqueta(cajaActual!.fechaCierre!)}. Al cerrarla ahora, no se podrán registrar más movimientos ni préstamos con ella.'
+                          : 'Al cerrarla ahora, no se podrán registrar más movimientos ni préstamos con ella.',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('Cancelar'),
+                ),
+                FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Theme.of(context).colorScheme.error,
+                    foregroundColor: Theme.of(context).colorScheme.onError,
+                  ),
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  child: const Text('Confirmar cierre'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (confirmar != true || idCajaACerrar == null) {
+      return;
+    }
+
+    final bool cerrada = await _ejecutarAccion(() async {
+      await _apiClient.postObject(
+        '/caja-menor/$idCajaACerrar/cerrar',
+        <String, dynamic>{},
+      );
+      if (_cajaMenorFiltroId == idCajaACerrar) {
+        _cajaMenorFiltroId = null;
+      }
+      await _cargar();
+    });
+
+    if (cerrada) {
+      _mostrarMensaje('Caja menor cerrada exitosamente');
+    }
+  }
+
   CobroDropdownItem<String> _itemCajaMenor(CajaMenorCatalogo caja) {
+    final String subtitulo = caja.responsable != null &&
+            caja.responsable!.nombreCompleto.trim().isNotEmpty
+        ? '${caja.responsable!.nombreCompleto.trim()} • ${caja.monedaCodigo}'
+        : 'Moneda: ${caja.monedaCodigo}';
     return CobroDropdownItem<String>(
       value: caja.id,
       label: caja.nombre,
-      subtitle: 'Moneda: ${caja.monedaCodigo}',
+      subtitle: subtitulo,
       icon: Icons.savings_rounded,
       iconColor: const Color(0xFF2563EB),
     );
@@ -7108,7 +7360,9 @@ class _HomePageState extends State<HomePage> {
       return;
     }
     if (catalogos.cajasMenoresActivas.isEmpty) {
-      _mostrarMensaje('Primero debes crear una caja menor');
+      _mostrarMensaje(
+        'No hay ninguna caja menor abierta disponible para registrar movimientos.',
+      );
       return;
     }
     if (catalogos.tiposMovimientoCaja.isEmpty) {
@@ -15779,7 +16033,7 @@ class Catalogos {
       .toList(growable: false);
 
   List<CajaMenorCatalogo> get cajasMenoresActivas => cajasMenores
-      .where((CajaMenorCatalogo caja) => caja.activa)
+      .where((CajaMenorCatalogo caja) => caja.estaAbierta)
       .toList(growable: false);
 }
 
@@ -15903,6 +16157,7 @@ class CajaMenorCatalogo {
     required this.monedaCodigo,
     this.fechaApertura,
     this.fechaCierre,
+    this.responsable,
   });
 
   factory CajaMenorCatalogo.fromJson(Map<String, dynamic> json) {
@@ -15910,9 +16165,14 @@ class CajaMenorCatalogo {
       id: json['id'] as String,
       nombre: json['nombre'] as String,
       activa: json['activa'] as bool,
-      monedaCodigo: json['monedaCodigo'] as String,
+      monedaCodigo: (json['monedaCodigo'] as String?) ?? 'COP',
       fechaApertura: _fechaNullable(json['fechaApertura']),
       fechaCierre: _fechaNullable(json['fechaCierre']),
+      responsable: json['responsable'] is Map<String, dynamic>
+          ? UsuarioCatalogo.fromJson(
+              json['responsable'] as Map<String, dynamic>,
+            )
+          : null,
     );
   }
 
@@ -15922,6 +16182,17 @@ class CajaMenorCatalogo {
   final String monedaCodigo;
   final DateTime? fechaApertura;
   final DateTime? fechaCierre;
+  final UsuarioCatalogo? responsable;
+
+  bool get estaAbierta {
+    if (!activa) {
+      return false;
+    }
+    if (fechaCierre != null && !fechaCierre!.isAfter(DateTime.now())) {
+      return false;
+    }
+    return true;
+  }
 }
 
 class Cliente {

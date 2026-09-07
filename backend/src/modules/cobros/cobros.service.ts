@@ -219,12 +219,22 @@ type CajaMenorCreadaTblRow = {
   fecha_apertura: Date;
 };
 
+type CajaMenorCatalogoTblRow = {
+  id: string;
+  nombre: string;
+  extra: string | null;
+  activo: boolean | null;
+  fecha_apertura: Date | null;
+  fecha_cierre: Date | null;
+};
+
 type CajaMovimientoTblRow = {
   caja_menor_id: string;
   caja_menor: string;
   activa: boolean;
   org_id: string;
   sesion_id: string | null;
+  fecha_cierre: Date | null;
   usuario_id: string;
   usuario: string;
   nombres: string;
@@ -764,7 +774,9 @@ export class CobrosService {
       cajasMenores: cajasMenores.map((caja) => ({
         id: caja.cajaMenorId,
         nombre: caja.nombre,
-        activa: caja.activa,
+        activa:
+          caja.activa &&
+          (!caja.fechaCierre || caja.fechaCierre > new Date()),
         monedaCodigo: caja.monedaCodigo,
         fechaApertura: caja.fechaApertura.toISOString(),
         fechaCierre: caja.fechaCierre?.toISOString() ?? null,
@@ -5090,6 +5102,7 @@ export class CobrosService {
           c.caj_activa AS activa,
           c.org_id::text AS org_id,
           sc.id_sca::text AS sesion_id,
+          sc.sca_fecha_cierre AS fecha_cierre,
           tu.id_usu::text AS usuario_id,
           tu.usu_usuario AS usuario,
           p.per_primer_nombre AS nombres,
@@ -5102,7 +5115,9 @@ export class CobrosService {
         JOIN public.tbl_usuarios tu ON tu.id_usu = uo.usu_id
         JOIN public.tbl_personas p ON p.id_per = tu.persona_id
         LEFT JOIN LATERAL (
-          SELECT sca.id_sca
+          SELECT
+            sca.id_sca,
+            sca.sca_fecha_cierre
           FROM public.tbl_sesiones_cajas sca
           WHERE sca.caj_id = c.id_caj
             AND sca.sca_estado::text = 'ABIERTA'
@@ -5132,25 +5147,17 @@ export class CobrosService {
         );
       }
 
-      const sesionId =
-        caja.sesion_id ??
-        (
-          await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
-            INSERT INTO public.tbl_sesiones_cajas (
-              sca_fecha_apertura,
-              sca_monto_inicial,
-              caj_id,
-              usu_id
-            )
-            VALUES (
-              ${fechaMovimiento},
-              0,
-              ${caja.caja_menor_id}::uuid,
-              ${caja.usuario_id}::uuid
-            )
-            RETURNING id_sca::text AS id
-          `)
-        )[0]?.id;
+      if (
+        !caja.sesion_id ||
+        (caja.fecha_cierre && caja.fecha_cierre <= new Date())
+      ) {
+        throw DomainError.conflict(
+          'La caja menor esta cerrada o su horario de apertura ha finalizado',
+          'CAJA_MENOR_CERRADA',
+        );
+      }
+
+      const sesionId = caja.sesion_id;
 
       if (!sesionId) {
         throw DomainError.conflict(
@@ -5484,7 +5491,7 @@ export class CobrosService {
       );
     }
 
-    const [responsable, moneda, existente] = await Promise.all([
+    const [responsable, moneda, existente, cajaAbierta] = await Promise.all([
       this.prisma.usuario.findUnique({
         where: { usuarioId: responsableUsuarioId },
       }),
@@ -5495,6 +5502,16 @@ export class CobrosService {
         where: {
           responsableUsuarioId,
           nombre,
+        },
+      }),
+      this.prisma.cajaMenor.findFirst({
+        where: {
+          responsableUsuarioId,
+          activa: true,
+          OR: [
+            { fechaCierre: null },
+            { fechaCierre: { gt: new Date() } },
+          ],
         },
       }),
     ]);
@@ -5509,6 +5526,15 @@ export class CobrosService {
       throw DomainError.notFound(
         'Moneda no encontrada',
         'MONEDA_NO_ENCONTRADA',
+      );
+    }
+    if (cajaAbierta) {
+      const detalleFecha = cajaAbierta.fechaCierre
+        ? ` vigente hasta el ${cajaAbierta.fechaCierre.toLocaleString('es-CO')}`
+        : '';
+      throw DomainError.conflict(
+        `El usuario ya tiene una caja menor abierta (${cajaAbierta.nombre})${detalleFecha}. Debe cerrarse antes de crear una nueva`,
+        'CAJA_MENOR_ABIERTA_EXISTENTE',
       );
     }
     if (existente) {
@@ -5627,6 +5653,57 @@ export class CobrosService {
         );
       }
 
+      await tx.$executeRaw(Prisma.sql`
+        UPDATE public.tbl_sesiones_cajas
+        SET sca_estado = 'CERRADA'
+        WHERE sca_estado = 'ABIERTA'
+          AND sca_fecha_cierre IS NOT NULL
+          AND sca_fecha_cierre <= now()
+      `);
+
+      await tx.$executeRaw(Prisma.sql`
+        UPDATE public.tbl_cajas c
+        SET caj_activa = FALSE
+        WHERE c.caj_tipo::text = 'MENOR'
+          AND c.caj_activa
+          AND NOT EXISTS (
+            SELECT 1
+            FROM public.tbl_sesiones_cajas sc
+            WHERE sc.caj_id = c.id_caj
+              AND sc.sca_estado::text = 'ABIERTA'
+              AND (sc.sca_fecha_cierre IS NULL OR sc.sca_fecha_cierre > now())
+          )
+      `);
+
+      const [cajaAbierta] = await tx.$queryRaw<
+        Array<{ id: string; nombre: string; fecha_cierre: Date | null }>
+      >(Prisma.sql`
+        SELECT
+          c.id_caj::text AS id,
+          c.caj_nombre AS nombre,
+          sc.sca_fecha_cierre AS fecha_cierre
+        FROM public.tbl_cajas c
+        JOIN public.tbl_sesiones_cajas sc ON sc.caj_id = c.id_caj
+        WHERE c.org_id = ${responsable.organizacion_id}::uuid
+          AND c.caj_tipo::text = 'MENOR'
+          AND c.caj_activa
+          AND sc.usu_id = ${responsable.id}::uuid
+          AND sc.sca_estado::text = 'ABIERTA'
+          AND (sc.sca_fecha_cierre IS NULL OR sc.sca_fecha_cierre > now())
+        ORDER BY sc.sca_fecha_apertura DESC, sc.id_sca DESC
+        LIMIT 1
+      `);
+
+      if (cajaAbierta) {
+        const detalleFecha = cajaAbierta.fecha_cierre
+          ? ` vigente hasta el ${new Date(cajaAbierta.fecha_cierre).toLocaleString('es-CO')}`
+          : '';
+        throw DomainError.conflict(
+          `El usuario ${responsable.nombres} ${responsable.apellidos} ya tiene una caja menor abierta (${cajaAbierta.nombre})${detalleFecha}. Debe cerrarse antes de crear una nueva`,
+          'CAJA_MENOR_ABIERTA_EXISTENTE',
+        );
+      }
+
       const [existente] = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
         SELECT id_caj::text AS id
         FROM public.tbl_cajas
@@ -5699,6 +5776,120 @@ export class CobrosService {
       fechaApertura: caja.caja.fecha_apertura.toISOString(),
       fechaCierre: fechaCierre?.toISOString() ?? null,
       responsable: this.formatearUsuarioTbl(caja.responsable),
+    };
+  }
+
+  async cerrarCajaMenor(id: string, usuario: AuthenticatedUser) {
+    this.asegurarPermiso(usuario, 'REGISTRAR_FLUJO_CAJA');
+
+    if (await this.usarEsquemaTbl()) {
+      return this.cerrarCajaMenorTbl(id, usuario);
+    }
+
+    const caja = await this.prisma.cajaMenor.findUnique({
+      where: { cajaMenorId: id },
+    });
+    if (!caja) {
+      throw DomainError.notFound(
+        'Caja menor no encontrada',
+        'CAJA_MENOR_NO_ENCONTRADA',
+      );
+    }
+    if (
+      !this.esAdministrador(usuario) &&
+      caja.responsableUsuarioId !== usuario.usuarioId
+    ) {
+      throw new ForbiddenException(
+        'No tienes permiso para cerrar esta caja menor',
+      );
+    }
+
+    const ahora = new Date();
+    await this.prisma.cajaMenor.update({
+      where: { cajaMenorId: id },
+      data: {
+        activa: false,
+        fechaCierre: ahora,
+      },
+    });
+
+    this.invalidarCacheLecturas();
+    return {
+      id: caja.cajaMenorId,
+      nombre: caja.nombre,
+      activa: false,
+      fechaCierre: ahora.toISOString(),
+      mensaje: 'Caja menor cerrada exitosamente',
+    };
+  }
+
+  private async cerrarCajaMenorTbl(id: string, usuario: AuthenticatedUser) {
+    const ahora = new Date();
+    const caja = await this.prisma.$transaction(async (tx) => {
+      const scope = await this.obtenerScopeOrganizacionTbl(usuario, tx);
+      const puedeVerTodo = this.puedeVerDatosOrganizacion(usuario);
+
+      const [cajaRow] = await tx.$queryRaw<
+        Array<{ id: string; nombre: string; activa: boolean; usuario_id: string }>
+      >(Prisma.sql`
+        SELECT
+          c.id_caj::text AS id,
+          c.caj_nombre AS nombre,
+          c.caj_activa AS activa,
+          COALESCE(
+            (
+              SELECT sc.usu_id::text
+              FROM public.tbl_sesiones_cajas sc
+              WHERE sc.caj_id = c.id_caj
+              ORDER BY (sc.sca_estado::text = 'ABIERTA') DESC, sc.sca_fecha_apertura DESC, sc.id_sca DESC
+              LIMIT 1
+            ),
+            ''
+          ) AS usuario_id
+        FROM public.tbl_cajas c
+        WHERE c.id_caj = ${id}::uuid
+          AND c.org_id = ${scope.organizacionId}::uuid
+          AND c.caj_tipo::text = 'MENOR'
+        LIMIT 1
+      `);
+
+      if (!cajaRow) {
+        throw DomainError.notFound(
+          'Caja menor no encontrada',
+          'CAJA_MENOR_NO_ENCONTRADA',
+        );
+      }
+
+      if (!puedeVerTodo && cajaRow.usuario_id !== scope.usuarioId) {
+        throw new ForbiddenException(
+          'No tienes permiso para cerrar esta caja menor',
+        );
+      }
+
+      await tx.$executeRaw(Prisma.sql`
+        UPDATE public.tbl_sesiones_cajas
+        SET sca_estado = 'CERRADA',
+            sca_fecha_cierre = ${ahora}
+        WHERE caj_id = ${id}::uuid
+          AND sca_estado = 'ABIERTA'
+      `);
+
+      await tx.$executeRaw(Prisma.sql`
+        UPDATE public.tbl_cajas
+        SET caj_activa = FALSE
+        WHERE id_caj = ${id}::uuid
+      `);
+
+      return cajaRow;
+    });
+
+    this.invalidarCacheLecturas();
+    return {
+      id: caja.id,
+      nombre: caja.nombre,
+      activa: false,
+      fechaCierre: ahora.toISOString(),
+      mensaje: 'Caja menor cerrada exitosamente',
     };
   }
 
@@ -6136,40 +6327,41 @@ export class CobrosService {
           ORDER BY tipo ASC, id ASC
         `),
         this.listarRutasTbl(usuario),
-        this.prisma.$queryRaw<CatalogoTblRow[]>(Prisma.sql`
+        this.prisma.$queryRaw<CajaMenorCatalogoTblRow[]>(Prisma.sql`
           SELECT
-            'caja_menor' AS tipo,
             c.id_caj::text AS id,
-            c.id_caj::text AS codigo,
             c.caj_nombre AS nombre,
-            COALESCE(
-              (
-                SELECT sc.usu_id::text
-                FROM public.tbl_sesiones_cajas sc
-                WHERE sc.caj_id = c.id_caj
-                ORDER BY
-                  (sc.sca_estado::text = 'ABIERTA') DESC,
-                  sc.sca_fecha_apertura DESC,
-                  sc.id_sca DESC
-                LIMIT 1
-              ),
-              ''
-            ) AS extra,
-            c.caj_activa AS activo
+            sc.usu_id::text AS extra,
+            sc.sca_fecha_apertura AS fecha_apertura,
+            sc.sca_fecha_cierre AS fecha_cierre,
+            (
+              c.caj_activa
+              AND sc.sca_estado::text = 'ABIERTA'
+              AND (sc.sca_fecha_cierre IS NULL OR sc.sca_fecha_cierre > now())
+            ) AS activo
           FROM public.tbl_cajas c
+          LEFT JOIN LATERAL (
+            SELECT
+              sca.usu_id,
+              sca.sca_fecha_apertura,
+              sca.sca_fecha_cierre,
+              sca.sca_estado
+            FROM public.tbl_sesiones_cajas sca
+            WHERE sca.caj_id = c.id_caj
+            ORDER BY
+              (sca.sca_estado::text = 'ABIERTA') DESC,
+              sca.sca_fecha_apertura DESC,
+              sca.id_sca DESC
+            LIMIT 1
+          ) sc ON TRUE
           WHERE c.caj_tipo::text = 'MENOR'
             AND c.org_id = ${scope.organizacionId}::uuid
             AND ${
               puedeVerTodo
                 ? Prisma.sql`TRUE`
-                : Prisma.sql`EXISTS (
-                    SELECT 1
-                    FROM public.tbl_sesiones_cajas sc_acl
-                    WHERE sc_acl.caj_id = c.id_caj
-                      AND sc_acl.usu_id = ${scope.usuarioId}::uuid
-                  )`
+                : Prisma.sql`sc.usu_id = ${scope.usuarioId}::uuid`
             }
-          ORDER BY c.caj_activa DESC, c.caj_nombre ASC
+          ORDER BY activo DESC, c.caj_nombre ASC
         `),
         this.prisma.$queryRaw<UsuarioTblRow[]>(Prisma.sql`
           SELECT
@@ -6222,46 +6414,36 @@ export class CobrosService {
     );
 
     return {
-      monedas:
-        monedas.length > 0
-          ? monedas.map((moneda) => ({
-              codigo: moneda.codigo.trim(),
-              nombre: moneda.nombre,
-              simbolo: moneda.simbolo,
-              decimales: Number(moneda.decimales),
-            }))
-          : [
-              {
-                codigo: 'COP',
-                nombre: 'Peso colombiano',
-                simbolo: '$',
-                decimales: 2,
-              },
-            ],
-      frecuenciasPago: frecuenciasPago.map((frecuencia, index) => ({
+      monedas: monedas.map((moneda) => ({
+        codigo: moneda.codigo,
+        nombre: moneda.nombre,
+        simbolo: moneda.simbolo,
+        decimales: Number(moneda.decimales),
+      })),
+      frecuenciasPago: frecuenciasPago.map((frecuencia) => ({
         id:
           Number.isFinite(Number(frecuencia.id)) && Number(frecuencia.id) > 0
             ? Number(frecuencia.id)
-            : index + 1,
+            : 0,
         codigo: frecuencia.codigo,
         nombre: frecuencia.nombre,
-        diasIntervalo: Number(frecuencia.extra ?? 1),
+        diasIntervalo: frecuencia.extra ? Number(frecuencia.extra) : 1,
       })),
-      mediosPago: [...mediosPago.values()],
-      tiposMovimientoCaja: tiposMovimientoCaja.map((tipo, index) => ({
+      mediosPago: Array.from(mediosPago.values()),
+      tiposMovimientoCaja: tiposMovimientoCaja.map((tipo) => ({
         id:
           Number.isFinite(Number(tipo.id)) && Number(tipo.id) > 0
             ? Number(tipo.id)
-            : index + 1,
+            : 0,
         codigo: tipo.codigo,
         nombre: tipo.nombre,
         naturaleza: tipo.extra ?? 'E',
       })),
-      categoriasGasto: categoriasGasto.map((categoria, index) => ({
+      categoriasGasto: categoriasGasto.map((categoria) => ({
         id:
           Number.isFinite(Number(categoria.id)) && Number(categoria.id) > 0
             ? Number(categoria.id)
-            : index + 1,
+            : 0,
         codigo: categoria.codigo,
         nombre: categoria.nombre,
         activa: categoria.activo ?? true,
@@ -6276,8 +6458,14 @@ export class CobrosService {
         return {
           id: caja.id,
           nombre: caja.nombre,
-          activa: caja.activo ?? true,
+          activa: Boolean(caja.activo),
           monedaCodigo: 'COP',
+          fechaApertura: caja.fecha_apertura
+            ? caja.fecha_apertura.toISOString()
+            : null,
+          fechaCierre: caja.fecha_cierre
+            ? caja.fecha_cierre.toISOString()
+            : null,
           responsable: responsable
             ? this.formatearUsuarioTbl(responsable)
             : this.formatearUsuarioAutenticado(usuario),

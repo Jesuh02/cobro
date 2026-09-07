@@ -349,6 +349,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_tbl_sesiones_cajas_abierta
   ON tbl_sesiones_cajas (caj_id)
   WHERE sca_estado = 'ABIERTA';
 
+CREATE UNIQUE INDEX IF NOT EXISTS ux_tbl_sesiones_cajas_usu_abierta
+  ON tbl_sesiones_cajas (usu_id)
+  WHERE sca_estado = 'ABIERTA';
+
 CREATE TABLE IF NOT EXISTS tbl_movimientos_cajas (
   id_mca UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   mca_tipo movimiento_caja_tipo_enum NOT NULL,

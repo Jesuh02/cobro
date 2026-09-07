@@ -111,9 +111,8 @@ CREATE TABLE public.tbl_productos_creditos (
   pcr_nombre character varying NOT NULL,
   pcr_frecuencia USER-DEFINED NOT NULL,
   pcr_tasa_interes numeric NOT NULL CHECK (pcr_tasa_interes >= 0::numeric),
-  org_id bigint NOT NULL,
   CONSTRAINT tbl_productos_creditos_pkey PRIMARY KEY (id_pcr),
-  CONSTRAINT tbl_productos_creditos_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.tbl_organizaciones(id_org)
+  CONSTRAINT tbl_productos_creditos_pcr_nombre_key UNIQUE (pcr_nombre)
 );
 CREATE TABLE public.tbl_categorias_gastos (
   id_cga bigint GENERATED ALWAYS AS IDENTITY NOT NULL,

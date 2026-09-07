@@ -65,7 +65,7 @@ export function validateEnv(config: RawConfig): ValidatedConfig {
     throw new Error('DATABASE_URL contains unresolved placeholders');
   }
 
-  assertSupabaseDatabaseUrl(config.DATABASE_URL, nodeEnv);
+  assertRuntimeDatabaseUrl(config.DATABASE_URL, nodeEnv);
 
   const port = Number(config.PORT ?? 3000);
 
@@ -330,7 +330,7 @@ function assertHttpUrl(value: string, name: string, nodeEnv: string) {
   }
 }
 
-function assertSupabaseDatabaseUrl(databaseUrl: string, nodeEnv: string) {
+function assertRuntimeDatabaseUrl(databaseUrl: string, nodeEnv: string) {
   let parsedUrl: URL;
 
   try {
@@ -353,15 +353,18 @@ function assertSupabaseDatabaseUrl(databaseUrl: string, nodeEnv: string) {
     /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname)
   ) {
     throw new Error(
-      'DATABASE_URL must point to Supabase, not a local database',
+      'DATABASE_URL must point to a remote managed database, not a local database',
     );
   }
 
-  if (
-    !hostname.endsWith('.supabase.co') &&
-    !hostname.endsWith('.supabase.com')
-  ) {
-    throw new Error('DATABASE_URL must point to a Supabase database host');
+  const isSupabaseHost =
+    hostname.endsWith('.supabase.co') || hostname.endsWith('.supabase.com');
+  const isCockroachCloudHost = hostname.endsWith('.cockroachlabs.cloud');
+
+  if (!isSupabaseHost && !isCockroachCloudHost) {
+    throw new Error(
+      'DATABASE_URL must point to a supported database host: Supabase or CockroachDB Cloud',
+    );
   }
 
   if (nodeEnv === 'production') {
@@ -374,10 +377,12 @@ function assertSupabaseDatabaseUrl(databaseUrl: string, nodeEnv: string) {
 
     const username = decodeURIComponent(parsedUrl.username).toLowerCase();
     const privilegedUser =
-      username === 'postgres' || username.startsWith('postgres.');
+      username === 'postgres' ||
+      username === 'root' ||
+      username.startsWith('postgres.');
     if (privilegedUser) {
       throw new Error(
-        'DATABASE_URL must use a dedicated least-privilege runtime role, not postgres',
+        'DATABASE_URL must use a dedicated least-privilege runtime role, not a privileged database user',
       );
     }
   }

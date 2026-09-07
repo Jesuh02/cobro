@@ -9,6 +9,12 @@ import 'reflect-metadata';
 
 import { AppModule } from './app.module';
 
+// Permite serializar campos BigInt a JSON como numeros seguros (evitando TypeErrors de serializacion y en frontend)
+(BigInt.prototype as any).toJSON = function () {
+  const num = Number(this);
+  return Number.isSafeInteger(num) ? num : this.toString();
+};
+
 async function bootstrap() {
   const requestLogger = new Logger('HTTP');
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {

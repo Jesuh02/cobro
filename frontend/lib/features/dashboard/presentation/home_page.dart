@@ -16,6 +16,7 @@ import '../../../core/network/api_exception.dart';
 import '../../../core/network/offline_mutation.dart';
 import '../../../core/platform/export_download.dart';
 import '../../../core/ui/clay.dart';
+import '../../../core/ui/cobro_dropdown.dart';
 import '../../routes/data/api_road_router.dart';
 import '../../routes/data/device_location_service.dart';
 import '../../routes/presentation/desktop_collection_route.dart';
@@ -1556,29 +1557,30 @@ class _HomePageState extends State<HomePage> {
         if (cajas.isNotEmpty)
           SizedBox(
             width: 260,
-            child: DropdownButtonFormField<String>(
+            child: CobroDropdownField<String>(
               key: ValueKey<String>(
                 'filtro-caja-${_cajaMenorFiltroId ?? _todasLasCajasFiltro}',
               ),
-              initialValue:
+              labelText: 'Caja',
+              prefixIcon: const Icon(Icons.account_balance_wallet_outlined),
+              value:
                   filtroCajaValido ? _cajaMenorFiltroId : _todasLasCajasFiltro,
-              isExpanded: true,
-              decoration: const InputDecoration(
-                labelText: 'Caja',
-                prefixIcon: Icon(Icons.account_balance_wallet_outlined),
-              ),
-              items: <DropdownMenuItem<String>>[
-                const DropdownMenuItem<String>(
+              menuWidth: 260,
+              items: <CobroDropdownItem<String>>[
+                const CobroDropdownItem<String>(
                   value: _todasLasCajasFiltro,
-                  child: Text('Todas las cajas'),
+                  label: 'Todas las cajas',
+                  subtitle: 'Ver movimientos globales',
+                  icon: Icons.all_inbox_rounded,
+                  iconColor: Color(0xFF6366F1),
                 ),
                 ...cajas.map(
-                  (CajaMenorCatalogo caja) => DropdownMenuItem<String>(
+                  (CajaMenorCatalogo caja) => CobroDropdownItem<String>(
                     value: caja.id,
-                    child: Text(
-                      caja.nombre,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    label: caja.nombre,
+                    subtitle: 'Moneda: ${caja.monedaCodigo}',
+                    icon: Icons.savings_rounded,
+                    iconColor: const Color(0xFF2563EB),
                   ),
                 ),
               ],
@@ -3011,20 +3013,25 @@ class _HomePageState extends State<HomePage> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      initialValue: moneda,
-                      decoration: const InputDecoration(
-                        labelText: 'Moneda',
-                        prefixIcon: Icon(Icons.attach_money_rounded),
-                      ),
-                      items: const <DropdownMenuItem<String>>[
-                        DropdownMenuItem<String>(
+                    CobroDropdownField<String>(
+                      labelText: 'Moneda',
+                      prefixIcon: const Icon(Icons.attach_money_rounded),
+                      value: moneda,
+                      menuWidth: 280,
+                      items: const <CobroDropdownItem<String>>[
+                        CobroDropdownItem<String>(
                           value: 'COP',
-                          child: Text('COP'),
+                          label: 'COP',
+                          subtitle: 'Peso colombiano',
+                          icon: Icons.monetization_on_rounded,
+                          iconColor: Color(0xFF10B981),
                         ),
-                        DropdownMenuItem<String>(
+                        CobroDropdownItem<String>(
                           value: 'USD',
-                          child: Text('USD'),
+                          label: 'USD',
+                          subtitle: 'Dolar estadounidense',
+                          icon: Icons.attach_money_rounded,
+                          iconColor: Color(0xFF3B82F6),
                         ),
                       ],
                       onChanged: (String? value) {
@@ -6898,251 +6905,37 @@ class _HomePageState extends State<HomePage> {
                     mainAxisSize: MainAxisSize.min,
                     children: <Widget>[
                       if (esAdmin && usuariosDisponibles.isNotEmpty) ...<Widget>[
-                        Builder(
-                          builder: (BuildContext context) {
-                            UsuarioCatalogo? seleccionado;
-                            for (final UsuarioCatalogo u in usuariosDisponibles) {
-                              if (u.id == usuarioResponsableId) {
-                                seleccionado = u;
-                                break;
-                              }
-                            }
-                            seleccionado ??= usuariosDisponibles.first;
-
-                            return MenuAnchor(
-                              alignmentOffset: const Offset(0, 4),
-                              style: MenuStyle(
-                                shape: WidgetStatePropertyAll<OutlinedBorder>(
-                                  RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(16),
-                                    side: BorderSide(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .outlineVariant
-                                          .withValues(alpha: 0.5),
-                                    ),
-                                  ),
-                                ),
-                                elevation: const WidgetStatePropertyAll<double>(8),
-                                backgroundColor: WidgetStatePropertyAll<Color>(
-                                  Theme.of(context).colorScheme.surface,
-                                ),
-                                padding: const WidgetStatePropertyAll<EdgeInsetsGeometry>(
-                                  EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-                                ),
-                              ),
-                              builder: (
-                                BuildContext context,
-                                MenuController controller,
-                                Widget? child,
-                              ) {
-                                return InkWell(
-                                  borderRadius: BorderRadius.circular(12),
-                                  onTap: () {
-                                    if (controller.isOpen) {
-                                      controller.close();
-                                    } else {
-                                      controller.open();
-                                    }
-                                  },
-                                  child: InputDecorator(
-                                    decoration: InputDecoration(
-                                      labelText: 'Usuario responsable',
-                                      prefixIcon:
-                                          const Icon(Icons.person_outline_rounded),
-                                      suffixIcon: Icon(
-                                        controller.isOpen
-                                            ? Icons.keyboard_arrow_up_rounded
-                                            : Icons.keyboard_arrow_down_rounded,
-                                      ),
-                                    ),
-                                    child: Row(
-                                      children: <Widget>[
-                                        if (seleccionado != null) ...<Widget>[
-                                          CircleAvatar(
-                                            radius: 11,
-                                            backgroundColor: Theme.of(context)
-                                                .colorScheme
-                                                .primaryContainer,
-                                            foregroundColor: Theme.of(context)
-                                                .colorScheme
-                                                .onPrimaryContainer,
-                                            child: Text(
-                                              seleccionado.nombreCompleto
-                                                      .trim()
-                                                      .isNotEmpty
-                                                  ? seleccionado.nombreCompleto
-                                                      .trim()
-                                                      .substring(0, 1)
-                                                      .toUpperCase()
-                                                  : '?',
-                                              style: const TextStyle(
-                                                fontSize: 10,
-                                                fontWeight: FontWeight.w800,
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 8),
-                                        ],
-                                        Expanded(
-                                          child: Text(
-                                            seleccionado?.nombreCompleto
-                                                        .trim()
-                                                        .isNotEmpty ==
-                                                    true
-                                                ? seleccionado!.nombreCompleto
-                                                : 'Seleccionar usuario',
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w600,
-                                              fontSize: 14,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              },
-                              menuChildren:
-                                  usuariosDisponibles.map((UsuarioCatalogo u) {
-                                final bool esSeleccionado =
-                                    u.id == usuarioResponsableId;
-                                final String inicial =
-                                    u.nombreCompleto.trim().isNotEmpty
-                                        ? u.nombreCompleto
-                                            .trim()
-                                            .substring(0, 1)
-                                            .toUpperCase()
-                                        : '?';
-
-                                return MenuItemButton(
-                                  onPressed: () {
-                                    setDialogState(
-                                      () => usuarioResponsableId = u.id,
-                                    );
-                                  },
-                                  style: const ButtonStyle(
-                                    padding:
-                                        WidgetStatePropertyAll<EdgeInsetsGeometry>(
-                                      EdgeInsets.symmetric(
-                                        horizontal: 4,
-                                        vertical: 2,
-                                      ),
-                                    ),
-                                  ),
-                                  child: Container(
-                                    width: 330,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 8,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: esSeleccionado
-                                          ? Theme.of(context)
-                                              .colorScheme
-                                              .primary
-                                              .withValues(alpha: 0.12)
-                                          : Colors.transparent,
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: esSeleccionado
-                                          ? Border.all(
-                                              color: Theme.of(context)
-                                                  .colorScheme
-                                                  .primary
-                                                  .withValues(alpha: 0.35),
-                                            )
-                                          : null,
-                                    ),
-                                    child: Row(
-                                      children: <Widget>[
-                                        CircleAvatar(
-                                          radius: 16,
-                                          backgroundColor: esSeleccionado
-                                              ? Theme.of(context)
-                                                  .colorScheme
-                                                  .primary
-                                              : Theme.of(context)
-                                                  .colorScheme
-                                                  .primaryContainer,
-                                          foregroundColor: esSeleccionado
-                                              ? Theme.of(context)
-                                                  .colorScheme
-                                                  .onPrimary
-                                              : Theme.of(context)
-                                                  .colorScheme
-                                                  .onPrimaryContainer,
-                                          child: Text(
-                                            inicial,
-                                            style: const TextStyle(
-                                              fontSize: 13,
-                                              fontWeight: FontWeight.w800,
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: <Widget>[
-                                              Text(
-                                                u.nombreCompleto
-                                                        .trim()
-                                                        .isNotEmpty
-                                                    ? u.nombreCompleto
-                                                    : u.id,
-                                                style: TextStyle(
-                                                  fontSize: 14,
-                                                  fontWeight: esSeleccionado
-                                                      ? FontWeight.w800
-                                                      : FontWeight.w600,
-                                                  color: esSeleccionado
-                                                      ? Theme.of(context)
-                                                          .colorScheme
-                                                          .primary
-                                                      : null,
-                                                ),
-                                                maxLines: 1,
-                                                overflow:
-                                                    TextOverflow.ellipsis,
-                                              ),
-                                              if (u.usuario.isNotEmpty &&
-                                                  u.usuario !=
-                                                      u.nombreCompleto)
-                                                Text(
-                                                  '@${u.usuario}',
-                                                  style: Theme.of(context)
-                                                      .textTheme
-                                                      .bodySmall
-                                                      ?.copyWith(
-                                                        fontSize: 11,
-                                                        color: context.clay
-                                                            .subtleText,
-                                                      ),
-                                                  maxLines: 1,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                ),
-                                            ],
-                                          ),
-                                        ),
-                                        if (esSeleccionado)
-                                          Icon(
-                                            Icons.check_circle_rounded,
-                                            size: 18,
-                                            color: Theme.of(context)
-                                                .colorScheme
-                                                .primary,
-                                          ),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              }).toList(growable: false),
+                        CobroDropdownField<String>(
+                          labelText: 'Usuario responsable',
+                          prefixIcon:
+                              const Icon(Icons.person_outline_rounded),
+                          value: usuarioResponsableId,
+                          items: usuariosDisponibles.map((UsuarioCatalogo u) {
+                            final String inicial =
+                                u.nombreCompleto.trim().isNotEmpty
+                                    ? u.nombreCompleto
+                                        .trim()
+                                        .substring(0, 1)
+                                        .toUpperCase()
+                                    : '?';
+                            return CobroDropdownItem<String>(
+                              value: u.id,
+                              label: u.nombreCompleto.trim().isNotEmpty
+                                  ? u.nombreCompleto
+                                  : u.id,
+                              subtitle: (u.usuario.isNotEmpty &&
+                                      u.usuario != u.nombreCompleto)
+                                  ? '@${u.usuario}'
+                                  : null,
+                              avatarText: inicial,
                             );
+                          }).toList(growable: false),
+                          onChanged: (String? value) {
+                            if (value != null) {
+                              setDialogState(
+                                () => usuarioResponsableId = value,
+                              );
+                            }
                           },
                         ),
                         const SizedBox(height: 12),
@@ -7253,6 +7046,56 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  CobroDropdownItem<String> _itemCajaMenor(CajaMenorCatalogo caja) {
+    return CobroDropdownItem<String>(
+      value: caja.id,
+      label: caja.nombre,
+      subtitle: 'Moneda: ${caja.monedaCodigo}',
+      icon: Icons.savings_rounded,
+      iconColor: const Color(0xFF2563EB),
+    );
+  }
+
+  CobroDropdownItem<String> _itemTipoMovimientoCaja(TipoMovimientoCaja tipo) {
+    final bool esEntrada = tipo.naturaleza == 'E';
+    final IconData iconData;
+    switch (tipo.codigo) {
+      case 'APERTURA':
+        iconData = Icons.lock_open_rounded;
+        break;
+      case 'RECAUDO':
+        iconData = Icons.payments_rounded;
+        break;
+      case 'GASTO':
+        iconData = Icons.receipt_long_rounded;
+        break;
+      case 'DESEMBOLSO_CREDITO':
+        iconData = Icons.account_balance_wallet_rounded;
+        break;
+      case 'AJUSTE_ENTRADA':
+        iconData = Icons.add_circle_outline_rounded;
+        break;
+      case 'AJUSTE_SALIDA':
+        iconData = Icons.remove_circle_outline_rounded;
+        break;
+      case 'CIERRE':
+        iconData = Icons.lock_rounded;
+        break;
+      default:
+        iconData = esEntrada
+            ? Icons.arrow_downward_rounded
+            : Icons.arrow_upward_rounded;
+    }
+
+    return CobroDropdownItem<String>(
+      value: tipo.codigo,
+      label: tipo.nombre,
+      subtitle: esEntrada ? 'Entrada de dinero' : 'Salida de dinero',
+      icon: iconData,
+      iconColor: esEntrada ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+    );
+  }
+
   Future<void> _abrirMovimientoCaja() async {
     if (!_puedeRegistrarFlujoCaja) {
       _mostrarMensaje('No tienes permiso para registrar flujo en caja menor');
@@ -7292,89 +7135,76 @@ class _HomePageState extends State<HomePage> {
             return AlertDialog(
               title: const Text('Movimiento de caja'),
               content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    DropdownButtonFormField<String>(
-                      initialValue: cajaMenorId,
-                      decoration: const InputDecoration(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 400),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      CobroDropdownField<String>(
                         labelText: 'Caja menor',
-                        prefixIcon: Icon(Icons.savings_rounded),
+                        prefixIcon: const Icon(Icons.savings_rounded),
+                        value: cajaMenorId,
+                        items: catalogos.cajasMenoresActivas
+                            .map(_itemCajaMenor)
+                            .toList(growable: false),
+                        onChanged: (String? value) {
+                          if (value != null) {
+                            setDialogState(() => cajaMenorId = value);
+                          }
+                        },
                       ),
-                      items: catalogos.cajasMenoresActivas
-                          .map(
-                            (CajaMenorCatalogo caja) =>
-                                DropdownMenuItem<String>(
-                              value: caja.id,
-                              child: Text(caja.nombre),
-                            ),
-                          )
-                          .toList(growable: false),
-                      onChanged: (String? value) {
-                        if (value != null) {
-                          setDialogState(() => cajaMenorId = value);
-                        }
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      initialValue: tipoMovimientoCodigo,
-                      decoration: const InputDecoration(
-                        labelText: 'Tipo',
-                        prefixIcon: Icon(Icons.swap_vert_rounded),
+                      const SizedBox(height: 12),
+                      CobroDropdownField<String>(
+                        labelText: 'Tipo de movimiento',
+                        prefixIcon: const Icon(Icons.swap_vert_rounded),
+                        value: tipoMovimientoCodigo,
+                        items: catalogos.tiposMovimientoCaja
+                            .map(_itemTipoMovimientoCaja)
+                            .toList(growable: false),
+                        onChanged: (String? value) {
+                          if (value != null) {
+                            setDialogState(() => tipoMovimientoCodigo = value);
+                          }
+                        },
                       ),
-                      items: catalogos.tiposMovimientoCaja
-                          .map(
-                            (TipoMovimientoCaja tipo) =>
-                                DropdownMenuItem<String>(
-                              value: tipo.codigo,
-                              child: Text(tipo.nombre),
-                            ),
-                          )
-                          .toList(growable: false),
-                      onChanged: (String? value) {
-                        if (value != null) {
-                          setDialogState(() => tipoMovimientoCodigo = value);
-                        }
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    OutlinedButton.icon(
-                      onPressed: () async {
-                        final DateTime? selected = await showDatePicker(
-                          context: context,
-                          initialDate: fechaMovimiento,
-                          firstDate: DateTime(2000),
-                          lastDate: DateTime(2100),
-                        );
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        onPressed: () async {
+                          final DateTime? selected = await showDatePicker(
+                            context: context,
+                            initialDate: fechaMovimiento,
+                            firstDate: DateTime(2000),
+                            lastDate: DateTime(2100),
+                          );
 
-                        if (selected != null) {
-                          setDialogState(() => fechaMovimiento = selected);
-                        }
-                      },
-                      icon: const Icon(Icons.calendar_month_rounded),
-                      label: Text(_fechaEtiqueta(fechaMovimiento)),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: montoController,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
-                      decoration: const InputDecoration(
-                        labelText: 'Monto',
-                        prefixIcon: Icon(Icons.attach_money_rounded),
+                          if (selected != null) {
+                            setDialogState(() => fechaMovimiento = selected);
+                          }
+                        },
+                        icon: const Icon(Icons.calendar_month_rounded),
+                        label: Text(_fechaEtiqueta(fechaMovimiento)),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: motivoController,
-                      maxLines: 2,
-                      decoration: const InputDecoration(
-                        labelText: 'Motivo',
-                        prefixIcon: Icon(Icons.notes_rounded),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: montoController,
+                        keyboardType:
+                            const TextInputType.numberWithOptions(decimal: true),
+                        decoration: const InputDecoration(
+                          labelText: 'Monto',
+                          prefixIcon: Icon(Icons.attach_money_rounded),
+                        ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: motivoController,
+                        maxLines: 2,
+                        decoration: const InputDecoration(
+                          labelText: 'Motivo',
+                          prefixIcon: Icon(Icons.notes_rounded),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
               actions: <Widget>[
@@ -7508,93 +7338,81 @@ class _HomePageState extends State<HomePage> {
             return AlertDialog(
               title: const Text('Modificar movimiento'),
               content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    DropdownButtonFormField<String>(
-                      initialValue: cajaMenorId,
-                      decoration: const InputDecoration(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 400),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      CobroDropdownField<String>(
                         labelText: 'Caja menor',
-                        prefixIcon: Icon(Icons.savings_rounded),
+                        prefixIcon: const Icon(Icons.savings_rounded),
+                        value: cajaMenorId,
+                        items: catalogos.cajasMenoresActivas
+                            .map(_itemCajaMenor)
+                            .toList(growable: false),
+                        onChanged: (String? value) {
+                          if (value != null) {
+                            setDialogState(() => cajaMenorId = value);
+                          }
+                        },
                       ),
-                      items: catalogos.cajasMenoresActivas
-                          .map(
-                            (CajaMenorCatalogo caja) =>
-                                DropdownMenuItem<String>(
-                              value: caja.id,
-                              child: Text(caja.nombre),
-                            ),
-                          )
-                          .toList(growable: false),
-                      onChanged: (String? value) {
-                        if (value != null) {
-                          setDialogState(() => cajaMenorId = value);
-                        }
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      initialValue: tipoMovimientoCodigo,
-                      decoration: const InputDecoration(
-                        labelText: 'Tipo',
-                        prefixIcon: Icon(Icons.swap_vert_rounded),
+                      const SizedBox(height: 12),
+                      CobroDropdownField<String>(
+                        labelText: 'Tipo de movimiento',
+                        prefixIcon: const Icon(Icons.swap_vert_rounded),
+                        value: tipoMovimientoCodigo,
+                        enabled: !tipoBloqueado,
+                        items: catalogos.tiposMovimientoCaja
+                            .map(_itemTipoMovimientoCaja)
+                            .toList(growable: false),
+                        onChanged: tipoBloqueado
+                            ? null
+                            : (String? value) {
+                                if (value != null) {
+                                  setDialogState(
+                                    () => tipoMovimientoCodigo = value,
+                                  );
+                                }
+                              },
                       ),
-                      items: catalogos.tiposMovimientoCaja
-                          .map(
-                            (TipoMovimientoCaja tipo) =>
-                                DropdownMenuItem<String>(
-                              value: tipo.codigo,
-                              child: Text(tipo.nombre),
-                            ),
-                          )
-                          .toList(growable: false),
-                      onChanged: tipoBloqueado
-                          ? null
-                          : (String? value) {
-                              if (value != null) {
-                                setDialogState(
-                                  () => tipoMovimientoCodigo = value,
-                                );
-                              }
-                            },
-                    ),
-                    const SizedBox(height: 12),
-                    OutlinedButton.icon(
-                      onPressed: () async {
-                        final DateTime? selected = await showDatePicker(
-                          context: context,
-                          initialDate: fechaMovimiento,
-                          firstDate: DateTime(2000),
-                          lastDate: DateTime(2100),
-                        );
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        onPressed: () async {
+                          final DateTime? selected = await showDatePicker(
+                            context: context,
+                            initialDate: fechaMovimiento,
+                            firstDate: DateTime(2000),
+                            lastDate: DateTime(2100),
+                          );
 
-                        if (selected != null) {
-                          setDialogState(() => fechaMovimiento = selected);
-                        }
-                      },
-                      icon: const Icon(Icons.calendar_month_rounded),
-                      label: Text(_fechaEtiqueta(fechaMovimiento)),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: montoController,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
-                      decoration: const InputDecoration(
-                        labelText: 'Monto',
-                        prefixIcon: Icon(Icons.attach_money_rounded),
+                          if (selected != null) {
+                            setDialogState(() => fechaMovimiento = selected);
+                          }
+                        },
+                        icon: const Icon(Icons.calendar_month_rounded),
+                        label: Text(_fechaEtiqueta(fechaMovimiento)),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: motivoController,
-                      maxLines: 2,
-                      decoration: const InputDecoration(
-                        labelText: 'Motivo',
-                        prefixIcon: Icon(Icons.notes_rounded),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: montoController,
+                        keyboardType:
+                            const TextInputType.numberWithOptions(decimal: true),
+                        decoration: const InputDecoration(
+                          labelText: 'Monto',
+                          prefixIcon: Icon(Icons.attach_money_rounded),
+                        ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: motivoController,
+                        maxLines: 2,
+                        decoration: const InputDecoration(
+                          labelText: 'Motivo',
+                          prefixIcon: Icon(Icons.notes_rounded),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
               actions: <Widget>[
@@ -8736,44 +8554,31 @@ class _FiltrosInicioPresupuesto extends StatelessWidget {
           ),
           SizedBox(
             width: 270,
-            child: DropdownButtonFormField<String?>(
+            child: CobroDropdownField<String?>(
               key: ValueKey<String?>('inicio-caja-$value'),
-              initialValue: value,
-              isExpanded: true,
-              decoration: const InputDecoration(
-                labelText: 'Caja',
-                prefixIcon: Icon(Icons.account_balance_wallet_outlined),
-              ),
-              hint: const Text('Selecciona una caja'),
-              items: <DropdownMenuItem<String?>>[
-                const DropdownMenuItem<String?>(
+              labelText: 'Caja',
+              prefixIcon: const Icon(Icons.account_balance_wallet_outlined),
+              value: value,
+              hintText: 'Selecciona una caja',
+              menuWidth: 270,
+              items: <CobroDropdownItem<String?>>[
+                const CobroDropdownItem<String?>(
                   value: _HomePageState._todasLasCajasFiltro,
-                  child: Text('Todas las cajas'),
+                  label: 'Todas las cajas',
+                  subtitle: 'Ver movimientos globales',
+                  icon: Icons.all_inbox_rounded,
+                  iconColor: Color(0xFF6366F1),
                 ),
                 ...cajasMenores.map(
-                  (CajaMenorCatalogo caja) => DropdownMenuItem<String?>(
+                  (CajaMenorCatalogo caja) => CobroDropdownItem<String?>(
                     value: caja.id,
-                    child: Text(
-                      caja.nombre,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    label: caja.nombre,
+                    subtitle: 'Moneda: ${caja.monedaCodigo}',
+                    icon: Icons.savings_rounded,
+                    iconColor: const Color(0xFF2563EB),
                   ),
                 ),
               ],
-              selectedItemBuilder: (BuildContext context) {
-                return <Widget>[
-                  const Text(
-                    'Todas las cajas',
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  ...cajasMenores.map(
-                    (CajaMenorCatalogo caja) => Text(
-                      caja.nombre,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ];
-              },
               onChanged: onCajaChanged,
             ),
           ),
@@ -9833,23 +9638,27 @@ class _FiltrosRuta extends StatelessWidget {
             labelText: 'Buscar cliente, cedula o negocio',
           ),
         );
-        final Widget selectorRuta = DropdownButtonFormField<String?>(
+        final Widget selectorRuta = CobroDropdownField<String?>(
           key: ValueKey<String?>(rutaSeleccionadaId),
-          initialValue: rutaSeleccionadaId,
-          isExpanded: true,
-          decoration: const InputDecoration(
-            prefixIcon: Icon(Icons.route_rounded),
-            labelText: 'Ruta',
-          ),
-          items: <DropdownMenuItem<String?>>[
-            const DropdownMenuItem<String?>(
+          labelText: 'Ruta',
+          prefixIcon: const Icon(Icons.route_rounded),
+          value: rutaSeleccionadaId,
+          hintText: 'Todas',
+          menuWidth: 260,
+          items: <CobroDropdownItem<String?>>[
+            const CobroDropdownItem<String?>(
               value: null,
-              child: Text('Todas'),
+              label: 'Todas',
+              subtitle: 'Todas las rutas',
+              icon: Icons.all_inclusive_rounded,
+              iconColor: Color(0xFF6366F1),
             ),
             ...rutas.map(
-              (RutaCatalogo ruta) => DropdownMenuItem<String?>(
+              (RutaCatalogo ruta) => CobroDropdownItem<String?>(
                 value: ruta.id,
-                child: Text(ruta.nombre),
+                label: ruta.nombre,
+                icon: Icons.alt_route_rounded,
+                iconColor: const Color(0xFF3B82F6),
               ),
             ),
           ],
@@ -12313,24 +12122,27 @@ class _FormularioCredito extends StatelessWidget {
             onChanged: onClienteChanged,
           ),
         const SizedBox(height: 12),
-        DropdownButtonFormField<String?>(
+        CobroDropdownField<String?>(
           key: ValueKey<String?>('ruta-$rutaId'),
-          isExpanded: true,
-          initialValue: rutaId,
-          decoration: const InputDecoration(
-            labelText: 'Ruta',
-            prefixIcon: Icon(Icons.route_rounded),
-          ),
-          hint: const Text('Automatica'),
-          items: <DropdownMenuItem<String?>>[
-            const DropdownMenuItem<String?>(
+          labelText: 'Ruta',
+          prefixIcon: const Icon(Icons.route_rounded),
+          value: rutaId,
+          hintText: 'Automatica',
+          enabled: !guardando,
+          items: <CobroDropdownItem<String?>>[
+            const CobroDropdownItem<String?>(
               value: null,
-              child: Text('Automatica'),
+              label: 'Automatica',
+              subtitle: 'Asignacion automatica segun cliente',
+              icon: Icons.auto_mode_rounded,
+              iconColor: Color(0xFF6366F1),
             ),
             ...rutas.map(
-              (RutaCatalogo ruta) => DropdownMenuItem<String?>(
+              (RutaCatalogo ruta) => CobroDropdownItem<String?>(
                 value: ruta.id,
-                child: Text(ruta.nombre),
+                label: ruta.nombre,
+                icon: Icons.alt_route_rounded,
+                iconColor: const Color(0xFF3B82F6),
               ),
             ),
           ],
@@ -12338,37 +12150,44 @@ class _FormularioCredito extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         _DosColumnas(
-          left: DropdownButtonFormField<String>(
+          left: CobroDropdownField<String>(
             key: ValueKey<String?>('moneda-$monedaCodigo'),
-            isExpanded: true,
-            initialValue: monedaCodigo,
-            decoration: const InputDecoration(
-              labelText: 'Moneda',
-              prefixIcon: Icon(Icons.attach_money_rounded),
-            ),
+            labelText: 'Moneda',
+            prefixIcon: const Icon(Icons.attach_money_rounded),
+            value: monedaCodigo,
+            enabled: !guardando && !monedaBloqueada,
+            menuWidth: 280,
             items: monedas
                 .map(
-                  (Moneda moneda) => DropdownMenuItem<String>(
+                  (Moneda moneda) => CobroDropdownItem<String>(
                     value: moneda.codigo,
-                    child: Text(moneda.codigo),
+                    label: moneda.codigo,
+                    subtitle:
+                        moneda.nombre != moneda.codigo ? moneda.nombre : null,
+                    icon: Icons.monetization_on_rounded,
+                    iconColor: const Color(0xFF10B981),
                   ),
                 )
                 .toList(growable: false),
             onChanged: guardando || monedaBloqueada ? null : onMonedaChanged,
           ),
-          right: DropdownButtonFormField<int>(
+          right: CobroDropdownField<int>(
             key: ValueKey<String>('frecuencia-$frecuenciaPagoId'),
-            isExpanded: true,
-            initialValue: frecuenciaPagoId,
-            decoration: const InputDecoration(
-              labelText: 'Frecuencia',
-              prefixIcon: Icon(Icons.event_repeat_rounded),
-            ),
+            labelText: 'Frecuencia',
+            prefixIcon: const Icon(Icons.event_repeat_rounded),
+            value: frecuenciaPagoId,
+            enabled: !guardando,
+            menuWidth: 280,
             items: frecuencias
                 .map(
-                  (FrecuenciaPago frecuencia) => DropdownMenuItem<int>(
+                  (FrecuenciaPago frecuencia) => CobroDropdownItem<int>(
                     value: frecuencia.id,
-                    child: Text(frecuencia.nombre),
+                    label: frecuencia.nombre,
+                    subtitle: frecuencia.diasIntervalo > 1
+                        ? 'Cada ${frecuencia.diasIntervalo} dias'
+                        : 'Cobro diario',
+                    icon: Icons.update_rounded,
+                    iconColor: const Color(0xFF8B5CF6),
                   ),
                 )
                 .toList(growable: false),
@@ -12376,19 +12195,20 @@ class _FormularioCredito extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
-        DropdownButtonFormField<String?>(
+        CobroDropdownField<String?>(
           key: ValueKey<String?>('caja-$cajaMenorId'),
-          isExpanded: true,
-          initialValue: cajaMenorId,
-          decoration: const InputDecoration(
-            labelText: 'Caja menor',
-            prefixIcon: Icon(Icons.savings_rounded),
-          ),
+          labelText: 'Caja menor',
+          prefixIcon: const Icon(Icons.savings_rounded),
+          value: cajaMenorId,
+          enabled: !guardando,
           items: cajasMenores
               .map(
-                (CajaMenorCatalogo caja) => DropdownMenuItem<String?>(
+                (CajaMenorCatalogo caja) => CobroDropdownItem<String?>(
                   value: caja.id,
-                  child: Text(caja.nombre),
+                  label: caja.nombre,
+                  subtitle: 'Moneda: ${caja.monedaCodigo}',
+                  icon: Icons.savings_rounded,
+                  iconColor: const Color(0xFF2563EB),
                 ),
               )
               .toList(growable: false),
@@ -12577,24 +12397,27 @@ class _CamposCreditoSinCliente extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        DropdownButtonFormField<String?>(
+        CobroDropdownField<String?>(
           key: ValueKey<String?>('nuevo-cliente-modal-ruta-$rutaId'),
-          isExpanded: true,
-          initialValue: rutaId,
-          decoration: const InputDecoration(
-            labelText: 'Ruta',
-            prefixIcon: Icon(Icons.route_rounded),
-          ),
-          hint: const Text('Automatica'),
-          items: <DropdownMenuItem<String?>>[
-            const DropdownMenuItem<String?>(
+          labelText: 'Ruta',
+          prefixIcon: const Icon(Icons.route_rounded),
+          value: rutaId,
+          hintText: 'Automatica',
+          enabled: !guardando,
+          items: <CobroDropdownItem<String?>>[
+            const CobroDropdownItem<String?>(
               value: null,
-              child: Text('Automatica'),
+              label: 'Automatica',
+              subtitle: 'Asignacion automatica segun cliente',
+              icon: Icons.auto_mode_rounded,
+              iconColor: Color(0xFF6366F1),
             ),
             ...rutas.map(
-              (RutaCatalogo ruta) => DropdownMenuItem<String?>(
+              (RutaCatalogo ruta) => CobroDropdownItem<String?>(
                 value: ruta.id,
-                child: Text(ruta.nombre),
+                label: ruta.nombre,
+                icon: Icons.alt_route_rounded,
+                iconColor: const Color(0xFF3B82F6),
               ),
             ),
           ],
@@ -12602,39 +12425,46 @@ class _CamposCreditoSinCliente extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         _DosColumnas(
-          left: DropdownButtonFormField<String>(
+          left: CobroDropdownField<String>(
             key: ValueKey<String?>('nuevo-cliente-modal-moneda-$monedaCodigo'),
-            isExpanded: true,
-            initialValue: monedaCodigo,
-            decoration: const InputDecoration(
-              labelText: 'Moneda',
-              prefixIcon: Icon(Icons.attach_money_rounded),
-            ),
+            labelText: 'Moneda',
+            prefixIcon: const Icon(Icons.attach_money_rounded),
+            value: monedaCodigo,
+            enabled: !guardando,
+            menuWidth: 280,
             items: monedas
                 .map(
-                  (Moneda moneda) => DropdownMenuItem<String>(
+                  (Moneda moneda) => CobroDropdownItem<String>(
                     value: moneda.codigo,
-                    child: Text(moneda.codigo),
+                    label: moneda.codigo,
+                    subtitle:
+                        moneda.nombre != moneda.codigo ? moneda.nombre : null,
+                    icon: Icons.monetization_on_rounded,
+                    iconColor: const Color(0xFF10B981),
                   ),
                 )
                 .toList(growable: false),
             onChanged: guardando ? null : onMonedaChanged,
           ),
-          right: DropdownButtonFormField<int>(
+          right: CobroDropdownField<int>(
             key: ValueKey<String>(
               'nuevo-cliente-modal-frecuencia-$frecuenciaPagoId',
             ),
-            isExpanded: true,
-            initialValue: frecuenciaPagoId,
-            decoration: const InputDecoration(
-              labelText: 'Frecuencia',
-              prefixIcon: Icon(Icons.event_repeat_rounded),
-            ),
+            labelText: 'Frecuencia',
+            prefixIcon: const Icon(Icons.event_repeat_rounded),
+            value: frecuenciaPagoId,
+            enabled: !guardando,
+            menuWidth: 280,
             items: frecuencias
                 .map(
-                  (FrecuenciaPago frecuencia) => DropdownMenuItem<int>(
+                  (FrecuenciaPago frecuencia) => CobroDropdownItem<int>(
                     value: frecuencia.id,
-                    child: Text(frecuencia.nombre),
+                    label: frecuencia.nombre,
+                    subtitle: frecuencia.diasIntervalo > 1
+                        ? 'Cada ${frecuencia.diasIntervalo} dias'
+                        : 'Cobro diario',
+                    icon: Icons.update_rounded,
+                    iconColor: const Color(0xFF8B5CF6),
                   ),
                 )
                 .toList(growable: false),
@@ -12642,19 +12472,20 @@ class _CamposCreditoSinCliente extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
-        DropdownButtonFormField<String?>(
+        CobroDropdownField<String?>(
           key: ValueKey<String?>('nuevo-cliente-modal-caja-$cajaMenorId'),
-          isExpanded: true,
-          initialValue: cajaMenorId,
-          decoration: const InputDecoration(
-            labelText: 'Caja menor',
-            prefixIcon: Icon(Icons.savings_rounded),
-          ),
+          labelText: 'Caja menor',
+          prefixIcon: const Icon(Icons.savings_rounded),
+          value: cajaMenorId,
+          enabled: !guardando,
           items: cajasMenores
               .map(
-                (CajaMenorCatalogo caja) => DropdownMenuItem<String?>(
+                (CajaMenorCatalogo caja) => CobroDropdownItem<String?>(
                   value: caja.id,
-                  child: Text(caja.nombre),
+                  label: caja.nombre,
+                  subtitle: 'Moneda: ${caja.monedaCodigo}',
+                  icon: Icons.savings_rounded,
+                  iconColor: const Color(0xFF2563EB),
                 ),
               )
               .toList(growable: false),
@@ -14510,22 +14341,30 @@ class _GestionEmpleadosPageState extends State<_GestionEmpleadosPage> {
           ),
           if (!_aplicarATodos && _empleados.isNotEmpty) ...<Widget>[
             const SizedBox(height: 8),
-            DropdownButtonFormField<String>(
+            CobroDropdownField<String>(
               key: ValueKey<String?>(_empleadoSeleccionadoId),
-              initialValue: _empleadoSeleccionadoId,
-              decoration: const InputDecoration(
-                labelText: 'Empleado',
-                prefixIcon: Icon(Icons.person_rounded),
-              ),
+              labelText: 'Empleado',
+              prefixIcon: const Icon(Icons.person_rounded),
+              value: _empleadoSeleccionadoId,
               items: _empleados
                   .map(
-                    (EmpleadoGestion empleado) => DropdownMenuItem<String>(
-                      value: empleado.id,
-                      child: Text(
-                        empleado.nombreCompleto,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
+                    (EmpleadoGestion empleado) {
+                      final String inicial =
+                          empleado.nombreCompleto.trim().isNotEmpty
+                              ? empleado.nombreCompleto
+                                  .trim()
+                                  .substring(0, 1)
+                                  .toUpperCase()
+                              : '?';
+                      return CobroDropdownItem<String>(
+                        value: empleado.id,
+                        label: empleado.nombreCompleto,
+                        subtitle: empleado.usuario.isNotEmpty
+                            ? '@${empleado.usuario}'
+                            : null,
+                        avatarText: inicial,
+                      );
+                    },
                   )
                   .toList(growable: false),
               onChanged: _guardando ? null : _seleccionarEmpleado,

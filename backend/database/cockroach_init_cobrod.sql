@@ -10,37 +10,6 @@
 -- Evita bloques PL/pgSQL de compatibilidad con Supabase/PostgreSQL y usa
 -- unique_rowid() para llaves numericas distribuidas.
 
--- Limpieza inicial para asegurar una instalacion limpia con UUIDs nativos (idempotente)
-DROP VIEW IF EXISTS vista_presupuesto_actual CASCADE;
-DROP VIEW IF EXISTS vista_saldo_caja_menor CASCADE;
-DROP VIEW IF EXISTS vista_creditos_saldos CASCADE;
-
-DROP TABLE IF EXISTS tbl_notificaciones CASCADE;
-DROP TABLE IF EXISTS tbl_wompi_transacciones CASCADE;
-DROP TABLE IF EXISTS tbl_cuotas_pagos CASCADE;
-DROP TABLE IF EXISTS tbl_pagos CASCADE;
-DROP TABLE IF EXISTS tbl_cuotas CASCADE;
-DROP TABLE IF EXISTS tbl_creditos CASCADE;
-DROP TABLE IF EXISTS tbl_movimientos_cajas CASCADE;
-DROP TABLE IF EXISTS tbl_sesiones_cajas CASCADE;
-DROP TABLE IF EXISTS tbl_gastos CASCADE;
-DROP TABLE IF EXISTS tbl_cajas CASCADE;
-DROP TABLE IF EXISTS tbl_rutas_clientes CASCADE;
-DROP TABLE IF EXISTS tbl_rutas CASCADE;
-DROP TABLE IF EXISTS tbl_clientes CASCADE;
-DROP TABLE IF EXISTS tbl_usuarios_organizaciones CASCADE;
-DROP TABLE IF EXISTS tbl_organizaciones CASCADE;
-DROP TABLE IF EXISTS tbl_roles_recursos CASCADE;
-DROP TABLE IF EXISTS tbl_recursos CASCADE;
-DROP TABLE IF EXISTS tbl_roles CASCADE;
-DROP TABLE IF EXISTS tbl_usuarios CASCADE;
-DROP TABLE IF EXISTS tbl_personas CASCADE;
-DROP TABLE IF EXISTS tbl_monedas CASCADE;
-DROP TABLE IF EXISTS tbl_categorias_gastos CASCADE;
-DROP TABLE IF EXISTS tbl_productos_creditos CASCADE;
-DROP TABLE IF EXISTS tbl_medios_pagos CASCADE;
-DROP TABLE IF EXISTS public._prisma_migrations CASCADE;
-
 CREATE SCHEMA IF NOT EXISTS public;
 
 CREATE TABLE IF NOT EXISTS public._prisma_migrations (

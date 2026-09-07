@@ -1557,30 +1557,29 @@ class _HomePageState extends State<HomePage> {
         if (cajas.isNotEmpty)
           SizedBox(
             width: 260,
-            child: CobroDropdownField<String>(
+            child: DropdownButtonFormField<String>(
               key: ValueKey<String>(
                 'filtro-caja-${_cajaMenorFiltroId ?? _todasLasCajasFiltro}',
               ),
-              labelText: 'Caja',
-              prefixIcon: const Icon(Icons.account_balance_wallet_outlined),
-              value:
+              initialValue:
                   filtroCajaValido ? _cajaMenorFiltroId : _todasLasCajasFiltro,
-              menuWidth: 260,
-              items: <CobroDropdownItem<String>>[
-                const CobroDropdownItem<String>(
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: 'Caja',
+                prefixIcon: Icon(Icons.account_balance_wallet_outlined),
+              ),
+              items: <DropdownMenuItem<String>>[
+                const DropdownMenuItem<String>(
                   value: _todasLasCajasFiltro,
-                  label: 'Todas las cajas',
-                  subtitle: 'Ver movimientos globales',
-                  icon: Icons.all_inbox_rounded,
-                  iconColor: Color(0xFF6366F1),
+                  child: Text('Todas las cajas'),
                 ),
                 ...cajas.map(
-                  (CajaMenorCatalogo caja) => CobroDropdownItem<String>(
+                  (CajaMenorCatalogo caja) => DropdownMenuItem<String>(
                     value: caja.id,
-                    label: caja.nombre,
-                    subtitle: 'Moneda: ${caja.monedaCodigo}',
-                    icon: Icons.savings_rounded,
-                    iconColor: const Color(0xFF2563EB),
+                    child: Text(
+                      caja.nombre,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                 ),
               ],
@@ -3013,25 +3012,20 @@ class _HomePageState extends State<HomePage> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    CobroDropdownField<String>(
-                      labelText: 'Moneda',
-                      prefixIcon: const Icon(Icons.attach_money_rounded),
-                      value: moneda,
-                      menuWidth: 280,
-                      items: const <CobroDropdownItem<String>>[
-                        CobroDropdownItem<String>(
+                    DropdownButtonFormField<String>(
+                      initialValue: moneda,
+                      decoration: const InputDecoration(
+                        labelText: 'Moneda',
+                        prefixIcon: Icon(Icons.attach_money_rounded),
+                      ),
+                      items: const <DropdownMenuItem<String>>[
+                        DropdownMenuItem<String>(
                           value: 'COP',
-                          label: 'COP',
-                          subtitle: 'Peso colombiano',
-                          icon: Icons.monetization_on_rounded,
-                          iconColor: Color(0xFF10B981),
+                          child: Text('COP'),
                         ),
-                        CobroDropdownItem<String>(
+                        DropdownMenuItem<String>(
                           value: 'USD',
-                          label: 'USD',
-                          subtitle: 'Dolar estadounidense',
-                          icon: Icons.attach_money_rounded,
-                          iconColor: Color(0xFF3B82F6),
+                          child: Text('USD'),
                         ),
                       ],
                       onChanged: (String? value) {
@@ -8554,31 +8548,44 @@ class _FiltrosInicioPresupuesto extends StatelessWidget {
           ),
           SizedBox(
             width: 270,
-            child: CobroDropdownField<String?>(
+            child: DropdownButtonFormField<String?>(
               key: ValueKey<String?>('inicio-caja-$value'),
-              labelText: 'Caja',
-              prefixIcon: const Icon(Icons.account_balance_wallet_outlined),
-              value: value,
-              hintText: 'Selecciona una caja',
-              menuWidth: 270,
-              items: <CobroDropdownItem<String?>>[
-                const CobroDropdownItem<String?>(
+              initialValue: value,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: 'Caja',
+                prefixIcon: Icon(Icons.account_balance_wallet_outlined),
+              ),
+              hint: const Text('Selecciona una caja'),
+              items: <DropdownMenuItem<String?>>[
+                const DropdownMenuItem<String?>(
                   value: _HomePageState._todasLasCajasFiltro,
-                  label: 'Todas las cajas',
-                  subtitle: 'Ver movimientos globales',
-                  icon: Icons.all_inbox_rounded,
-                  iconColor: Color(0xFF6366F1),
+                  child: Text('Todas las cajas'),
                 ),
                 ...cajasMenores.map(
-                  (CajaMenorCatalogo caja) => CobroDropdownItem<String?>(
+                  (CajaMenorCatalogo caja) => DropdownMenuItem<String?>(
                     value: caja.id,
-                    label: caja.nombre,
-                    subtitle: 'Moneda: ${caja.monedaCodigo}',
-                    icon: Icons.savings_rounded,
-                    iconColor: const Color(0xFF2563EB),
+                    child: Text(
+                      caja.nombre,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                 ),
               ],
+              selectedItemBuilder: (BuildContext context) {
+                return <Widget>[
+                  const Text(
+                    'Todas las cajas',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  ...cajasMenores.map(
+                    (CajaMenorCatalogo caja) => Text(
+                      caja.nombre,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ];
+              },
               onChanged: onCajaChanged,
             ),
           ),
@@ -9638,27 +9645,23 @@ class _FiltrosRuta extends StatelessWidget {
             labelText: 'Buscar cliente, cedula o negocio',
           ),
         );
-        final Widget selectorRuta = CobroDropdownField<String?>(
+        final Widget selectorRuta = DropdownButtonFormField<String?>(
           key: ValueKey<String?>(rutaSeleccionadaId),
-          labelText: 'Ruta',
-          prefixIcon: const Icon(Icons.route_rounded),
-          value: rutaSeleccionadaId,
-          hintText: 'Todas',
-          menuWidth: 260,
-          items: <CobroDropdownItem<String?>>[
-            const CobroDropdownItem<String?>(
+          initialValue: rutaSeleccionadaId,
+          isExpanded: true,
+          decoration: const InputDecoration(
+            prefixIcon: Icon(Icons.route_rounded),
+            labelText: 'Ruta',
+          ),
+          items: <DropdownMenuItem<String?>>[
+            const DropdownMenuItem<String?>(
               value: null,
-              label: 'Todas',
-              subtitle: 'Todas las rutas',
-              icon: Icons.all_inclusive_rounded,
-              iconColor: Color(0xFF6366F1),
+              child: Text('Todas'),
             ),
             ...rutas.map(
-              (RutaCatalogo ruta) => CobroDropdownItem<String?>(
+              (RutaCatalogo ruta) => DropdownMenuItem<String?>(
                 value: ruta.id,
-                label: ruta.nombre,
-                icon: Icons.alt_route_rounded,
-                iconColor: const Color(0xFF3B82F6),
+                child: Text(ruta.nombre),
               ),
             ),
           ],
@@ -14341,8 +14344,9 @@ class _GestionEmpleadosPageState extends State<_GestionEmpleadosPage> {
           ),
           if (!_aplicarATodos && _empleados.isNotEmpty) ...<Widget>[
             const SizedBox(height: 8),
-            CobroDropdownField<String>(
+            DropdownButtonFormField<String>(
               key: ValueKey<String?>(_empleadoSeleccionadoId),
+<<<<<<< HEAD
               labelText: 'Empleado',
               prefixIcon: const Icon(Icons.person_rounded),
               value: _empleadoSeleccionadoId,
@@ -14358,6 +14362,24 @@ class _GestionEmpleadosPageState extends State<_GestionEmpleadosPage> {
                   avatarText: inicial,
                 );
               }).toList(growable: false),
+=======
+              initialValue: _empleadoSeleccionadoId,
+              decoration: const InputDecoration(
+                labelText: 'Empleado',
+                prefixIcon: Icon(Icons.person_rounded),
+              ),
+              items: _empleados
+                  .map(
+                    (EmpleadoGestion empleado) => DropdownMenuItem<String>(
+                      value: empleado.id,
+                      child: Text(
+                        empleado.nombreCompleto,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  )
+                  .toList(growable: false),
+>>>>>>> c216eaff5ff4c4611e9670d0a362162c666a19cd
               onChanged: _guardando ? null : _seleccionarEmpleado,
             ),
           ],
@@ -16403,8 +16425,9 @@ class _SelectorCobroRutaBuscableState
   }
 }
 
-class _SelectorMedioPagoBuscable extends StatefulWidget {
+class _SelectorMedioPagoBuscable extends StatelessWidget {
   const _SelectorMedioPagoBuscable({
+    super.key,
     required this.mediosPago,
     required this.medioPagoCodigo,
     required this.enabled,
@@ -16416,187 +16439,87 @@ class _SelectorMedioPagoBuscable extends StatefulWidget {
   final bool enabled;
   final ValueChanged<String> onChanged;
 
-  @override
-  State<_SelectorMedioPagoBuscable> createState() =>
-      _SelectorMedioPagoBuscableState();
-}
-
-class _SelectorMedioPagoBuscableState
-    extends State<_SelectorMedioPagoBuscable> {
-  late final TextEditingController _controller;
-  late final FocusNode _focusNode;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = TextEditingController(text: _medioSeleccionado.nombre);
-    _focusNode = FocusNode();
-    _focusNode.addListener(_abrirAlEnfocar);
-  }
-
-  @override
-  void didUpdateWidget(_SelectorMedioPagoBuscable oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.medioPagoCodigo != widget.medioPagoCodigo ||
-        oldWidget.mediosPago != widget.mediosPago) {
-      final String nombre = _medioSeleccionado.nombre;
-      if (_controller.text != nombre) {
-        _controller.text = nombre;
-      }
+  static IconData _iconoMedioPago(String codigo) {
+    switch (codigo.toUpperCase()) {
+      case 'EFECTIVO':
+        return Icons.payments_rounded;
+      case 'TRANSFERENCIA':
+        return Icons.account_balance_rounded;
+      case 'TARJETA':
+        return Icons.credit_card_rounded;
+      case 'BILLETERA':
+        return Icons.account_balance_wallet_rounded;
+      default:
+        return Icons.receipt_long_rounded;
     }
   }
 
-  @override
-  void dispose() {
-    _focusNode.removeListener(_abrirAlEnfocar);
-    _focusNode.dispose();
-    _controller.dispose();
-    super.dispose();
+  static Color _colorMedioPago(String codigo) {
+    switch (codigo.toUpperCase()) {
+      case 'EFECTIVO':
+        return const Color(0xFF10B981);
+      case 'TRANSFERENCIA':
+        return const Color(0xFF3B82F6);
+      case 'TARJETA':
+        return const Color(0xFF8B5CF6);
+      case 'BILLETERA':
+        return const Color(0xFFF59E0B);
+      default:
+        return const Color(0xFF6366F1);
+    }
   }
 
-  MedioPago get _medioSeleccionado {
-    return widget.mediosPago.firstWhere(
-      (MedioPago medio) => medio.codigo == widget.medioPagoCodigo,
-      orElse: () => widget.mediosPago.first,
-    );
-  }
-
-  void _abrirAlEnfocar() {
-    if (_focusNode.hasFocus && widget.enabled) {
-      _controller.selection = TextSelection(
-        baseOffset: 0,
-        extentOffset: _controller.text.length,
-      );
-    } else if (!_focusNode.hasFocus) {
-      _seleccionarTexto(_controller.text);
+  static String _subtituloMedioPago(String codigo, String nombre) {
+    switch (codigo.toUpperCase()) {
+      case 'EFECTIVO':
+        return 'Dinero en efectivo';
+      case 'TRANSFERENCIA':
+        return 'Transferencia bancaria';
+      case 'TARJETA':
+        return 'Tarjeta debito o credito';
+      case 'BILLETERA':
+        return 'Billetera digital (Nequi, Daviplata)';
+      default:
+        return 'Codigo: $codigo';
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return RawAutocomplete<MedioPago>(
-      textEditingController: _controller,
-      focusNode: _focusNode,
-      displayStringForOption: (MedioPago medio) => medio.nombre,
-      optionsBuilder: (TextEditingValue value) {
-        final String consulta = value.text.trim().toLowerCase();
-        final TextSelection selection = value.selection;
-        final bool textoCompletoSeleccionado = selection.isValid &&
-            value.text.isNotEmpty &&
-            selection.start == 0 &&
-            selection.end == value.text.length;
-        if (consulta.isEmpty || textoCompletoSeleccionado) {
-          return widget.mediosPago;
-        }
+    final bool codigoValido =
+        mediosPago.any((MedioPago m) => m.codigo == medioPagoCodigo);
+    final String? valorActual = codigoValido
+        ? medioPagoCodigo
+        : (mediosPago.isNotEmpty ? mediosPago.first.codigo : null);
 
-        return widget.mediosPago.where((MedioPago medio) {
-          return medio.nombre.toLowerCase().contains(consulta) ||
-              medio.codigo.toLowerCase().contains(consulta);
-        });
-      },
-      onSelected: (MedioPago medio) {
-        widget.onChanged(medio.codigo);
-      },
-      fieldViewBuilder: (
-        BuildContext context,
-        TextEditingController controller,
-        FocusNode focusNode,
-        VoidCallback onFieldSubmitted,
-      ) {
-        return TextField(
-          controller: controller,
-          focusNode: focusNode,
-          enabled: widget.enabled,
-          decoration: InputDecoration(
-            labelText: 'Medio de pago',
-            prefixIcon: const Icon(Icons.credit_card_rounded),
-            suffixIcon: IconButton(
-              tooltip: 'Ver medios',
-              onPressed: widget.enabled
-                  ? () {
-                      focusNode.requestFocus();
-                      controller.selection = TextSelection(
-                        baseOffset: 0,
-                        extentOffset: controller.text.length,
-                      );
-                    }
-                  : null,
-              icon: const Icon(Icons.arrow_drop_down_rounded),
-            ),
-          ),
-          onTap: () {
-            controller.selection = TextSelection(
-              baseOffset: 0,
-              extentOffset: controller.text.length,
-            );
-          },
-          onSubmitted: (_) => _seleccionarTexto(controller.text),
-          onEditingComplete: () => _seleccionarTexto(controller.text),
+    return CobroDropdownField<String>(
+      key: ValueKey<String?>('medio-pago-$valorActual'),
+      labelText: 'Medio de pago',
+      hintText: 'Selecciona medio de pago',
+      prefixIcon: const Icon(Icons.payment_rounded),
+      value: valorActual,
+      enabled: enabled && mediosPago.isNotEmpty,
+      menuWidth: 440,
+      items: mediosPago.map((MedioPago medio) {
+        return CobroDropdownItem<String>(
+          value: medio.codigo,
+          label: medio.nombre,
+          subtitle: _subtituloMedioPago(medio.codigo, medio.nombre),
+          icon: _iconoMedioPago(medio.codigo),
+          iconColor: _colorMedioPago(medio.codigo),
         );
-      },
-      optionsViewBuilder: (
-        BuildContext context,
-        AutocompleteOnSelected<MedioPago> onSelected,
-        Iterable<MedioPago> options,
-      ) {
-        final List<MedioPago> opciones = options.toList(growable: false);
-        return Align(
-          alignment: Alignment.topLeft,
-          child: Material(
-            elevation: 8,
-            borderRadius: BorderRadius.circular(8),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 220, maxWidth: 420),
-              child: opciones.isEmpty
-                  ? Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Text(
-                        'Sin medios encontrados',
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
-                    )
-                  : ListView.builder(
-                      padding: EdgeInsets.zero,
-                      shrinkWrap: true,
-                      itemCount: opciones.length,
-                      itemBuilder: (BuildContext context, int index) {
-                        final MedioPago medio = opciones[index];
-                        return ListTile(
-                          dense: true,
-                          leading: const Icon(Icons.credit_card_rounded),
-                          title: Text(medio.nombre),
-                          subtitle: Text(medio.codigo),
-                          onTap: () => onSelected(medio),
-                        );
-                      },
-                    ),
-            ),
-          ),
-        );
-      },
+      }).toList(growable: false),
+      onChanged: enabled
+          ? (String? valor) {
+              if (valor != null) {
+                onChanged(valor);
+              }
+            }
+          : null,
     );
   }
-
-  void _seleccionarTexto(String value) {
-    final String consulta = value.trim().toLowerCase();
-    MedioPago? medio;
-    for (final MedioPago item in widget.mediosPago) {
-      if (item.nombre.toLowerCase() == consulta ||
-          item.codigo.toLowerCase() == consulta) {
-        medio = item;
-        break;
-      }
-    }
-
-    if (medio != null) {
-      widget.onChanged(medio.codigo);
-      _controller.text = medio.nombre;
-      return;
-    }
-
-    _controller.text = _medioSeleccionado.nombre;
-  }
 }
+
 
 class _PagoRutaSolicitud {
   const _PagoRutaSolicitud({

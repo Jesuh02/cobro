@@ -14346,27 +14346,18 @@ class _GestionEmpleadosPageState extends State<_GestionEmpleadosPage> {
               labelText: 'Empleado',
               prefixIcon: const Icon(Icons.person_rounded),
               value: _empleadoSeleccionadoId,
-              items: _empleados
-                  .map(
-                    (EmpleadoGestion empleado) {
-                      final String inicial =
-                          empleado.nombreCompleto.trim().isNotEmpty
-                              ? empleado.nombreCompleto
-                                  .trim()
-                                  .substring(0, 1)
-                                  .toUpperCase()
-                              : '?';
-                      return CobroDropdownItem<String>(
-                        value: empleado.id,
-                        label: empleado.nombreCompleto,
-                        subtitle: empleado.usuario.isNotEmpty
-                            ? '@${empleado.usuario}'
-                            : null,
-                        avatarText: inicial,
-                      );
-                    },
-                  )
-                  .toList(growable: false),
+              items: _empleados.map((EmpleadoGestion empleado) {
+                final String inicial = empleado.nombreCompleto.trim().isNotEmpty
+                    ? empleado.nombreCompleto.trim().substring(0, 1).toUpperCase()
+                    : '?';
+                return CobroDropdownItem<String>(
+                  value: empleado.id,
+                  label: empleado.nombreCompleto,
+                  subtitle:
+                      empleado.usuario.isNotEmpty ? '@${empleado.usuario}' : null,
+                  avatarText: inicial,
+                );
+              }).toList(growable: false),
               onChanged: _guardando ? null : _seleccionarEmpleado,
             ),
           ],

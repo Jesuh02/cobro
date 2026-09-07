@@ -1453,29 +1453,24 @@ class _HomePageState extends State<HomePage> {
       onRefresh: _cargar,
       onNearEnd: _cargarMasMovimientosCajaSiHaceFalta,
       acciones: <Widget>[
-        if (hayCajaMenor)
+        if (hayCajaMenor && _puedeCrearCajaMenor)
           OutlinedButton.icon(
-            onPressed: _guardando || !_puedeCrearCajaMenor
-                ? null
-                : _abrirCrearCajaMenor,
+            onPressed: _guardando ? null : _abrirCrearCajaMenor,
             icon: const Icon(Icons.account_balance_wallet_outlined),
             label: const Text('Nueva caja menor'),
           ),
-        FilledButton.icon(
-          onPressed: _guardando
-              ? null
-              : hayCajaMenor
-                  ? _puedeRegistrarFlujoCaja
-                      ? _abrirMovimientoCaja
-                      : null
-                  : _puedeCrearCajaMenor
-                      ? _abrirCrearCajaMenor
-                      : null,
-          icon: const Icon(Icons.add_rounded),
-          label: Text(
-            hayCajaMenor ? 'Registrar movimiento' : 'Crear caja menor',
+        if (hayCajaMenor ? _puedeRegistrarFlujoCaja : _puedeCrearCajaMenor)
+          FilledButton.icon(
+            onPressed: _guardando
+                ? null
+                : hayCajaMenor
+                    ? _abrirMovimientoCaja
+                    : _abrirCrearCajaMenor,
+            icon: const Icon(Icons.add_rounded),
+            label: Text(
+              hayCajaMenor ? 'Registrar movimiento' : 'Crear caja menor',
+            ),
           ),
-        ),
       ],
       children: <Widget>[
         TextField(
@@ -1496,22 +1491,26 @@ class _HomePageState extends State<HomePage> {
             titulo: hayCajaMenor ? 'Sin movimientos' : 'Sin caja menor',
             mensaje: hayCajaMenor
                 ? 'No hay movimientos ni pagos para mostrar.'
-                : 'Crea una caja menor para comenzar a registrar movimientos.',
-            accion: FilledButton.icon(
-              onPressed: _guardando
-                  ? null
-                  : hayCajaMenor
-                      ? _puedeRegistrarFlujoCaja
-                          ? _abrirMovimientoCaja
-                          : null
-                      : _puedeCrearCajaMenor
-                          ? _abrirCrearCajaMenor
-                          : null,
-              icon: const Icon(Icons.add_rounded),
-              label: Text(
-                hayCajaMenor ? 'Registrar movimiento' : 'Crear caja menor',
-              ),
-            ),
+                : _puedeCrearCajaMenor
+                    ? 'Crea una caja menor para comenzar a registrar movimientos.'
+                    : 'No tienes una caja menor asignada. Contacta al administrador para que cree tu caja.',
+            accion: (hayCajaMenor
+                    ? _puedeRegistrarFlujoCaja
+                    : _puedeCrearCajaMenor)
+                ? FilledButton.icon(
+                    onPressed: _guardando
+                        ? null
+                        : hayCajaMenor
+                            ? _abrirMovimientoCaja
+                            : _abrirCrearCajaMenor,
+                    icon: const Icon(Icons.add_rounded),
+                    label: Text(
+                      hayCajaMenor
+                          ? 'Registrar movimiento'
+                          : 'Crear caja menor',
+                    ),
+                  )
+                : null,
           )
         else
           ...movimientos.map(
@@ -6859,6 +6858,16 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
+    final bool esAdmin = _usuarioSesion?.esAdministrador ?? false;
+    final List<UsuarioCatalogo> usuariosDisponibles =
+        _catalogos?.usuarios ?? <UsuarioCatalogo>[];
+    String? usuarioResponsableId = usuariosDisponibles
+            .any((UsuarioCatalogo u) => u.id == _usuarioSesion?.id)
+        ? _usuarioSesion?.id
+        : (usuariosDisponibles.isNotEmpty
+            ? usuariosDisponibles.first.id
+            : null);
+
     final bool? creada = await showDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) {
@@ -6883,9 +6892,261 @@ class _HomePageState extends State<HomePage> {
             return AlertDialog(
               title: const Text('Crear caja menor'),
               content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 400),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      if (esAdmin && usuariosDisponibles.isNotEmpty) ...<Widget>[
+                        Builder(
+                          builder: (BuildContext context) {
+                            UsuarioCatalogo? seleccionado;
+                            for (final UsuarioCatalogo u in usuariosDisponibles) {
+                              if (u.id == usuarioResponsableId) {
+                                seleccionado = u;
+                                break;
+                              }
+                            }
+                            seleccionado ??= usuariosDisponibles.first;
+
+                            return MenuAnchor(
+                              alignmentOffset: const Offset(0, 4),
+                              style: MenuStyle(
+                                shape: WidgetStatePropertyAll<OutlinedBorder>(
+                                  RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                    side: BorderSide(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .outlineVariant
+                                          .withValues(alpha: 0.5),
+                                    ),
+                                  ),
+                                ),
+                                elevation: const WidgetStatePropertyAll<double>(8),
+                                backgroundColor: WidgetStatePropertyAll<Color>(
+                                  Theme.of(context).colorScheme.surface,
+                                ),
+                                padding: const WidgetStatePropertyAll<EdgeInsetsGeometry>(
+                                  EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                                ),
+                              ),
+                              builder: (
+                                BuildContext context,
+                                MenuController controller,
+                                Widget? child,
+                              ) {
+                                return InkWell(
+                                  borderRadius: BorderRadius.circular(12),
+                                  onTap: () {
+                                    if (controller.isOpen) {
+                                      controller.close();
+                                    } else {
+                                      controller.open();
+                                    }
+                                  },
+                                  child: InputDecorator(
+                                    decoration: InputDecoration(
+                                      labelText: 'Usuario responsable',
+                                      prefixIcon:
+                                          const Icon(Icons.person_outline_rounded),
+                                      suffixIcon: Icon(
+                                        controller.isOpen
+                                            ? Icons.keyboard_arrow_up_rounded
+                                            : Icons.keyboard_arrow_down_rounded,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      children: <Widget>[
+                                        if (seleccionado != null) ...<Widget>[
+                                          CircleAvatar(
+                                            radius: 11,
+                                            backgroundColor: Theme.of(context)
+                                                .colorScheme
+                                                .primaryContainer,
+                                            foregroundColor: Theme.of(context)
+                                                .colorScheme
+                                                .onPrimaryContainer,
+                                            child: Text(
+                                              seleccionado.nombreCompleto
+                                                      .trim()
+                                                      .isNotEmpty
+                                                  ? seleccionado.nombreCompleto
+                                                      .trim()
+                                                      .substring(0, 1)
+                                                      .toUpperCase()
+                                                  : '?',
+                                              style: const TextStyle(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w800,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                        ],
+                                        Expanded(
+                                          child: Text(
+                                            seleccionado?.nombreCompleto
+                                                        .trim()
+                                                        .isNotEmpty ==
+                                                    true
+                                                ? seleccionado!.nombreCompleto
+                                                : 'Seleccionar usuario',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w600,
+                                              fontSize: 14,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                              menuChildren:
+                                  usuariosDisponibles.map((UsuarioCatalogo u) {
+                                final bool esSeleccionado =
+                                    u.id == usuarioResponsableId;
+                                final String inicial =
+                                    u.nombreCompleto.trim().isNotEmpty
+                                        ? u.nombreCompleto
+                                            .trim()
+                                            .substring(0, 1)
+                                            .toUpperCase()
+                                        : '?';
+
+                                return MenuItemButton(
+                                  onPressed: () {
+                                    setDialogState(
+                                      () => usuarioResponsableId = u.id,
+                                    );
+                                  },
+                                  style: const ButtonStyle(
+                                    padding:
+                                        WidgetStatePropertyAll<EdgeInsetsGeometry>(
+                                      EdgeInsets.symmetric(
+                                        horizontal: 4,
+                                        vertical: 2,
+                                      ),
+                                    ),
+                                  ),
+                                  child: Container(
+                                    width: 330,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 8,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: esSeleccionado
+                                          ? Theme.of(context)
+                                              .colorScheme
+                                              .primary
+                                              .withValues(alpha: 0.12)
+                                          : Colors.transparent,
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: esSeleccionado
+                                          ? Border.all(
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .primary
+                                                  .withValues(alpha: 0.35),
+                                            )
+                                          : null,
+                                    ),
+                                    child: Row(
+                                      children: <Widget>[
+                                        CircleAvatar(
+                                          radius: 16,
+                                          backgroundColor: esSeleccionado
+                                              ? Theme.of(context)
+                                                  .colorScheme
+                                                  .primary
+                                              : Theme.of(context)
+                                                  .colorScheme
+                                                  .primaryContainer,
+                                          foregroundColor: esSeleccionado
+                                              ? Theme.of(context)
+                                                  .colorScheme
+                                                  .onPrimary
+                                              : Theme.of(context)
+                                                  .colorScheme
+                                                  .onPrimaryContainer,
+                                          child: Text(
+                                            inicial,
+                                            style: const TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: <Widget>[
+                                              Text(
+                                                u.nombreCompleto
+                                                        .trim()
+                                                        .isNotEmpty
+                                                    ? u.nombreCompleto
+                                                    : u.id,
+                                                style: TextStyle(
+                                                  fontSize: 14,
+                                                  fontWeight: esSeleccionado
+                                                      ? FontWeight.w800
+                                                      : FontWeight.w600,
+                                                  color: esSeleccionado
+                                                      ? Theme.of(context)
+                                                          .colorScheme
+                                                          .primary
+                                                      : null,
+                                                ),
+                                                maxLines: 1,
+                                                overflow:
+                                                    TextOverflow.ellipsis,
+                                              ),
+                                              if (u.usuario.isNotEmpty &&
+                                                  u.usuario !=
+                                                      u.nombreCompleto)
+                                                Text(
+                                                  '@${u.usuario}',
+                                                  style: Theme.of(context)
+                                                      .textTheme
+                                                      .bodySmall
+                                                      ?.copyWith(
+                                                        fontSize: 11,
+                                                        color: context.clay
+                                                            .subtleText,
+                                                      ),
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                        if (esSeleccionado)
+                                          Icon(
+                                            Icons.check_circle_rounded,
+                                            size: 18,
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .primary,
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              }).toList(growable: false),
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                      ],
                     TextField(
                       controller: nombreController,
                       autofocus: true,
@@ -6926,7 +7187,8 @@ class _HomePageState extends State<HomePage> {
                   ],
                 ),
               ),
-              actions: <Widget>[
+            ),
+            actions: <Widget>[
                 TextButton(
                   onPressed: () => Navigator.of(dialogContext).pop(false),
                   child: const Text('Cancelar'),
@@ -6953,6 +7215,10 @@ class _HomePageState extends State<HomePage> {
                           '/caja-menor',
                           <String, dynamic>{
                             'nombre': nombre,
+                            if (esAdmin &&
+                                usuarioResponsableId != null &&
+                                usuarioResponsableId!.isNotEmpty)
+                              'responsableUsuarioId': usuarioResponsableId,
                             'fechaApertura':
                                 _fechaHoraValor(fechaAperturaActual),
                             'fechaCierre': _fechaHoraValor(fechaCierre),
@@ -6964,7 +7230,7 @@ class _HomePageState extends State<HomePage> {
                       _recargarEnSegundoPlano(
                         catalogos: true,
                         cobrosRuta: false,
-                        movimientosCaja: false,
+                        movimientosCaja: true,
                       );
                     });
 
@@ -15688,17 +15954,23 @@ class Catalogos {
 }
 
 class UsuarioCatalogo {
-  const UsuarioCatalogo({required this.id, required this.nombreCompleto});
+  const UsuarioCatalogo({
+    required this.id,
+    required this.nombreCompleto,
+    this.usuario = '',
+  });
 
   factory UsuarioCatalogo.fromJson(Map<String, dynamic> json) {
     return UsuarioCatalogo(
       id: json['id'] as String,
       nombreCompleto: json['nombreCompleto'] as String,
+      usuario: (json['usuario'] as String?) ?? '',
     );
   }
 
   final String id;
   final String nombreCompleto;
+  final String usuario;
 }
 
 class Moneda {

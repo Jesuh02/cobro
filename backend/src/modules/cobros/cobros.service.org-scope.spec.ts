@@ -84,16 +84,131 @@ describe('CobrosService organization scope', () => {
     expect(sqlText(rutasQuery[0])).toContain('r.org_id =');
     expect(sqlValues(rutasQuery[0])).toEqual(['10']);
   });
+
+  it('rejects cobrador without CREAR_CAJA_MENOR permission from creating caja menor', async () => {
+    const queryRaw = jest.fn<Promise<unknown[]>, [unknown]>();
+    const service = createService(queryRaw);
+    const usuarioCobrador = {
+      usuarioId: '7',
+      usuario: 'cobre',
+      organizacionId: '10',
+      roles: ['COBRADOR'],
+      permisos: [],
+    };
+
+    await expect(
+      service.crearCajaMenor({ nombre: 'Caja 1' }, usuarioCobrador as never),
+    ).rejects.toThrow('No tienes permiso para crear caja menor');
+  });
+
+  it('allows administrator to target an employee in the same organization for caja menor', async () => {
+    const queryRaw = jest
+      .fn<Promise<unknown[]>, [unknown]>()
+      .mockResolvedValueOnce([{ usuario_id: '7', organizacion_id: '10' }])
+      .mockResolvedValueOnce([
+        {
+          id: '22',
+          usuario: 'empleado1',
+          nombres: 'Carlos',
+          apellidos: 'Ruiz',
+          correo: 'carlos@mail.com',
+          telefono: '3001234567',
+          organizacion_id: '10',
+        },
+      ])
+      .mockResolvedValueOnce([{ id: 'mon-1', codigo: 'COP' }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          id: 'caj-1',
+          nombre: 'Caja Carlos',
+          activa: true,
+          fecha_apertura: new Date('2026-09-01T00:00:00.000Z'),
+        },
+      ]);
+    const executeRaw = jest.fn().mockResolvedValue(1);
+    const service = createService(queryRaw, executeRaw);
+    (service as unknown as { esquemaTblDisponible: boolean }).esquemaTblDisponible = true;
+
+    const result = await service.crearCajaMenor(
+      { nombre: 'Caja Carlos', responsableUsuarioId: '22' },
+      usuarioOrganizacion('10') as never,
+    );
+
+    expect(result.id).toBe('caj-1');
+    expect(result.responsable.id).toBe('22');
+    const [, responsableQuery] = queryRaw.mock.calls;
+    expect(sqlText(responsableQuery[0])).toContain('tu.id_usu =');
+    expect(sqlValues(responsableQuery[0])).toContain('22');
+    expect(sqlValues(responsableQuery[0])).toContain('10');
+  });
+
+  it('forces cobrador with CREAR_CAJA_MENOR permission to target themselves', async () => {
+    const queryRaw = jest
+      .fn<Promise<unknown[]>, [unknown]>()
+      .mockResolvedValueOnce([{ usuario_id: '7', organizacion_id: '10' }])
+      .mockResolvedValueOnce([
+        {
+          id: '7',
+          usuario: 'cobre',
+          nombres: 'Jesus',
+          apellidos: 'Herazo',
+          correo: 'jesus@mail.com',
+          telefono: '3001234567',
+          organizacion_id: '10',
+        },
+      ])
+      .mockResolvedValueOnce([{ id: 'mon-1', codigo: 'COP' }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          id: 'caj-7',
+          nombre: 'Caja Propia',
+          activa: true,
+          fecha_apertura: new Date('2026-09-01T00:00:00.000Z'),
+        },
+      ]);
+    const executeRaw = jest.fn().mockResolvedValue(1);
+    const service = createService(queryRaw, executeRaw);
+    (service as unknown as { esquemaTblDisponible: boolean }).esquemaTblDisponible = true;
+
+    const usuarioCobradorConPermiso = {
+      usuarioId: '7',
+      usuario: 'cobre',
+      organizacionId: '10',
+      roles: ['COBRADOR'],
+      permisos: ['CREAR_CAJA_MENOR'],
+    };
+
+    const result = await service.crearCajaMenor(
+      { nombre: 'Caja Propia', responsableUsuarioId: '99' },
+      usuarioCobradorConPermiso as never,
+    );
+
+    expect(result.id).toBe('caj-7');
+    expect(result.responsable.id).toBe('7');
+    const [, responsableQuery] = queryRaw.mock.calls;
+    expect(sqlValues(responsableQuery[0])).toContain('7');
+    expect(sqlValues(responsableQuery[0])).not.toContain('99');
+  });
 });
 
 type QueryRawMock = jest.Mock<Promise<unknown[]>, [unknown]>;
 
-function createService(queryRaw: QueryRawMock) {
+function createService(queryRaw: QueryRawMock, executeRaw?: jest.Mock) {
+  const txClient = {
+    $queryRaw: queryRaw,
+    $executeRaw: executeRaw ?? jest.fn().mockResolvedValue(1),
+  };
   return new CobrosService(
-    { $queryRaw: queryRaw } as never,
+    {
+      $queryRaw: queryRaw,
+      $executeRaw: txClient.$executeRaw,
+      $transaction: async (cb: (tx: unknown) => Promise<unknown>) => cb(txClient),
+    } as never,
     {} as never,
     {} as never,
-    {} as never,
+    { deleteByPrefix: jest.fn() } as never,
   );
 }
 

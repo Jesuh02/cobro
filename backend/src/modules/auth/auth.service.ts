@@ -1825,17 +1825,14 @@ export class AuthService {
       throw new BadRequestException('Selecciona empleados validos');
     }
 
-    if (!dto.todos) {
-      throw new ConflictException(
-        'El esquema tbl_* actual administra permisos por rol, no por empleado',
-      );
-    }
-
     await this.prisma.$transaction(async (tx) => {
       const orgId = await this.obtenerOrganizacionActivaAdministradorTbl(
         tx,
         administrador,
       );
+      const filtroUsuarios = dto.todos
+        ? Prisma.empty
+        : Prisma.sql`AND tu.id_usu::text IN (${Prisma.join(usuarioIdsDto)})`;
       const usuariosObjetivo = await tx.$queryRaw<
         Array<{ usuario_id: string }>
       >(Prisma.sql`
@@ -1847,6 +1844,7 @@ export class AuthService {
          AND uo.org_id = ${orgId}::uuid
         JOIN public.tbl_roles rol ON rol.id_rol = uo.rol_id
         WHERE rol.rol_tip::text = 'COBRADOR'
+          ${filtroUsuarios}
       `);
 
       if (usuariosObjetivo.length === 0) {

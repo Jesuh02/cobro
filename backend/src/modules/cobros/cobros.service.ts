@@ -5465,7 +5465,10 @@ export class CobrosService {
       dto.nombre,
       'El nombre de la caja menor es obligatorio',
     );
-    const responsableUsuarioId = usuario.usuarioId;
+    const responsableUsuarioId =
+      this.esAdministrador(usuario) && dto.responsableUsuarioId
+        ? dto.responsableUsuarioId
+        : usuario.usuarioId;
     const monedaCodigo = dto.monedaCodigo ?? 'COP';
     const fechaApertura = dto.fechaApertura
       ? this.parsearFechaHora(dto.fechaApertura, 'fechaApertura')
@@ -5563,6 +5566,11 @@ export class CobrosService {
 
     const caja = await this.prisma.$transaction(async (tx) => {
       const scope = await this.obtenerScopeOrganizacionTbl(usuario, tx);
+      const targetUsuarioId =
+        this.esAdministrador(usuario) && dto.responsableUsuarioId?.trim()
+          ? dto.responsableUsuarioId.trim()
+          : scope.usuarioId;
+
       const [responsable] = await tx.$queryRaw<UsuarioOrganizacionTblRow[]>(
         Prisma.sql`
           SELECT
@@ -5576,7 +5584,7 @@ export class CobrosService {
           FROM public.tbl_usuarios tu
           JOIN public.tbl_personas p ON p.id_per = tu.persona_id
           JOIN public.tbl_usuarios_organizaciones uo ON uo.usu_id = tu.id_usu
-          WHERE tu.id_usu = ${scope.usuarioId}::uuid
+          WHERE tu.id_usu = ${targetUsuarioId}::uuid
             AND tu.usu_activo
             AND uo.urg_activo
             AND uo.org_id = ${scope.organizacionId}::uuid

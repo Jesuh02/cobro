@@ -8,7 +8,7 @@
 -- Este archivo es intencionalmente separado del script de Supabase. Esta
 -- pensado para una base vacia de POC, no para actualizar una base existente.
 -- Evita bloques PL/pgSQL de compatibilidad con Supabase/PostgreSQL y usa
--- unique_rowid() para llaves numericas distribuidas.
+-- gen_random_uuid() para llaves primarias y foraneas tipo UUID nativo.
 
 CREATE SCHEMA IF NOT EXISTS public;
 

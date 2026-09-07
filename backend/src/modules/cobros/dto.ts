@@ -455,6 +455,12 @@ export class CrearCajaMenorDto {
   @IsOptional()
   @IsDateString()
   fechaCierre?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  @Matches(resourceIdPattern, { message: resourceIdMessage() })
+  responsableUsuarioId?: string;
 }
 
 export class CrearMovimientoCajaDto {

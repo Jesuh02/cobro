@@ -395,6 +395,33 @@ export class CajaMenorService {
     return this.fechaUtc(date);
   }
 
+  private parsearFechaMovimiento(
+    value: string | undefined,
+    field: string,
+  ): Date {
+    if (!value) {
+      return new Date();
+    }
+    if (value.includes('T') || value.includes(' ')) {
+      const date = new Date(value);
+      if (!Number.isNaN(date.getTime())) {
+        return date;
+      }
+    }
+    if (value.length === 10) {
+      const ahora = new Date();
+      const fechaHoyColombia = this.fechaIso(ahora);
+      if (value === fechaHoyColombia) {
+        return ahora;
+      }
+      const date = new Date(`${value}T12:00:00.000-05:00`);
+      if (!Number.isNaN(date.getTime())) {
+        return date;
+      }
+    }
+    return this.parsearFecha(value, field);
+  }
+
   private parsearFechaHora(value: string, field: string) {
     const date = new Date(value);
 
@@ -2154,7 +2181,7 @@ export class CajaMenorService {
   ) {
     this.asegurarPermiso(usuario, 'REGISTRAR_FLUJO_CAJA');
 
-    const fechaMovimiento = this.parsearFecha(
+    const fechaMovimiento = this.parsearFechaMovimiento(
       dto.fechaMovimiento,
       'fechaMovimiento',
     );
@@ -2395,7 +2422,7 @@ export class CajaMenorService {
       );
     }
 
-    const fechaMovimiento = this.parsearFecha(
+    const fechaMovimiento = this.parsearFechaMovimiento(
       dto.fechaMovimiento,
       'fechaMovimiento',
     );
@@ -2647,12 +2674,13 @@ export class CajaMenorService {
     input: {
       monto: number;
       creditoId: string;
-      fecha: Date;
+      fecha?: Date;
       organizacionId: string;
       usuarioId: string;
       sesionId: string;
     },
   ) {
+    const fechaDesembolso = input.fecha ?? new Date();
     await tx.$executeRaw(Prisma.sql`
       INSERT INTO public.tbl_movimientos_cajas (
         mca_tipo,
@@ -2669,7 +2697,7 @@ export class CajaMenorService {
         ${this.decimal(input.monto)},
         ${input.creditoId}::uuid,
         'CREDITO'::public.movimiento_referencia_tipo_enum,
-        ${input.fecha},
+        ${fechaDesembolso},
         ${input.organizacionId}::uuid,
         ${input.usuarioId}::uuid,
         ${input.sesionId}::uuid

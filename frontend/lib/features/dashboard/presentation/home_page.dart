@@ -7437,7 +7437,17 @@ class _HomePageState extends State<HomePage> {
                           );
 
                           if (selected != null) {
-                            setDialogState(() => fechaMovimiento = selected);
+                            final DateTime now = DateTime.now();
+                            setDialogState(
+                              () => fechaMovimiento = DateTime(
+                                selected.year,
+                                selected.month,
+                                selected.day,
+                                now.hour,
+                                now.minute,
+                                now.second,
+                              ),
+                            );
                           }
                         },
                         icon: const Icon(Icons.calendar_month_rounded),
@@ -7506,7 +7516,7 @@ class _HomePageState extends State<HomePage> {
                           <String, dynamic>{
                             'cajaMenorId': cajaMenorId,
                             'tipoMovimientoCodigo': tipoMovimientoCodigo,
-                            'fechaMovimiento': _fechaValor(fechaMovimiento),
+                            'fechaMovimiento': _fechaHoraValor(fechaMovimiento),
                             'monto': monto,
                             'motivo': motivoController.text.trim(),
                           },
@@ -7645,7 +7655,17 @@ class _HomePageState extends State<HomePage> {
                           );
 
                           if (selected != null) {
-                            setDialogState(() => fechaMovimiento = selected);
+                            final DateTime now = DateTime.now();
+                            setDialogState(
+                              () => fechaMovimiento = DateTime(
+                                selected.year,
+                                selected.month,
+                                selected.day,
+                                now.hour,
+                                now.minute,
+                                now.second,
+                              ),
+                            );
                           }
                         },
                         icon: const Icon(Icons.calendar_month_rounded),
@@ -7696,7 +7716,7 @@ class _HomePageState extends State<HomePage> {
 
                     final CajaMenorCatalogo caja =
                         catalogos.cajasMenores.firstWhere(
-                      (CajaMenorCatalogo item) => item.id == cajaMenorId,
+                       (CajaMenorCatalogo item) => item.id == cajaMenorId,
                     );
                     final TipoMovimientoCaja tipo =
                         catalogos.tiposMovimientoCaja.firstWhere(
@@ -7707,7 +7727,7 @@ class _HomePageState extends State<HomePage> {
                     final Map<String, dynamic> payload = <String, dynamic>{
                       'cajaMenorId': cajaMenorId,
                       'tipoMovimientoCodigo': tipoMovimientoCodigo,
-                      'fechaMovimiento': _fechaValor(fechaMovimiento),
+                      'fechaMovimiento': _fechaHoraValor(fechaMovimiento),
                       'monto': monto,
                       'motivo': motivo,
                     };

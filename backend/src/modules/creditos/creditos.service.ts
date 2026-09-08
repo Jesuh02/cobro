@@ -490,7 +490,7 @@ export class CreditosService {
           await this.cajaMenorService.registrarMovimientoDesembolsoTbl(tx, {
             monto: valorPrincipal,
             creditoId: credito.id,
-            fecha: fechaInicio,
+            fecha: new Date(),
             organizacionId: cliente.org_id,
             usuarioId: scope.usuario_id,
             sesionId,
@@ -512,7 +512,7 @@ export class CreditosService {
               ${this.decimal(valorPrincipal)},
               ${credito.id}::uuid,
               'CREDITO'::public.movimiento_referencia_tipo_enum,
-              ${fechaInicio},
+              ${new Date()},
               ${cliente.org_id}::uuid,
               ${scope.usuario_id}::uuid,
               ${sesionId}::uuid

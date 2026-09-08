@@ -1,9 +1,10 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 
 import { CacheModule } from '../../common/cache/cache.module';
 import { PrismaModule } from '../../common/prisma/prisma.module';
 import { TenancyModule } from '../../common/tenancy/tenancy.module';
 import { AuthModule } from '../auth/auth.module';
+import { CajaMenorModule } from '../caja-menor/caja-menor.module';
 import { ExportacionesModule } from '../exportaciones/exportaciones.module';
 import { ExportacionesService } from '../exportaciones/exportaciones.service';
 import { NotificationsModule } from '../notifications/notifications.module';
@@ -19,6 +20,7 @@ import { ExportacionesR2Service } from './exportaciones-r2.service';
     NotificationsModule,
     CacheModule,
     ExportacionesModule,
+    forwardRef(() => CajaMenorModule),
   ],
   controllers: [CobrosController],
   providers: [
@@ -26,5 +28,6 @@ import { ExportacionesR2Service } from './exportaciones-r2.service';
     ExportacionesService,
     ExportacionesR2Service,
   ],
+  exports: [CobrosService],
 })
 export class CobrosModule {}

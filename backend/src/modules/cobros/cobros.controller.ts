@@ -17,14 +17,9 @@ import { ResourceIdPipe } from '../../common/validation/resource-id';
 import { CobrosService } from './cobros.service';
 import {
   ActualizarCreditoDto,
-  ActualizarMovimientoCajaDto,
-  CrearCajaMenorDto,
   CrearCreditoDto,
-  CrearMovimientoCajaDto,
-  ExportarMovimientosCajaQueryDto,
   ListarCobrosRutaQueryDto,
   ListarCreditosQueryDto,
-  ListarMovimientosCajaQueryDto,
   ObtenerPresupuestoQueryDto,
   RegistrarPagoDto,
   RefinanciarCreditoDto,
@@ -123,63 +118,6 @@ export class CobrosController {
     @Body() body: RegistrarPagoDto,
   ) {
     return this.cobros.registrarPago(body, usuario);
-  }
-
-  @Get('caja-menor/movimientos')
-  listarMovimientosCaja(
-    @CurrentUser() usuario: AuthenticatedUser,
-    @Query() query: ListarMovimientosCajaQueryDto,
-  ) {
-    return this.cobros.listarMovimientosCaja(query, usuario);
-  }
-
-  @Get('exportaciones/caja-menor')
-  exportarMovimientosCaja(
-    @CurrentUser() usuario: AuthenticatedUser,
-    @Query() query: ExportarMovimientosCajaQueryDto,
-  ) {
-    return this.cobros.exportarMovimientosCaja(query, usuario);
-  }
-
-  @Post('caja-menor/movimientos')
-  crearMovimientoCaja(
-    @CurrentUser() usuario: AuthenticatedUser,
-    @Body() body: CrearMovimientoCajaDto,
-  ) {
-    return this.cobros.crearMovimientoCaja(body, usuario);
-  }
-
-  @Patch('caja-menor/movimientos/:id')
-  actualizarMovimientoCaja(
-    @CurrentUser() usuario: AuthenticatedUser,
-    @Param('id', new ResourceIdPipe(true)) id: string,
-    @Body() body: ActualizarMovimientoCajaDto,
-  ) {
-    return this.cobros.actualizarMovimientoCaja(id, body, usuario);
-  }
-
-  @Delete('caja-menor/movimientos/:id')
-  eliminarMovimientoCaja(
-    @CurrentUser() usuario: AuthenticatedUser,
-    @Param('id', new ResourceIdPipe(true)) id: string,
-  ) {
-    return this.cobros.eliminarMovimientoCaja(id, usuario);
-  }
-
-  @Post('caja-menor')
-  crearCajaMenor(
-    @CurrentUser() usuario: AuthenticatedUser,
-    @Body() body: CrearCajaMenorDto,
-  ) {
-    return this.cobros.crearCajaMenor(body, usuario);
-  }
-
-  @Post('caja-menor/:id/cerrar')
-  cerrarCajaMenor(
-    @CurrentUser() usuario: AuthenticatedUser,
-    @Param('id', new ResourceIdPipe(true)) id: string,
-  ) {
-    return this.cobros.cerrarCajaMenor(id, usuario);
   }
 
   @Get('presupuesto')

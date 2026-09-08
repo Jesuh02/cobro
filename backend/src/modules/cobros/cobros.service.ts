@@ -1,8 +1,16 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Inject,
+  Injectable,
+  Optional,
+  forwardRef,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { Workbook, type Worksheet } from 'exceljs';
 import { Buffer } from 'node:buffer';
 import { randomUUID } from 'node:crypto';
+
+import { CajaMenorService } from '../caja-menor/caja-menor.service';
 
 import { cacheKeyFromCriteria } from '../../common/cache/cache-key';
 import { InMemoryCacheService } from '../../common/cache/in-memory-cache.service';
@@ -640,6 +648,9 @@ export class CobrosService {
     private readonly exportaciones: ExportacionesService = new ExportacionesService(
       exportacionesR2,
     ),
+    @Optional()
+    @Inject(forwardRef(() => CajaMenorService))
+    private readonly cajaMenorService?: CajaMenorService,
   ) {}
 
   private usuarioCacheKey(usuario: AuthenticatedUser) {
@@ -4518,6 +4529,10 @@ export class CobrosService {
     query: ListarMovimientosCajaQueryDto,
     usuario: AuthenticatedUser,
   ) {
+    if (this.cajaMenorService) {
+      return this.cajaMenorService.listarMovimientosCaja(query, usuario);
+    }
+
     const paginado = this.hayPaginacion(query);
     const limit = this.limitePagina(query, paginado ? 40 : 100);
     const offset = paginado ? this.offsetPagina(query) : 0;
@@ -4911,6 +4926,10 @@ export class CobrosService {
     query: ExportarMovimientosCajaQueryDto,
     usuario: AuthenticatedUser,
   ): Promise<ExportacionExcel> {
+    if (this.cajaMenorService) {
+      return this.cajaMenorService.exportarMovimientosCaja(query, usuario);
+    }
+
     const movimientos = (await this.listarMovimientosCaja(
       query,
       usuario,
@@ -4997,6 +5016,10 @@ export class CobrosService {
     dto: CrearMovimientoCajaDto,
     usuario: AuthenticatedUser,
   ) {
+    if (this.cajaMenorService) {
+      return this.cajaMenorService.crearMovimientoCaja(dto, usuario);
+    }
+
     this.asegurarPermiso(usuario, 'REGISTRAR_FLUJO_CAJA');
 
     const fechaMovimiento = this.parsearFecha(
@@ -5220,6 +5243,10 @@ export class CobrosService {
     dto: ActualizarMovimientoCajaDto,
     usuario: AuthenticatedUser,
   ) {
+    if (this.cajaMenorService) {
+      return this.cajaMenorService.actualizarMovimientoCaja(id, dto, usuario);
+    }
+
     this.asegurarPermiso(usuario, 'MODIFICAR_MOVIMIENTOS');
 
     if (this.esIdPagoCaja(id)) {
@@ -5395,6 +5422,10 @@ export class CobrosService {
   }
 
   async eliminarMovimientoCaja(id: string, usuario: AuthenticatedUser) {
+    if (this.cajaMenorService) {
+      return this.cajaMenorService.eliminarMovimientoCaja(id, usuario);
+    }
+
     this.asegurarPermiso(usuario, 'ELIMINAR_MOVIMIENTOS');
 
     if (this.esIdPagoCaja(id)) {
@@ -5470,6 +5501,10 @@ export class CobrosService {
   }
 
   async crearCajaMenor(dto: CrearCajaMenorDto, usuario: AuthenticatedUser) {
+    if (this.cajaMenorService) {
+      return this.cajaMenorService.crearCajaMenor(dto, usuario);
+    }
+
     this.asegurarPermiso(usuario, 'CREAR_CAJA_MENOR');
 
     if (await this.usarEsquemaTbl()) {
@@ -5788,6 +5823,10 @@ export class CobrosService {
   }
 
   async cerrarCajaMenor(id: string, usuario: AuthenticatedUser) {
+    if (this.cajaMenorService) {
+      return this.cajaMenorService.cerrarCajaMenor(id, usuario);
+    }
+
     this.asegurarPermiso(usuario, 'REGISTRAR_FLUJO_CAJA');
 
     if (await this.usarEsquemaTbl()) {
@@ -9515,7 +9554,7 @@ export class CobrosService {
     return id.replace(/^pago-/, '');
   }
 
-  private async actualizarPagoComoMovimientoCaja(
+  async actualizarPagoComoMovimientoCaja(
     pagoId: string,
     dto: ActualizarMovimientoCajaDto,
     usuario: AuthenticatedUser,
@@ -9656,7 +9695,7 @@ export class CobrosService {
     return this.obtenerMovimientoPagoCaja(pagoId, usuario);
   }
 
-  private async eliminarPagoComoMovimientoCaja(
+  async eliminarPagoComoMovimientoCaja(
     pagoId: string,
     usuario: AuthenticatedUser,
   ) {
@@ -10016,7 +10055,7 @@ export class CobrosService {
     }
   }
 
-  private async obtenerCreditoEditableDesdeDesembolso(
+  async obtenerCreditoEditableDesdeDesembolso(
     tx: Prisma.TransactionClient,
     creditoId: string,
   ) {
@@ -10051,7 +10090,7 @@ export class CobrosService {
     return credito;
   }
 
-  private async sincronizarCreditoDesdeMovimientoDesembolso(
+  async sincronizarCreditoDesdeMovimientoDesembolso(
     tx: Prisma.TransactionClient,
     credito: Awaited<
       ReturnType<CobrosService['obtenerCreditoEditableDesdeDesembolso']>
@@ -10124,7 +10163,7 @@ export class CobrosService {
     });
   }
 
-  private async eliminarCreditoDesdeMovimientoDesembolso(
+  async eliminarCreditoDesdeMovimientoDesembolso(
     tx: Prisma.TransactionClient,
     movimiento: MovimientoCajaConRelaciones,
     creditoId: string,

@@ -95,3 +95,4 @@ export class ListarCobrosRutaQueryDto {
   @IsIn(['todos', 'AL_DIA', 'PENDIENTE', 'ATRASADO', 'PAGADO'])
   estadoCobro?: 'todos' | 'AL_DIA' | 'PENDIENTE' | 'ATRASADO' | 'PAGADO';
 }
+

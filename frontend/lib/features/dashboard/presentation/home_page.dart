@@ -1454,7 +1454,7 @@ class _HomePageState extends State<HomePage> {
       onRefresh: _cargar,
       onNearEnd: _cargarMasMovimientosCajaSiHaceFalta,
       acciones: <Widget>[
-        if (hayCajaMenor && _puedeRegistrarFlujoCaja)
+        if (hayCajaMenor && _puedeCrearCajaMenor)
           OutlinedButton.icon(
             onPressed: _guardando ? null : _confirmarCerrarCajaMenorSeleccionada,
             icon: const Icon(Icons.lock_clock_rounded),
@@ -7180,6 +7180,11 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _confirmarCerrarCajaMenorSeleccionada() async {
+    if (!_puedeCrearCajaMenor) {
+      _mostrarMensaje('No tienes permiso para cerrar la caja menor');
+      return;
+    }
+
     final List<CajaMenorCatalogo> cajasActivas =
         _catalogos?.cajasMenoresActivas ?? <CajaMenorCatalogo>[];
     if (cajasActivas.isEmpty) {

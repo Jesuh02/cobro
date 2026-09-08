@@ -990,6 +990,10 @@ export class CajaMenorService {
     movimientoId: string,
     motivo: string,
   ) {
+    const idLimpio = movimientoId.startsWith('mov-')
+      ? movimientoId.slice(4)
+      : movimientoId;
+
     const rows = await tx.$queryRaw<MovimientoCajaTblRow[]>(Prisma.sql`
       SELECT
         CONCAT('mov-', m.id_mca::text) AS id,
@@ -1022,7 +1026,7 @@ export class CajaMenorService {
       JOIN public.tbl_personas p ON p.id_per = tu.persona_id
       LEFT JOIN public.tbl_sesiones_cajas sc ON sc.id_sca = m.sca_id
       LEFT JOIN public.tbl_cajas c ON c.id_caj = sc.caj_id
-      WHERE m.id_mca = ${movimientoId}::bigint
+      WHERE m.id_mca = ${idLimpio}::uuid
       LIMIT 1
     `);
 
@@ -1353,7 +1357,7 @@ export class CajaMenorService {
   }
 
   async cerrarCajaMenor(id: string, usuario: AuthenticatedUser) {
-    this.asegurarPermiso(usuario, 'REGISTRAR_FLUJO_CAJA');
+    this.asegurarPermiso(usuario, 'CREAR_CAJA_MENOR');
 
     if (await this.usarEsquemaTbl()) {
       return this.cerrarCajaMenorTbl(id, usuario);

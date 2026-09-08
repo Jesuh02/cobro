@@ -261,9 +261,20 @@ describe('CajaMenorService', () => {
     await expect(
       service.cerrarCajaMenor(
         'caj-1',
-        usuario('7', ['COBRADOR'], ['REGISTRAR_FLUJO_CAJA']), // caller is user 7
+        usuario('7', ['COBRADOR'], ['CREAR_CAJA_MENOR']), // caller is user 7 with CREAR_CAJA_MENOR
       ),
     ).rejects.toThrow('No tienes permiso para cerrar esta caja menor');
+  });
+
+  it('rejects employee without CREAR_CAJA_MENOR from closing caja menor', async () => {
+    const service = createService(jest.fn());
+
+    await expect(
+      service.cerrarCajaMenor(
+        'caj-1',
+        usuario('7', ['COBRADOR'], ['REGISTRAR_FLUJO_CAJA']),
+      ),
+    ).rejects.toThrow('No tienes permiso para crear caja menor');
   });
 
   it('creates a movement in caja menor and updates session totals in tbl mode', async () => {
@@ -329,5 +340,13 @@ describe('CajaMenorService', () => {
     expect(result.montoConNaturaleza).toBe(-50000);
     expect(result.tipoMovimiento.naturaleza).toBe('S');
     expect(executeRaw).toHaveBeenCalled();
+
+    // Verify raw query used ::uuid instead of ::bigint
+    const sqlObj = queryRaw.mock.calls[2][0] as any;
+    const rawSql = Array.isArray(sqlObj?.strings)
+      ? sqlObj.strings.join('')
+      : (sqlObj?.sql ?? '');
+    expect(rawSql).not.toContain('::bigint');
+    expect(rawSql).toContain('::uuid');
   });
 });

@@ -59,3 +59,4 @@ describe('ExportacionesService', () => {
     expect(result.vistaPrevia.columnas).toEqual(['ID', 'Monto']);
   });
 });
+

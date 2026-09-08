@@ -20,3 +20,4 @@ export type ExportacionExcel = {
   generadoEn: string;
   vistaPrevia: ExportacionVistaPrevia;
 };
+

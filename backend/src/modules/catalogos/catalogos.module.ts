@@ -13,3 +13,4 @@ import { CatalogosService } from './catalogos.service';
   exports: [CatalogosService],
 })
 export class CatalogosModule {}
+

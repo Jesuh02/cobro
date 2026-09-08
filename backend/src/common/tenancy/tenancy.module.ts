@@ -9,3 +9,4 @@ import { TenantScopeService } from './tenant-scope.service';
   exports: [TenantScopeService],
 })
 export class TenancyModule {}
+

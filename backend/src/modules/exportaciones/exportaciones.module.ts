@@ -10,3 +10,4 @@ import { ExportacionesService } from './exportaciones.service';
   exports: [ExportacionesR2Service, ExportacionesService],
 })
 export class ExportacionesModule {}
+

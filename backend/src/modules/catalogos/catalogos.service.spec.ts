@@ -95,3 +95,4 @@ describe('CatalogosService', () => {
     expect(result.usuarios[0].usuario).toBe('testuser');
   });
 });
+

@@ -93,4 +93,3 @@ export class ActualizarUbicacionClienteDto {
   @Max(180)
   longitud!: number;
 }
-

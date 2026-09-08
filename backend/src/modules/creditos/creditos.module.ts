@@ -5,27 +5,29 @@ import { PrismaModule } from '../../common/prisma/prisma.module';
 import { TenancyModule } from '../../common/tenancy/tenancy.module';
 import { AuthModule } from '../auth/auth.module';
 import { CajaMenorModule } from '../caja-menor/caja-menor.module';
-import { CreditosModule } from '../creditos/creditos.module';
 import { ExportacionesModule } from '../exportaciones/exportaciones.module';
-import { ExportacionesService } from '../exportaciones/exportaciones.service';
 import { NotificationsModule } from '../notifications/notifications.module';
-import { CobrosController } from './cobros.controller';
-import { CobrosService } from './cobros.service';
-import { ExportacionesR2Service } from './exportaciones-r2.service';
+import { RutasModule } from '../rutas/rutas.module';
+import { CobrosModule } from '../cobros/cobros.module';
+import { CreditosController } from './creditos.controller';
+import { CreditosService } from './creditos.service';
+import { PagosService } from './pagos.service';
 
 @Module({
   imports: [
-    AuthModule,
     PrismaModule,
     TenancyModule,
-    NotificationsModule,
+    AuthModule,
     CacheModule,
     ExportacionesModule,
-    forwardRef(() => CajaMenorModule),
-    forwardRef(() => CreditosModule),
+    NotificationsModule,
+    CajaMenorModule,
+    forwardRef(() => RutasModule),
+    forwardRef(() => CobrosModule),
   ],
-  controllers: [CobrosController],
-  providers: [CobrosService, ExportacionesService, ExportacionesR2Service],
-  exports: [CobrosService],
+  controllers: [CreditosController],
+  providers: [CreditosService, PagosService],
+  exports: [CreditosService, PagosService],
 })
-export class CobrosModule {}
+export class CreditosModule {}
+

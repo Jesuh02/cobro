@@ -15,4 +15,3 @@ export class CatalogosController {
     return this.catalogos.obtenerCatalogos(usuario);
   }
 }
-

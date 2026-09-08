@@ -4,7 +4,10 @@ export type ColumnaExportacion = {
   width: number;
 };
 
-export type FilaExportacion = Record<string, string | number | null | undefined>;
+export type FilaExportacion = Record<
+  string,
+  string | number | null | undefined
+>;
 
 export type ExportacionVistaPrevia = {
   columnas: string[];
@@ -20,4 +23,3 @@ export type ExportacionExcel = {
   generadoEn: string;
   vistaPrevia: ExportacionVistaPrevia;
 };
-

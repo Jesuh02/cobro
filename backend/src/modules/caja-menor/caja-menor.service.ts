@@ -1080,10 +1080,7 @@ export class CajaMenorService {
         where: {
           responsableUsuarioId,
           activa: true,
-          OR: [
-            { fechaCierre: null },
-            { fechaCierre: { gt: new Date() } },
-          ],
+          OR: [{ fechaCierre: null }, { fechaCierre: { gt: new Date() } }],
         },
       }),
     ]);
@@ -1402,7 +1399,12 @@ export class CajaMenorService {
       const puedeVerTodo = this.puedeVerDatosOrganizacion(usuario);
 
       const [cajaRow] = await tx.$queryRaw<
-        Array<{ id: string; nombre: string; activa: boolean; usuario_id: string }>
+        Array<{
+          id: string;
+          nombre: string;
+          activa: boolean;
+          usuario_id: string;
+        }>
       >(Prisma.sql`
         SELECT
           c.id_caj::text AS id,
@@ -2673,4 +2675,3 @@ export class CajaMenorService {
     `);
   }
 }
-

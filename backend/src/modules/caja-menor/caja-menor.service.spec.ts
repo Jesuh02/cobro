@@ -1,3 +1,4 @@
+import { AuthenticatedUser } from '../auth/auth.types';
 import { CajaMenorService } from './caja-menor.service';
 
 describe('CajaMenorService', () => {
@@ -11,7 +12,8 @@ describe('CajaMenorService', () => {
     const prismaMock = {
       $queryRaw: queryRaw,
       $executeRaw: txClient.$executeRaw,
-      $transaction: async (cb: (tx: unknown) => Promise<unknown>) => cb(txClient),
+      $transaction: async (cb: (tx: unknown) => Promise<unknown>) =>
+        cb(txClient),
       cajaMenor: {
         findUnique: jest.fn(),
         findFirst: jest.fn(),
@@ -33,15 +35,22 @@ describe('CajaMenorService', () => {
       obtenerScopeOrganizacionTbl: jest
         .fn()
         .mockResolvedValue({ usuarioId: '7', organizacionId: '10' }),
-      puedeVerDatosOrganizacion: jest.fn().mockImplementation((u) =>
-        u.roles?.includes('ADMINISTRADOR') || u.roles?.includes('AUDITOR'),
-      ),
-      esAdministrador: jest.fn().mockImplementation((u) =>
-        u.roles?.includes('ADMINISTRADOR'),
-      ),
+      puedeVerDatosOrganizacion: jest
+        .fn()
+        .mockImplementation(
+          (u: AuthenticatedUser) =>
+            Boolean(u.roles?.includes('ADMINISTRADOR') || u.roles?.includes('AUDITOR')),
+        ),
+      esAdministrador: jest
+        .fn()
+        .mockImplementation((u: AuthenticatedUser) =>
+          Boolean(u.roles?.includes('ADMINISTRADOR')),
+        ),
     };
     const cacheMock = {
-      remember: jest.fn((_key, cb) => cb()),
+      remember: jest.fn(
+        (_key: string, cb: () => unknown): unknown => cb(),
+      ),
       deleteByPrefix: jest.fn(),
     };
     const exportacionesMock = {
@@ -63,7 +72,7 @@ describe('CajaMenorService', () => {
     usuarioId: string,
     roles: string[] = ['ADMINISTRADOR'],
     permisos: string[] = [],
-  ) {
+  ): AuthenticatedUser {
     return {
       usuarioId,
       usuario: 'test_user',
@@ -113,7 +122,7 @@ describe('CajaMenorService', () => {
 
     const result = await service.crearCajaMenor(
       { nombre: 'Caja Carlos', responsableUsuarioId: '22' },
-      usuario('7', ['ADMINISTRADOR']) as never,
+      usuario('7', ['ADMINISTRADOR']),
     );
 
     expect(result.id).toBe('caj-1');
@@ -152,7 +161,7 @@ describe('CajaMenorService', () => {
 
     const result = await service.crearCajaMenor(
       { nombre: 'Caja Propia', responsableUsuarioId: '99' },
-      usuario('7', ['COBRADOR'], ['CREAR_CAJA_MENOR']) as never,
+      usuario('7', ['COBRADOR'], ['CREAR_CAJA_MENOR']),
     );
 
     expect(result.id).toBe('caj-7');
@@ -227,7 +236,7 @@ describe('CajaMenorService', () => {
 
     const result = await service.cerrarCajaMenor(
       'caj-1',
-      usuario('7', ['ADMINISTRADOR']) as never,
+      usuario('7', ['ADMINISTRADOR']),
     );
 
     expect(result.id).toBe('caj-1');
@@ -252,7 +261,7 @@ describe('CajaMenorService', () => {
     await expect(
       service.cerrarCajaMenor(
         'caj-1',
-        usuario('7', ['COBRADOR'], ['REGISTRAR_FLUJO_CAJA']) as never, // caller is user 7
+        usuario('7', ['COBRADOR'], ['REGISTRAR_FLUJO_CAJA']), // caller is user 7
       ),
     ).rejects.toThrow('No tienes permiso para cerrar esta caja menor');
   });
@@ -312,7 +321,7 @@ describe('CajaMenorService', () => {
         monto: 50000,
         motivo: 'Compra de papeleria',
       },
-      usuario('7', ['ADMINISTRADOR']) as never,
+      usuario('7', ['ADMINISTRADOR']),
     );
 
     expect(result.id).toBe('mov-100');

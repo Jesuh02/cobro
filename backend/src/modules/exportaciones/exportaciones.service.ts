@@ -26,10 +26,7 @@ export class ExportacionesService {
     }
   }
 
-  formatearHojaExportacion(
-    sheet: Worksheet,
-    columnasMonetarias: string[],
-  ) {
+  formatearHojaExportacion(sheet: Worksheet, columnasMonetarias: string[]) {
     sheet.views = [{ state: 'frozen', ySplit: 1 }];
     sheet.getRow(1).height = 22;
     sheet.getRow(1).eachCell((cell) => {
@@ -135,4 +132,3 @@ export class ExportacionesService {
     return new Date().toISOString().replace(/[:.]/g, '-');
   }
 }
-

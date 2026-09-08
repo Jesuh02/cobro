@@ -3,7 +3,6 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
-  IsBoolean,
   IsDateString,
   IsDefined,
   IsEmail,
@@ -25,7 +24,6 @@ import {
 import { resourceIdPattern } from '../../common/validation/resource-id';
 
 const maxMoneyValue = 999_999_999_999;
-const maxCreditDays = 3_650;
 
 function resourceIdMessage() {
   return 'El identificador debe ser un UUID o un entero positivo valido';
@@ -190,38 +188,7 @@ export class ListarCobrosRutaQueryDto {
   estadoCobro?: 'todos' | 'AL_DIA' | 'PENDIENTE' | 'ATRASADO' | 'PAGADO';
 }
 
-export class ListarCreditosQueryDto extends ListarCobrosRutaQueryDto {
-  @IsOptional()
-  @IsString()
-  @MaxLength(64)
-  @Matches(resourceIdPattern, { message: resourceIdMessage() })
-  cajaMenorId?: string;
-
-  @IsOptional()
-  @IsIn(['todos', 'activos', 'inactivos'])
-  estado?: 'todos' | 'activos' | 'inactivos';
-
-  @IsOptional()
-  @IsDateString()
-  fechaDesde?: string;
-
-  @IsOptional()
-  @IsDateString()
-  fechaHasta?: string;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(100)
-  limit?: number;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(0)
-  offset?: number;
-}
+export { ListarCreditosQueryDto } from '../creditos/dto';
 
 export class ObtenerPresupuestoQueryDto {
   @IsOptional()
@@ -248,151 +215,12 @@ export class ObtenerPresupuestoQueryDto {
   fechaHasta?: string;
 }
 
-export class CrearCreditoDto {
-  @IsString()
-  @MaxLength(64)
-  @Matches(resourceIdPattern, { message: resourceIdMessage() })
-  clienteId!: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(64)
-  @Matches(resourceIdPattern, { message: resourceIdMessage() })
-  rutaId?: string;
-
-  @IsString()
-  @Length(3, 3)
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim().toUpperCase() : value,
-  )
-  monedaCodigo!: string;
-
-  @IsInt()
-  @Min(1)
-  frecuenciaPagoId!: number;
-
-  @IsDateString()
-  fechaInicio!: string;
-
-  @Type(() => Number)
-  @IsNumber({ maxDecimalPlaces: 2 })
-  @Min(0.01)
-  @Max(maxMoneyValue)
-  valorPrincipal!: number;
-
-  @Type(() => Number)
-  @IsNumber({ maxDecimalPlaces: 4 })
-  @Min(0)
-  @Max(1_000)
-  porcentajeInteres!: number;
-
-  @IsInt()
-  @Min(1)
-  @Max(maxCreditDays)
-  plazoDias!: number;
-
-  @IsOptional()
-  @IsBoolean()
-  omitirDomingos?: boolean;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(64)
-  @Matches(resourceIdPattern, { message: resourceIdMessage() })
-  cajaMenorId?: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(500)
-  observacion?: string;
-}
-
-export class ActualizarCreditoDto extends CrearCreditoDto {}
-
-export class RefinanciarCreditoDto {
-  @IsOptional()
-  @IsString()
-  @MaxLength(64)
-  @Matches(resourceIdPattern, { message: resourceIdMessage() })
-  rutaId?: string;
-
-  @IsOptional()
-  @IsString()
-  @Length(3, 3)
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim().toUpperCase() : value,
-  )
-  monedaCodigo?: string;
-
-  @IsInt()
-  @Min(1)
-  frecuenciaPagoId!: number;
-
-  @IsDateString()
-  fechaInicio!: string;
-
-  @Type(() => Number)
-  @IsNumber({ maxDecimalPlaces: 2 })
-  @Min(0.01)
-  @Max(maxMoneyValue)
-  valorPrincipal!: number;
-
-  @Type(() => Number)
-  @IsNumber({ maxDecimalPlaces: 4 })
-  @Min(0)
-  @Max(1_000)
-  porcentajeInteres!: number;
-
-  @IsInt()
-  @Min(1)
-  @Max(maxCreditDays)
-  plazoDias!: number;
-
-  @IsOptional()
-  @IsBoolean()
-  omitirDomingos?: boolean;
-
-  @IsString()
-  @MaxLength(64)
-  @Matches(resourceIdPattern, { message: resourceIdMessage() })
-  cajaMenorId!: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(500)
-  observacion?: string;
-}
-
-export class RegistrarPagoDto {
-  @IsString()
-  @MaxLength(64)
-  @Matches(resourceIdPattern, { message: resourceIdMessage() })
-  creditoCuotaId!: string;
-
-  @Type(() => Number)
-  @IsNumber({ maxDecimalPlaces: 2 })
-  @Min(0.01)
-  @Max(maxMoneyValue)
-  montoPagado!: number;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(30)
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim().toUpperCase() : value,
-  )
-  medioPagoCodigo?: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(120)
-  referenciaExterna?: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(500)
-  observacion?: string;
-}
+export {
+  ActualizarCreditoDto,
+  CrearCreditoDto,
+  RefinanciarCreditoDto,
+  RegistrarPagoDto,
+} from '../creditos/dto';
 
 export class ListarMovimientosCajaQueryDto {
   @IsOptional()

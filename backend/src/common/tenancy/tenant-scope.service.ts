@@ -26,7 +26,9 @@ export class TenantScopeService {
     }
 
     try {
-      const rows = await this.prisma.$queryRaw<Array<{ disponible: boolean }>>(Prisma.sql`
+      const rows = await this.prisma.$queryRaw<
+        Array<{ disponible: boolean }>
+      >(Prisma.sql`
         SELECT COUNT(*) = 3 AS disponible
         FROM information_schema.tables
         WHERE table_schema = 'public'
@@ -74,9 +76,7 @@ export class TenantScopeService {
     }
 
     if (usuario.organizacionId && this.esIdTbl(usuario.organizacionId)) {
-      conditions.push(
-        Prisma.sql`uo.org_id = ${usuario.organizacionId}::uuid`,
-      );
+      conditions.push(Prisma.sql`uo.org_id = ${usuario.organizacionId}::uuid`);
     }
 
     const [scope] = await executor.$queryRaw<

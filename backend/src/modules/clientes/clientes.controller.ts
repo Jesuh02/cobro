@@ -69,4 +69,3 @@ export class ClientesController {
     return this.clientes.actualizarUbicacionCliente(id, body, usuario);
   }
 }
-

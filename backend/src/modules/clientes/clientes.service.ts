@@ -760,7 +760,9 @@ export class ClientesService {
       { maxWait: 10_000, timeout: 10_000 },
     );
 
-    const actualizados = await this.prisma.$queryRaw<ClienteTblRow[]>(Prisma.sql`
+    const actualizados = await this.prisma.$queryRaw<
+      ClienteTblRow[]
+    >(Prisma.sql`
       SELECT
         c.id_cli::text AS id,
         TRIM(CONCAT_WS(' ', p.per_primer_nombre, p.per_apellido)) AS nombre_completo,
@@ -1051,7 +1053,9 @@ export class ClientesService {
     usuario: AuthenticatedUser,
   ) {
     const scope = await this.tenantScope.obtenerScopeOrganizacionTbl(usuario);
-    const rows = await this.prisma.$queryRaw<ClienteUbicacionTblRow[]>(Prisma.sql`
+    const rows = await this.prisma.$queryRaw<
+      ClienteUbicacionTblRow[]
+    >(Prisma.sql`
       SELECT
         p.id_per::text AS persona_id,
         p.per_direccion AS direccion
@@ -1637,4 +1641,3 @@ export class ClientesService {
     return normalized;
   }
 }
-

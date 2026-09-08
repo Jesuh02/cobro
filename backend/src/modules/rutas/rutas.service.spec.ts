@@ -1,6 +1,5 @@
 import { ForbiddenException } from '@nestjs/common';
 
-import { DomainError } from '../../common/domain/domain-error';
 import { RutasService } from './rutas.service';
 
 describe('RutasService', () => {

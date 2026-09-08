@@ -585,8 +585,7 @@ export class CatalogosService {
         id: caja.cajaMenorId,
         nombre: caja.nombre,
         activa:
-          caja.activa &&
-          (!caja.fechaCierre || caja.fechaCierre > new Date()),
+          caja.activa && (!caja.fechaCierre || caja.fechaCierre > new Date()),
         monedaCodigo: caja.monedaCodigo,
         fechaApertura: caja.fechaApertura.toISOString(),
         fechaCierre: caja.fechaCierre?.toISOString() ?? null,

@@ -7,7 +7,6 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { Workbook, type Worksheet } from 'exceljs';
-import { Buffer } from 'node:buffer';
 import { randomUUID } from 'node:crypto';
 
 import { CajaMenorService } from '../caja-menor/caja-menor.service';
@@ -43,6 +42,8 @@ import {
 } from './dto';
 import { ExportacionesR2Service } from './exportaciones-r2.service';
 import { ExportacionesService } from '../exportaciones/exportaciones.service';
+import { CreditosService } from '../creditos/creditos.service';
+import { PagosService } from '../creditos/pagos.service';
 
 type ClienteConRelaciones = Prisma.ClienteGetPayload<{
   include: {
@@ -651,6 +652,12 @@ export class CobrosService {
     @Optional()
     @Inject(forwardRef(() => CajaMenorService))
     private readonly cajaMenorService?: CajaMenorService,
+    @Optional()
+    @Inject(forwardRef(() => CreditosService))
+    private readonly creditosService?: CreditosService,
+    @Optional()
+    @Inject(forwardRef(() => PagosService))
+    private readonly pagosService?: PagosService,
   ) {}
 
   private usuarioCacheKey(usuario: AuthenticatedUser) {
@@ -794,8 +801,7 @@ export class CobrosService {
         id: caja.cajaMenorId,
         nombre: caja.nombre,
         activa:
-          caja.activa &&
-          (!caja.fechaCierre || caja.fechaCierre > new Date()),
+          caja.activa && (!caja.fechaCierre || caja.fechaCierre > new Date()),
         monedaCodigo: caja.monedaCodigo,
         fechaApertura: caja.fechaApertura.toISOString(),
         fechaCierre: caja.fechaCierre?.toISOString() ?? null,
@@ -1725,6 +1731,9 @@ export class CobrosService {
     query: ListarCreditosQueryDto,
     usuario: AuthenticatedUser,
   ) {
+    if (this.creditosService) {
+      return this.creditosService.listarCreditos(query, usuario);
+    }
     const paginado = this.hayPaginacion(query);
     const limit = this.limitePagina(
       query,
@@ -1767,6 +1776,9 @@ export class CobrosService {
     query: ListarCreditosQueryDto,
     usuario: AuthenticatedUser,
   ) {
+    if (this.creditosService) {
+      return this.creditosService.resumenCreditos(query, usuario);
+    }
     const cacheKey = `cobros:${this.usuarioCacheKey(usuario)}:creditos-resumen:${cacheKeyFromCriteria(
       {
         cajaMenorId: query.cajaMenorId,
@@ -1796,6 +1808,9 @@ export class CobrosService {
     query: ListarCreditosQueryDto,
     usuario: AuthenticatedUser,
   ): Promise<ExportacionExcel> {
+    if (this.creditosService) {
+      return this.creditosService.exportarCreditos(query, usuario);
+    }
     const creditos = (await this.consultarCreditos(
       query,
       usuario,
@@ -2253,6 +2268,9 @@ export class CobrosService {
   }
 
   async listarCuotasCredito(creditoId: string, usuario: AuthenticatedUser) {
+    if (this.creditosService) {
+      return this.creditosService.listarCuotasCredito(creditoId, usuario);
+    }
     if (this.esIdTbl(creditoId) && (await this.usarEsquemaTbl())) {
       return this.listarCuotasCreditoTbl(creditoId, usuario);
     }
@@ -2314,6 +2332,9 @@ export class CobrosService {
   }
 
   async crearCredito(dto: CrearCreditoDto, usuario: AuthenticatedUser) {
+    if (this.creditosService) {
+      return this.creditosService.crearCredito(dto, usuario);
+    }
     this.asegurarPermiso(usuario, 'CREAR_CREDITOS');
 
     const fechaInicio = this.parsearFecha(dto.fechaInicio, 'fechaInicio');
@@ -2742,6 +2763,9 @@ export class CobrosService {
     dto: ActualizarCreditoDto,
     usuario: AuthenticatedUser,
   ) {
+    if (this.creditosService) {
+      return this.creditosService.actualizarCredito(creditoId, dto, usuario);
+    }
     this.asegurarPermiso(usuario, 'MODIFICAR_CREDITOS');
 
     const fechaInicio = this.parsearFecha(dto.fechaInicio, 'fechaInicio');
@@ -3192,6 +3216,9 @@ export class CobrosService {
   }
 
   async eliminarCredito(creditoId: string, usuario: AuthenticatedUser) {
+    if (this.creditosService) {
+      return this.creditosService.eliminarCredito(creditoId, usuario);
+    }
     this.asegurarPermiso(usuario, 'ELIMINAR_CREDITOS');
 
     await this.prisma.$transaction(
@@ -3294,6 +3321,9 @@ export class CobrosService {
     dto: RefinanciarCreditoDto,
     usuario: AuthenticatedUser,
   ) {
+    if (this.creditosService) {
+      return this.creditosService.refinanciarCredito(creditoId, dto, usuario);
+    }
     this.asegurarPermiso(usuario, 'REFINANCIAR_CREDITOS');
 
     const fechaInicio = this.parsearFecha(dto.fechaInicio, 'fechaInicio');
@@ -3631,6 +3661,9 @@ export class CobrosService {
   }
 
   async obtenerCredito(creditoId: string, usuario: AuthenticatedUser) {
+    if (this.creditosService) {
+      return this.creditosService.obtenerCredito(creditoId, usuario);
+    }
     if (this.esIdTbl(creditoId) && (await this.usarEsquemaTbl())) {
       return this.obtenerCreditoTbl(creditoId, usuario);
     }
@@ -3801,6 +3834,9 @@ export class CobrosService {
   }
 
   async registrarPago(dto: RegistrarPagoDto, usuario: AuthenticatedUser) {
+    if (this.pagosService) {
+      return this.pagosService.registrarPago(dto, usuario);
+    }
     this.asegurarPermiso(usuario, 'AGREGAR_CUOTA');
 
     if (this.esIdTbl(dto.creditoCuotaId) && (await this.usarEsquemaTbl())) {
@@ -4377,6 +4413,9 @@ export class CobrosService {
   }
 
   async obtenerPago(pagoId: string, usuario: AuthenticatedUser) {
+    if (this.pagosService) {
+      return this.pagosService.obtenerPago(pagoId, usuario);
+    }
     if (this.esIdTbl(pagoId) && (await this.usarEsquemaTbl())) {
       return this.obtenerPagoTbl(pagoId, usuario);
     }
@@ -5551,10 +5590,7 @@ export class CobrosService {
         where: {
           responsableUsuarioId,
           activa: true,
-          OR: [
-            { fechaCierre: null },
-            { fechaCierre: { gt: new Date() } },
-          ],
+          OR: [{ fechaCierre: null }, { fechaCierre: { gt: new Date() } }],
         },
       }),
     ]);
@@ -5877,7 +5913,12 @@ export class CobrosService {
       const puedeVerTodo = this.puedeVerDatosOrganizacion(usuario);
 
       const [cajaRow] = await tx.$queryRaw<
-        Array<{ id: string; nombre: string; activa: boolean; usuario_id: string }>
+        Array<{
+          id: string;
+          nombre: string;
+          activa: boolean;
+          usuario_id: string;
+        }>
       >(Prisma.sql`
         SELECT
           c.id_caj::text AS id,
@@ -7064,9 +7105,7 @@ export class CobrosService {
     }
 
     if (query.rutaId) {
-      conditions.push(
-        Prisma.sql`ruta_credito.ruta_id = ${query.rutaId}::uuid`,
-      );
+      conditions.push(Prisma.sql`ruta_credito.ruta_id = ${query.rutaId}::uuid`);
     }
 
     if (query.estadoCobro === 'PAGADO') {
@@ -7232,9 +7271,7 @@ export class CobrosService {
     }
 
     if (query.rutaId) {
-      conditions.push(
-        Prisma.sql`ruta_credito.ruta_id = ${query.rutaId}::uuid`,
-      );
+      conditions.push(Prisma.sql`ruta_credito.ruta_id = ${query.rutaId}::uuid`);
     }
 
     if (estado === 'activos') {
@@ -7405,7 +7442,9 @@ export class CobrosService {
         id: Number(row.frecuencia_pago_id),
         codigo: row.frecuencia_codigo,
         nombre: row.frecuencia_nombre,
-        diasIntervalo: Number(this.diasIntervaloFrecuencia(row.frecuencia_codigo)),
+        diasIntervalo: Number(
+          this.diasIntervaloFrecuencia(row.frecuencia_codigo),
+        ),
       },
     }));
   }
@@ -7426,9 +7465,7 @@ export class CobrosService {
     }
 
     if (query.rutaId) {
-      conditions.push(
-        Prisma.sql`ruta_credito.ruta_id = ${query.rutaId}::uuid`,
-      );
+      conditions.push(Prisma.sql`ruta_credito.ruta_id = ${query.rutaId}::uuid`);
     }
 
     if (query.fechaDesde) {
@@ -8307,7 +8344,8 @@ export class CobrosService {
       fechaMaxima: this.fechaIso(row.fecha_maxima),
       proximaCuotaId: row.proxima_cuota_id,
       proximaNumeroCuota:
-        row.proxima_numero_cuota !== null && row.proxima_numero_cuota !== undefined
+        row.proxima_numero_cuota !== null &&
+        row.proxima_numero_cuota !== undefined
           ? Number(row.proxima_numero_cuota)
           : null,
       proximaFechaPago: row.proxima_fecha_pago
@@ -10059,6 +10097,12 @@ export class CobrosService {
     tx: Prisma.TransactionClient,
     creditoId: string,
   ) {
+    if (this.creditosService) {
+      return this.creditosService.obtenerCreditoEditableDesdeDesembolso(
+        tx,
+        creditoId,
+      );
+    }
     const pagosAplicados = await tx.pagoAplicacion.count({
       where: { creditoCuota: { planPago: { creditoId } } },
     });
@@ -10098,6 +10142,14 @@ export class CobrosService {
     creditoDesembolsoId: string,
     movimiento: MovimientoCajaConRelaciones,
   ) {
+    if (this.creditosService) {
+      return this.creditosService.sincronizarCreditoDesdeMovimientoDesembolso(
+        tx,
+        credito,
+        creditoDesembolsoId,
+        movimiento,
+      );
+    }
     const valorPrincipal = this.decimalANumero(movimiento.monto);
     const plan = this.calcularPlan({
       fechaInicio: movimiento.fechaMovimiento,
@@ -10169,6 +10221,14 @@ export class CobrosService {
     creditoId: string,
     usuario: AuthenticatedUser,
   ) {
+    if (this.creditosService) {
+      return this.creditosService.eliminarCreditoDesdeMovimientoDesembolso(
+        tx,
+        movimiento,
+        creditoId,
+        usuario,
+      );
+    }
     const credito = await tx.credito.findUnique({
       where: { creditoId },
       include: { cliente: true, desembolso: true },

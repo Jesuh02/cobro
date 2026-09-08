@@ -79,9 +79,7 @@ describe('TenantScopeService', () => {
   });
 
   it('detects tbl schema availability and caches result', async () => {
-    const queryRaw = jest
-      .fn()
-      .mockResolvedValueOnce([{ disponible: true }]);
+    const queryRaw = jest.fn().mockResolvedValueOnce([{ disponible: true }]);
     const service = new TenantScopeService({ $queryRaw: queryRaw } as never);
 
     const first = await service.usarEsquemaTbl();
@@ -92,4 +90,3 @@ describe('TenantScopeService', () => {
     expect(queryRaw).toHaveBeenCalledTimes(1);
   });
 });
-

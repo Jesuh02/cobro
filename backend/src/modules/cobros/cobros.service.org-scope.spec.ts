@@ -1,3 +1,4 @@
+import { AuthenticatedUser } from '../auth/auth.types';
 import { CobrosService } from './cobros.service';
 
 describe('CobrosService organization scope', () => {
@@ -88,7 +89,7 @@ describe('CobrosService organization scope', () => {
   it('rejects cobrador without CREAR_CAJA_MENOR permission from creating caja menor', async () => {
     const queryRaw = jest.fn<Promise<unknown[]>, [unknown]>();
     const service = createService(queryRaw);
-    const usuarioCobrador = {
+    const usuarioCobrador: AuthenticatedUser = {
       usuarioId: '7',
       usuario: 'cobre',
       organizacionId: '10',
@@ -97,7 +98,7 @@ describe('CobrosService organization scope', () => {
     };
 
     await expect(
-      service.crearCajaMenor({ nombre: 'Caja 1' }, usuarioCobrador as never),
+      service.crearCajaMenor({ nombre: 'Caja 1' }, usuarioCobrador),
     ).rejects.toThrow('No tienes permiso para crear caja menor');
   });
 
@@ -129,11 +130,13 @@ describe('CobrosService organization scope', () => {
       ]);
     const executeRaw = jest.fn().mockResolvedValue(1);
     const service = createService(queryRaw, executeRaw);
-    (service as unknown as { esquemaTblDisponible: boolean }).esquemaTblDisponible = true;
+    (
+      service as unknown as { esquemaTblDisponible: boolean }
+    ).esquemaTblDisponible = true;
 
     const result = await service.crearCajaMenor(
       { nombre: 'Caja Carlos', responsableUsuarioId: '22' },
-      usuarioOrganizacion('10') as never,
+      usuarioOrganizacion('10'),
     );
 
     expect(result.id).toBe('caj-1');
@@ -172,9 +175,11 @@ describe('CobrosService organization scope', () => {
       ]);
     const executeRaw = jest.fn().mockResolvedValue(1);
     const service = createService(queryRaw, executeRaw);
-    (service as unknown as { esquemaTblDisponible: boolean }).esquemaTblDisponible = true;
+    (
+      service as unknown as { esquemaTblDisponible: boolean }
+    ).esquemaTblDisponible = true;
 
-    const usuarioCobradorConPermiso = {
+    const usuarioCobradorConPermiso: AuthenticatedUser = {
       usuarioId: '7',
       usuario: 'cobre',
       organizacionId: '10',
@@ -184,7 +189,7 @@ describe('CobrosService organization scope', () => {
 
     const result = await service.crearCajaMenor(
       { nombre: 'Caja Propia', responsableUsuarioId: '99' },
-      usuarioCobradorConPermiso as never,
+      usuarioCobradorConPermiso,
     );
 
     expect(result.id).toBe('caj-7');
@@ -219,12 +224,14 @@ describe('CobrosService organization scope', () => {
       ]); // cajaAbierta existente
     const executeRaw = jest.fn().mockResolvedValue(1);
     const service = createService(queryRaw, executeRaw);
-    (service as unknown as { esquemaTblDisponible: boolean }).esquemaTblDisponible = true;
+    (
+      service as unknown as { esquemaTblDisponible: boolean }
+    ).esquemaTblDisponible = true;
 
     await expect(
       service.crearCajaMenor(
         { nombre: 'Caja Carlos 2', responsableUsuarioId: '22' },
-        usuarioOrganizacion('10') as never,
+        usuarioOrganizacion('10'),
       ),
     ).rejects.toThrow(
       'El usuario Carlos Ruiz ya tiene una caja menor abierta (Caja Carlos Activa)',
@@ -245,11 +252,13 @@ describe('CobrosService organization scope', () => {
       ]);
     const executeRaw = jest.fn().mockResolvedValue(1);
     const service = createService(queryRaw, executeRaw);
-    (service as unknown as { esquemaTblDisponible: boolean }).esquemaTblDisponible = true;
+    (
+      service as unknown as { esquemaTblDisponible: boolean }
+    ).esquemaTblDisponible = true;
 
     const result = await service.cerrarCajaMenor(
       'caj-1',
-      usuarioOrganizacion('10') as never,
+      usuarioOrganizacion('10'),
     );
 
     expect(result.id).toBe('caj-1');
@@ -270,7 +279,8 @@ function createService(queryRaw: QueryRawMock, executeRaw?: jest.Mock) {
     {
       $queryRaw: queryRaw,
       $executeRaw: txClient.$executeRaw,
-      $transaction: async (cb: (tx: unknown) => Promise<unknown>) => cb(txClient),
+      $transaction: async (cb: (tx: unknown) => Promise<unknown>) =>
+        cb(txClient),
     } as never,
     {} as never,
     {} as never,
@@ -288,7 +298,7 @@ function servicePrivate(service: CobrosService) {
 function usuarioOrganizacion(
   organizacionId: string,
   roles: string[] = ['ADMINISTRADOR'],
-) {
+): AuthenticatedUser {
   return {
     usuarioId: '7',
     usuario: 'admin',

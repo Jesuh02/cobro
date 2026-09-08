@@ -409,9 +409,7 @@ export class RutasService {
     }
 
     if (query.rutaId) {
-      conditions.push(
-        Prisma.sql`ruta_credito.ruta_id = ${query.rutaId}::uuid`,
-      );
+      conditions.push(Prisma.sql`ruta_credito.ruta_id = ${query.rutaId}::uuid`);
     }
 
     if (query.estadoCobro === 'PAGADO') {
@@ -790,7 +788,8 @@ export class RutasService {
       fechaMaxima: this.fechaIso(row.fecha_maxima),
       proximaCuotaId: row.proxima_cuota_id,
       proximaNumeroCuota:
-        row.proxima_numero_cuota !== null && row.proxima_numero_cuota !== undefined
+        row.proxima_numero_cuota !== null &&
+        row.proxima_numero_cuota !== undefined
           ? Number(row.proxima_numero_cuota)
           : null,
       proximaFechaPago: row.proxima_fecha_pago
@@ -895,4 +894,3 @@ export class RutasService {
     return normalized.length > 0 ? normalized : null;
   }
 }
-

@@ -8,6 +8,16 @@ import {
   TenantScopeService,
 } from '../../common/tenancy/tenant-scope.service';
 import { AuthenticatedUser } from '../auth/auth.types';
+import {
+  ExportacionesService,
+  maxExportRows,
+} from '../exportaciones/exportaciones.service';
+import {
+  ColumnaExportacion,
+  ExportacionExcel,
+  FilaExportacion,
+} from '../exportaciones/exportaciones.types';
+import { Workbook } from 'exceljs';
 import { ListarCobrosRutaQueryDto } from './dto';
 
 type RutaTblRow = {
@@ -99,6 +109,7 @@ export class RutasService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly tenantScope: TenantScopeService,
+    private readonly exportaciones: ExportacionesService,
   ) {}
 
   async listarRutas(usuario: AuthenticatedUser) {
@@ -188,6 +199,107 @@ export class RutasService {
       clientes: Number(ruta.clientes),
       creditos: Number(ruta.creditos),
     }));
+  }
+
+  async exportarCobrosRuta(
+    query: ListarCobrosRutaQueryDto,
+    usuario: AuthenticatedUser,
+  ): Promise<ExportacionExcel> {
+    const cobros = (await this.listarCobrosRuta(
+      query,
+      usuario,
+      maxExportRows + 1,
+    )) as Array<{
+      cliente: string;
+      cedula: string | null;
+      negocio: string | null;
+      direccion: string | null;
+      ruta: string;
+      monedaCodigo: string;
+      valorPrincipal: number;
+      valorTotal: number;
+      valorCuota: number;
+      totalAbonado: number;
+      saldo: number;
+      numeroCuotas: number;
+      cuotasRestantes: number;
+      fechaInicio: string;
+      fechaMaxima: string;
+      proximaNumeroCuota: number | null;
+      proximaFechaPago: string | null;
+      proximoSaldoCuota: number | null;
+      estadoCobro: string;
+    }>;
+    this.exportaciones.asegurarTamanoExportacion(cobros.length);
+    const workbook = new Workbook();
+    workbook.creator = 'Cobro';
+    workbook.created = new Date();
+
+    const sheet = workbook.addWorksheet('Ruta activa');
+    const columnas: ColumnaExportacion[] = [
+      { header: 'Cliente', key: 'cliente', width: 30 },
+      { header: 'Cedula', key: 'cedula', width: 18 },
+      { header: 'Negocio', key: 'negocio', width: 24 },
+      { header: 'Direccion', key: 'direccion', width: 32 },
+      { header: 'Ruta', key: 'ruta', width: 22 },
+      { header: 'Moneda', key: 'monedaCodigo', width: 10 },
+      { header: 'Valor principal', key: 'valorPrincipal', width: 16 },
+      { header: 'Valor total', key: 'valorTotal', width: 16 },
+      { header: 'Valor cuota', key: 'valorCuota', width: 16 },
+      { header: 'Total abonado', key: 'totalAbonado', width: 16 },
+      { header: 'Saldo', key: 'saldo', width: 16 },
+      { header: 'Cuotas', key: 'cuotas', width: 12 },
+      { header: 'Cuotas restantes', key: 'cuotasRestantes', width: 16 },
+      { header: 'Fecha inicio', key: 'fechaInicio', width: 14 },
+      { header: 'Fecha maxima', key: 'fechaMaxima', width: 14 },
+      { header: 'Proxima cuota', key: 'proximaNumeroCuota', width: 14 },
+      { header: 'Proxima fecha pago', key: 'proximaFechaPago', width: 18 },
+      { header: 'Saldo proxima cuota', key: 'proximoSaldoCuota', width: 18 },
+      { header: 'Estado', key: 'estadoCobro', width: 14 },
+    ];
+    sheet.columns = columnas;
+    const filasExcel: FilaExportacion[] = cobros.map((cobro) => ({
+      cliente: cobro.cliente,
+      cedula: cobro.cedula ?? '',
+      negocio: cobro.negocio ?? '',
+      direccion: cobro.direccion ?? '',
+      ruta: cobro.ruta,
+      monedaCodigo: cobro.monedaCodigo,
+      valorPrincipal: cobro.valorPrincipal,
+      valorTotal: cobro.valorTotal,
+      valorCuota: cobro.valorCuota,
+      totalAbonado: cobro.totalAbonado,
+      saldo: cobro.saldo,
+      cuotas: `${cobro.cuotasRestantes} / ${cobro.numeroCuotas}`,
+      cuotasRestantes: cobro.cuotasRestantes,
+      fechaInicio: cobro.fechaInicio,
+      fechaMaxima: cobro.fechaMaxima,
+      proximaNumeroCuota: cobro.proximaNumeroCuota ?? '',
+      proximaFechaPago: cobro.proximaFechaPago ?? '',
+      proximoSaldoCuota: cobro.proximoSaldoCuota,
+      estadoCobro: cobro.estadoCobro,
+    }));
+    sheet.addRows(filasExcel);
+
+    this.exportaciones.formatearHojaExportacion(sheet, [
+      'valorPrincipal',
+      'valorTotal',
+      'valorCuota',
+      'totalAbonado',
+      'saldo',
+      'proximoSaldoCuota',
+    ]);
+
+    return this.exportaciones.subirWorkbookExportacion({
+      workbook,
+      carpeta: 'cobros-ruta',
+      nombreBase: 'cobros-ruta',
+      filas: cobros.length,
+      vistaPrevia: this.exportaciones.crearVistaPreviaExportacion(
+        columnas,
+        filasExcel,
+      ),
+    });
   }
 
   async listarCobrosRuta(

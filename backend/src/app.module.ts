@@ -16,6 +16,7 @@ import { CreditosModule } from './modules/creditos/creditos.module';
 import { CobrosModule } from './modules/cobros/cobros.module';
 import { ExportacionesModule } from './modules/exportaciones/exportaciones.module';
 import { HealthModule } from './modules/health/health.module';
+import { PresupuestoModule } from './modules/presupuesto/presupuesto.module';
 import { RutasModule } from './modules/rutas/rutas.module';
 
 @Module({
@@ -59,6 +60,7 @@ import { RutasModule } from './modules/rutas/rutas.module';
     ClientesModule,
     CajaMenorModule,
     CreditosModule,
+    PresupuestoModule,
     CobrosModule,
   ],
   providers: [

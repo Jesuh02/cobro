@@ -33,6 +33,14 @@ export class RutasController {
     return this.rutas.listarCobrosRuta(query, usuario);
   }
 
+  @Get('exportaciones/cobros-ruta')
+  exportarCobrosRuta(
+    @CurrentUser() usuario: AuthenticatedUser,
+    @Query() query: ListarCobrosRutaQueryDto,
+  ) {
+    return this.rutas.exportarCobrosRuta(query, usuario);
+  }
+
   @Post('routing/estimates')
   estimarTrayectos(@Body() body: EstimarTrayectosDto) {
     return this.routing.estimateTrips(body);

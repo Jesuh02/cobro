@@ -190,30 +190,7 @@ export class ListarCobrosRutaQueryDto {
 
 export { ListarCreditosQueryDto } from '../creditos/dto';
 
-export class ObtenerPresupuestoQueryDto {
-  @IsOptional()
-  @IsIn(['cobrador'])
-  alcance?: 'cobrador';
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(64)
-  @Matches(resourceIdPattern, { message: resourceIdMessage() })
-  cajaMenorId?: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(120)
-  search?: string;
-
-  @IsOptional()
-  @IsDateString()
-  fechaDesde?: string;
-
-  @IsOptional()
-  @IsDateString()
-  fechaHasta?: string;
-}
+export { ObtenerPresupuestoQueryDto } from '../presupuesto/dto';
 
 export {
   ActualizarCreditoDto,

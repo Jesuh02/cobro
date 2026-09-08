@@ -180,17 +180,16 @@ export class CatalogosService {
               END AS extra,
               TRUE AS activo
             FROM (
-              SELECT DISTINCT pcr_frecuencia
+              SELECT DISTINCT pcr_frecuencia::text AS pcr_frecuencia
               FROM public.tbl_productos_creditos
-              WHERE pcr_activo
               UNION
-              SELECT UNNEST(ARRAY['DIARIO', 'SEMANAL', 'QUINCENAL', 'MENSUAL']::public.frecuencia_pago_enum[])
+              SELECT UNNEST(ARRAY['DIARIO', 'SEMANAL', 'QUINCENAL', 'MENSUAL'])
             ) frecuencias
             UNION ALL
             SELECT
               'medio_pago',
               id_med::text,
-              med_codigo,
+              med_tipo::text,
               med_nombre,
               NULL,
               med_activo
@@ -349,12 +348,22 @@ export class CatalogosService {
     );
 
     return {
-      monedas: monedas.map((moneda) => ({
-        codigo: moneda.codigo,
-        nombre: moneda.nombre,
-        simbolo: moneda.simbolo,
-        decimales: Number(moneda.decimales),
-      })),
+      monedas:
+        monedas.length > 0
+          ? monedas.map((moneda) => ({
+              codigo: moneda.codigo,
+              nombre: moneda.nombre,
+              simbolo: moneda.simbolo,
+              decimales: Number(moneda.decimales),
+            }))
+          : [
+              {
+                codigo: 'COP',
+                nombre: 'Peso colombiano',
+                simbolo: '$',
+                decimales: 0,
+              },
+            ],
       frecuenciasPago: frecuenciasPago.map((frecuencia) => ({
         id:
           Number.isFinite(Number(frecuencia.id)) && Number(frecuencia.id) > 0

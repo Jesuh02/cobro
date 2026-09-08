@@ -93,5 +93,50 @@ describe('CatalogosService', () => {
     expect(result.frecuenciasPago[0].codigo).toBe('DIARIO');
     expect(result.mediosPago[0].codigo).toBe('EFECTIVO');
     expect(result.usuarios[0].usuario).toBe('testuser');
+
+    // Verify raw SQL avoids non-existent columns (pcr_activo, med_codigo, frecuencia_pago_enum)
+    const sqlObj = queryRaw.mock.calls[2][0];
+    const rawSql = Array.isArray(sqlObj.strings)
+      ? sqlObj.strings.join('')
+      : (sqlObj.sql ?? '');
+    expect(rawSql).not.toContain('pcr_activo');
+    expect(rawSql).not.toContain('med_codigo');
+    expect(rawSql).not.toContain('frecuencia_pago_enum');
+    expect(rawSql).toContain('med_tipo');
+  });
+
+  it('provides default COP currency fallback when tbl_monedas is empty', async () => {
+    const queryRaw = jest
+      .fn()
+      .mockResolvedValueOnce([{ disponible: true }])
+      .mockResolvedValueOnce([]) // empty monedas
+      .mockResolvedValueOnce([]) // catalogos
+      .mockResolvedValueOnce([]) // rutas
+      .mockResolvedValueOnce([]) // cajas
+      .mockResolvedValueOnce([]); // usuarios
+
+    const tenantScope = {
+      obtenerScopeOrganizacionTbl: jest.fn().mockResolvedValue({
+        usuarioId: 'u-1',
+        organizacionId: 'org-1',
+      }),
+      puedeVerDatosOrganizacion: jest.fn().mockReturnValue(true),
+    };
+
+    const service = new CatalogosService(
+      { $queryRaw: queryRaw } as never,
+      tenantScope as never,
+    );
+
+    const result = await service.obtenerCatalogos({
+      usuarioId: 'u-1',
+      usuario: 'testuser',
+      organizacionId: 'org-1',
+      roles: ['ADMINISTRADOR'],
+      permisos: [],
+    });
+
+    expect(result.monedas).toHaveLength(1);
+    expect(result.monedas[0].codigo).toBe('COP');
   });
 });

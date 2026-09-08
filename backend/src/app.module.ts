@@ -13,7 +13,6 @@ import { CatalogosModule } from './modules/catalogos/catalogos.module';
 import { CajaMenorModule } from './modules/caja-menor/caja-menor.module';
 import { ClientesModule } from './modules/clientes/clientes.module';
 import { CreditosModule } from './modules/creditos/creditos.module';
-import { CobrosModule } from './modules/cobros/cobros.module';
 import { ExportacionesModule } from './modules/exportaciones/exportaciones.module';
 import { HealthModule } from './modules/health/health.module';
 import { PresupuestoModule } from './modules/presupuesto/presupuesto.module';
@@ -61,7 +60,6 @@ import { RutasModule } from './modules/rutas/rutas.module';
     CajaMenorModule,
     CreditosModule,
     PresupuestoModule,
-    CobrosModule,
   ],
   providers: [
     {

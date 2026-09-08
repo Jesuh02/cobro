@@ -24,7 +24,8 @@ import {
   ExportacionExcel,
   FilaExportacion,
 } from '../exportaciones/exportaciones.types';
-import { CobrosService } from '../cobros/cobros.service';
+import { CreditosService } from '../creditos/creditos.service';
+import { PagosService } from '../creditos/pagos.service';
 import {
   ActualizarMovimientoCajaDto,
   CrearCajaMenorDto,
@@ -236,8 +237,11 @@ export class CajaMenorService {
     private readonly cache: InMemoryCacheService,
     private readonly exportaciones: ExportacionesService,
     @Optional()
-    @Inject(forwardRef(() => CobrosService))
-    private readonly cobrosService?: CobrosService,
+    @Inject(forwardRef(() => CreditosService))
+    private readonly creditosService?: CreditosService,
+    @Optional()
+    @Inject(forwardRef(() => PagosService))
+    private readonly pagosService?: PagosService,
   ) {}
 
   private usuarioCacheKey(usuario: AuthenticatedUser) {
@@ -2371,9 +2375,9 @@ export class CajaMenorService {
     this.asegurarPermiso(usuario, 'MODIFICAR_MOVIMIENTOS');
 
     if (this.esIdPagoCaja(id)) {
-      if (this.cobrosService) {
+      if (this.pagosService) {
         const movimiento =
-          await this.cobrosService.actualizarPagoComoMovimientoCaja(
+          await this.pagosService.actualizarPagoComoMovimientoCaja(
             this.idPagoDesdeMovimientoCaja(id),
             dto,
             usuario,
@@ -2444,8 +2448,8 @@ export class CajaMenorService {
       }
 
       const creditoDesembolso =
-        actual.desembolsoCredito && this.cobrosService
-          ? await this.cobrosService.obtenerCreditoEditableDesdeDesembolso(
+        actual.desembolsoCredito && this.creditosService
+          ? await this.creditosService.obtenerCreditoEditableDesdeDesembolso(
               tx,
               actual.desembolsoCredito.creditoId,
             )
@@ -2505,8 +2509,8 @@ export class CajaMenorService {
         },
       });
 
-      if (creditoDesembolso && actual.desembolsoCredito && this.cobrosService) {
-        await this.cobrosService.sincronizarCreditoDesdeMovimientoDesembolso(
+      if (creditoDesembolso && actual.desembolsoCredito && this.creditosService) {
+        await this.creditosService.sincronizarCreditoDesdeMovimientoDesembolso(
           tx,
           creditoDesembolso,
           actual.desembolsoCredito.creditoDesembolsoId,
@@ -2555,8 +2559,8 @@ export class CajaMenorService {
     this.asegurarPermiso(usuario, 'ELIMINAR_MOVIMIENTOS');
 
     if (this.esIdPagoCaja(id)) {
-      if (this.cobrosService) {
-        await this.cobrosService.eliminarPagoComoMovimientoCaja(
+      if (this.pagosService) {
+        await this.pagosService.eliminarPagoComoMovimientoCaja(
           this.idPagoDesdeMovimientoCaja(id),
           usuario,
         );
@@ -2588,9 +2592,9 @@ export class CajaMenorService {
       }
 
       if (actual.desembolsoCredito) {
-        if (this.cobrosService) {
+        if (this.creditosService) {
           this.asegurarPermiso(usuario, 'ELIMINAR_CREDITOS');
-          await this.cobrosService.eliminarCreditoDesdeMovimientoDesembolso(
+          await this.creditosService.eliminarCreditoDesdeMovimientoDesembolso(
             tx,
             actual,
             actual.desembolsoCredito.creditoId,

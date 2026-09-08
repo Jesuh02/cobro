@@ -8,7 +8,6 @@ import { CajaMenorModule } from '../caja-menor/caja-menor.module';
 import { ExportacionesModule } from '../exportaciones/exportaciones.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { RutasModule } from '../rutas/rutas.module';
-import { CobrosModule } from '../cobros/cobros.module';
 import { CreditosController } from './creditos.controller';
 import { CreditosService } from './creditos.service';
 import { PagosService } from './pagos.service';
@@ -21,9 +20,8 @@ import { PagosService } from './pagos.service';
     CacheModule,
     ExportacionesModule,
     NotificationsModule,
-    CajaMenorModule,
+    forwardRef(() => CajaMenorModule),
     forwardRef(() => RutasModule),
-    forwardRef(() => CobrosModule),
   ],
   controllers: [CreditosController],
   providers: [CreditosService, PagosService],

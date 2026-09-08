@@ -962,4 +962,614 @@ export class PagosService {
       .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
       .join(' ');
   }
+
+  // ==========================================
+  // MÉTODOS DE INTEGRACIÓN CON CAJA MENOR (PAGOS SYNC)
+  // ==========================================
+
+  async actualizarPagoComoMovimientoCaja(
+    pagoId: string,
+    dto: {
+      cajaMenorId: string;
+      tipoMovimientoCodigo: string;
+      fechaMovimiento: string;
+      monto: number;
+      motivo: string;
+    },
+    usuario: AuthenticatedUser,
+  ) {
+    if (dto.tipoMovimientoCodigo !== 'RECAUDO') {
+      throw DomainError.conflict(
+        'Los pagos deben conservar el tipo Recaudo',
+        'PAGO_TIPO_NO_EDITABLE',
+      );
+    }
+
+    const fechaPago = this.parsearFecha(dto.fechaMovimiento, 'fechaMovimiento');
+    const montoPagado = redondear(dto.monto);
+    const observacion = this.requerirTexto(
+      dto.motivo,
+      'El motivo del movimiento es obligatorio',
+    );
+
+    await this.prisma.$transaction(
+      async (tx) => {
+        const pago = await tx.pago.findUnique({
+          where: { pagoId },
+          include: {
+            ruta: true,
+            cliente: true,
+            medioPago: true,
+            aplicaciones: {
+              include: {
+                creditoCuota: {
+                  include: { planPago: { include: { credito: true } } },
+                },
+              },
+            },
+          },
+        });
+
+        if (!pago) {
+          throw DomainError.notFound(
+            'Pago no encontrado',
+            'PAGO_NO_ENCONTRADO',
+          );
+        }
+
+        const caja = await tx.cajaMenor.findUnique({
+          where: { cajaMenorId: dto.cajaMenorId },
+        });
+
+        if (!caja) {
+          throw DomainError.notFound(
+            'Caja menor no encontrada',
+            'CAJA_MENOR_NO_ENCONTRADA',
+          );
+        }
+
+        if (
+          caja.responsableUsuarioId !== pago.ruta.responsableUsuarioId ||
+          caja.monedaCodigo !== pago.monedaCodigo
+        ) {
+          throw DomainError.conflict(
+            'El pago pertenece a otra caja menor',
+            'PAGO_CAJA_NO_EDITABLE',
+          );
+        }
+
+        const creditoIds = [
+          ...new Set(
+            pago.aplicaciones.map(
+              (aplicacion) =>
+                aplicacion.creditoCuota.planPago.credito.creditoId,
+            ),
+          ),
+        ];
+
+        if (creditoIds.length !== 1) {
+          throw DomainError.conflict(
+            'No se puede modificar un pago sin credito asociado',
+            'PAGO_CREDITO_NO_EDITABLE',
+          );
+        }
+
+        const creditoId = creditoIds[0];
+        await this.asegurarPresupuestoDespuesDeCambioEntradaCaja(
+          tx,
+          caja.cajaMenorId,
+          this.decimalANumero(pago.totalPagado),
+          montoPagado,
+        );
+
+        await tx.pagoAplicacion.deleteMany({ where: { pagoId } });
+        await this.recalcularEstadosCreditos(tx, creditoIds);
+
+        await tx.pago.update({
+          where: { pagoId },
+          data: {
+            fechaPago,
+            totalPagado: this.decimal(montoPagado),
+            observacion,
+            cobradorUsuarioId: usuario.usuarioId,
+          },
+        });
+
+        await this.crearAplicacionesPagoParaCredito(tx, {
+          pagoId,
+          creditoId,
+          montoPagado,
+        });
+        await this.recalcularEstadosCreditos(tx, [creditoId]);
+
+        await this.registrarAuditoria(tx, {
+          usuarioId: usuario.usuarioId,
+          tabla: 'pago',
+          registroId: pagoId,
+          accion: 'MODIFICAR',
+          descripcion: `Se modifico pago de ${pago.cliente.nombreCompleto}`,
+          valoresAnteriores: {
+            fechaPago: pago.fechaPago.toISOString(),
+            totalPagado: this.decimalANumero(pago.totalPagado),
+            observacion: pago.observacion,
+          },
+          valoresNuevos: {
+            fechaPago: fechaPago.toISOString(),
+            totalPagado: montoPagado,
+            observacion,
+          },
+        });
+      },
+      { maxWait: 10_000, timeout: 20_000 },
+    );
+
+    return this.obtenerMovimientoPagoCaja(pagoId, usuario);
+  }
+
+  async eliminarPagoComoMovimientoCaja(
+    pagoId: string,
+    usuario: AuthenticatedUser,
+  ) {
+    await this.prisma.$transaction(
+      async (tx) => {
+        const pago = await tx.pago.findUnique({
+          where: { pagoId },
+          include: {
+            ruta: true,
+            cliente: true,
+            aplicaciones: {
+              include: {
+                creditoCuota: {
+                  include: { planPago: { include: { credito: true } } },
+                },
+              },
+            },
+          },
+        });
+
+        if (!pago) {
+          throw DomainError.notFound(
+            'Pago no encontrado',
+            'PAGO_NO_ENCONTRADO',
+          );
+        }
+
+        const creditoIds = [
+          ...new Set(
+            pago.aplicaciones.map(
+              (aplicacion) =>
+                aplicacion.creditoCuota.planPago.credito.creditoId,
+            ),
+          ),
+        ];
+        const caja = await tx.cajaMenor.findFirst({
+          where: {
+            responsableUsuarioId: pago.ruta.responsableUsuarioId,
+            monedaCodigo: pago.monedaCodigo,
+            activa: true,
+          },
+          orderBy: [{ fechaApertura: 'desc' }, { creadaEn: 'desc' }],
+        });
+
+        if (caja) {
+          await this.asegurarPresupuestoDespuesDeCambioEntradaCaja(
+            tx,
+            caja.cajaMenorId,
+            this.decimalANumero(pago.totalPagado),
+          );
+        }
+
+        await tx.pago.delete({ where: { pagoId } });
+        await this.recalcularEstadosCreditos(tx, creditoIds);
+
+        await this.registrarAuditoria(tx, {
+          usuarioId: usuario.usuarioId,
+          tabla: 'pago',
+          registroId: pagoId,
+          accion: 'ELIMINAR',
+          descripcion: `Se elimino pago de ${pago.cliente.nombreCompleto}`,
+          valoresAnteriores: {
+            fechaPago: pago.fechaPago.toISOString(),
+            totalPagado: this.decimalANumero(pago.totalPagado),
+            observacion: pago.observacion,
+          },
+        });
+      },
+      { maxWait: 10_000, timeout: 20_000 },
+    );
+  }
+
+  private async asegurarPresupuestoDespuesDeCambioEntradaCaja(
+    tx: Prisma.TransactionClient,
+    cajaMenorId: string,
+    montoActual: number,
+    montoSiguiente = 0,
+  ) {
+    await tx.$queryRaw(Prisma.sql`
+      SELECT caja_menor_id
+      FROM public.caja_menor
+      WHERE caja_menor_id = ${cajaMenorId}::uuid
+      FOR UPDATE
+    `);
+
+    const presupuestoRows = await tx.$queryRaw<
+      Array<{ presupuesto: Prisma.Decimal | null }>
+    >(
+      Prisma.sql`
+        SELECT presupuesto
+        FROM public.vista_presupuesto_actual
+        WHERE caja_menor_id = ${cajaMenorId}::uuid
+      `,
+    );
+    const presupuesto = this.decimalANumero(presupuestoRows[0]?.presupuesto);
+
+    if (presupuesto - montoActual + montoSiguiente < -0.004) {
+      throw DomainError.conflict(
+        'La modificacion deja la caja menor sin presupuesto disponible',
+        'CAJA_MENOR_SALDO_INSUFICIENTE',
+      );
+    }
+  }
+
+  private async recalcularEstadosCreditos(
+    tx: Prisma.TransactionClient,
+    creditoIds: string[],
+  ) {
+    const ids = [...new Set(creditoIds)];
+    if (ids.length === 0) {
+      return;
+    }
+
+    const [
+      estadoCuotaPendiente,
+      estadoCuotaPagada,
+      estadoCreditoActivo,
+      estadoCreditoPagado,
+    ] = await Promise.all([
+      tx.estadoCuota.findUnique({ where: { codigo: 'PENDIENTE' } }),
+      tx.estadoCuota.findUnique({ where: { codigo: 'PAGADA' } }),
+      tx.estadoCredito.findUnique({ where: { codigo: 'ACTIVO' } }),
+      tx.estadoCredito.findUnique({ where: { codigo: 'PAGADO' } }),
+    ]);
+
+    if (
+      !estadoCuotaPendiente ||
+      !estadoCuotaPagada ||
+      !estadoCreditoActivo ||
+      !estadoCreditoPagado
+    ) {
+      throw DomainError.notFound(
+        'Faltan estados base para recalcular pagos',
+        'CATALOGO_PAGO_INCOMPLETO',
+      );
+    }
+
+    for (const creditoId of ids) {
+      const credito = await tx.credito.findUnique({
+        where: { creditoId },
+        include: { estadoCredito: true },
+      });
+
+      if (!credito || credito.estadoCredito.codigo === 'ANULADO') {
+        continue;
+      }
+
+      const cuotas = await tx.creditoCuota.findMany({
+        where: {
+          planPago: { creditoId },
+          estadoCuota: { codigo: { not: 'ANULADA' } },
+        },
+        include: { estadoCuota: true },
+      });
+      const cuotaIds = cuotas.map((cuota) => cuota.creditoCuotaId);
+      const sumas =
+        cuotaIds.length === 0
+          ? []
+          : await tx.pagoAplicacion.groupBy({
+              by: ['creditoCuotaId'],
+              where: { creditoCuotaId: { in: cuotaIds } },
+              _sum: {
+                montoCapital: true,
+                montoInteres: true,
+                montoMora: true,
+                montoDescuento: true,
+              },
+            });
+      const sumasPorCuota = new Map<string, SumaAplicaciones>();
+      for (const suma of sumas) {
+        sumasPorCuota.set(suma.creditoCuotaId, { _sum: suma._sum });
+      }
+
+      let cuotasPendientes = 0;
+      for (const cuota of cuotas) {
+        const sumasCuota =
+          sumasPorCuota.get(cuota.creditoCuotaId) ??
+          this.sumasAplicacionesVacias();
+        const pagada = this.saldoCuota(cuota, sumasCuota) <= 0;
+        const estadoCuotaId = pagada
+          ? estadoCuotaPagada.estadoCuotaId
+          : estadoCuotaPendiente.estadoCuotaId;
+
+        if (!pagada) {
+          cuotasPendientes += 1;
+        }
+
+        if (cuota.estadoCuotaId !== estadoCuotaId) {
+          await tx.creditoCuota.update({
+            where: { creditoCuotaId: cuota.creditoCuotaId },
+            data: { estadoCuotaId },
+          });
+        }
+      }
+
+      const estadoCreditoId =
+        cuotas.length > 0 && cuotasPendientes === 0
+          ? estadoCreditoPagado.estadoCreditoId
+          : estadoCreditoActivo.estadoCreditoId;
+
+      if (credito.estadoCreditoId !== estadoCreditoId) {
+        await tx.credito.update({
+          where: { creditoId },
+          data: { estadoCreditoId },
+        });
+      }
+    }
+  }
+
+  private async crearAplicacionesPagoParaCredito(
+    tx: Prisma.TransactionClient,
+    input: { pagoId: string; creditoId: string; montoPagado: number },
+  ) {
+    const cuotas = await tx.creditoCuota.findMany({
+      where: {
+        planPago: { creditoId: input.creditoId },
+        estadoCuota: { codigo: { not: 'ANULADA' } },
+      },
+      include: {
+        estadoCuota: true,
+        planPago: {
+          include: {
+            credito: {
+              include: {
+                ruta: true,
+                cliente: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: { numeroCuota: 'asc' },
+    });
+    const cuotaIds = cuotas.map((cuota) => cuota.creditoCuotaId);
+    const sumas =
+      cuotaIds.length === 0
+        ? []
+        : await tx.pagoAplicacion.groupBy({
+            by: ['creditoCuotaId'],
+            where: { creditoCuotaId: { in: cuotaIds } },
+            _sum: {
+              montoCapital: true,
+              montoInteres: true,
+              montoMora: true,
+              montoDescuento: true,
+            },
+          });
+    const sumasPorCuota = new Map<string, SumaAplicaciones>();
+    for (const suma of sumas) {
+      sumasPorCuota.set(suma.creditoCuotaId, { _sum: suma._sum });
+    }
+
+    const cuotasConSaldo: Array<{
+      cuota: CreditoCuotaParaPago;
+      sumas: SumaAplicaciones;
+      saldo: number;
+    }> = [];
+
+    for (const cuota of cuotas) {
+      const sumasCuota =
+        sumasPorCuota.get(cuota.creditoCuotaId) ??
+        this.sumasAplicacionesVacias();
+      const saldo = this.saldoCuota(cuota, sumasCuota);
+      if (saldo > 0 && cuota.estadoCuota.codigo !== 'PAGADA') {
+        cuotasConSaldo.push({ cuota, sumas: sumasCuota, saldo });
+      }
+    }
+
+    const saldoCredito = redondear(
+      cuotasConSaldo.reduce((total, item) => total + item.saldo, 0),
+    );
+
+    if (saldoCredito <= 0) {
+      throw DomainError.conflict(
+        'El credito ya esta pagado',
+        'CREDITO_YA_PAGADO',
+      );
+    }
+
+    if (redondear(input.montoPagado - saldoCredito) > 0) {
+      throw DomainError.validation(
+        'El pago supera el saldo del credito',
+        'PAGO_SUPERA_SALDO_CREDITO',
+      );
+    }
+
+    const aplicaciones: Prisma.PagoAplicacionCreateManyInput[] = [];
+    let restante = input.montoPagado;
+
+    for (const cuotaConSaldo of cuotasConSaldo) {
+      if (restante <= 0) {
+        break;
+      }
+
+      const montoCuota = redondear(
+        Math.min(restante, cuotaConSaldo.saldo),
+      );
+      const distribucion = this.distribuirPagoEnCuota(
+        cuotaConSaldo.cuota,
+        cuotaConSaldo.sumas,
+        montoCuota,
+      );
+
+      aplicaciones.push({
+        pagoId: input.pagoId,
+        creditoCuotaId: cuotaConSaldo.cuota.creditoCuotaId,
+        montoCapital: this.decimal(distribucion.capital),
+        montoInteres: this.decimal(distribucion.interes),
+        montoMora: this.decimal(0),
+        montoDescuento: this.decimal(0),
+      });
+
+      restante = redondear(restante - montoCuota);
+    }
+
+    if (aplicaciones.length > 0) {
+      await tx.pagoAplicacion.createMany({ data: aplicaciones });
+    }
+  }
+
+  private async obtenerMovimientoPagoCaja(
+    pagoId: string,
+    usuario: AuthenticatedUser,
+  ) {
+    const pago = await this.prisma.pago.findUnique({
+      where: { pagoId },
+      include: {
+        cliente: {
+          include: { documentos: { include: { tipoDocumento: true } } },
+        },
+        cobrador: true,
+        medioPago: true,
+        ruta: true,
+      },
+    });
+
+    if (!pago) {
+      throw DomainError.notFound('Pago no encontrado', 'PAGO_NO_ENCONTRADO');
+    }
+
+    const tipoRecaudo = await this.prisma.tipoMovimientoCaja.findUnique({
+      where: { codigo: 'RECAUDO' },
+    });
+    const caja = await this.prisma.cajaMenor.findFirst({
+      where: {
+        responsableUsuarioId: pago.ruta.responsableUsuarioId,
+        monedaCodigo: pago.monedaCodigo,
+        activa: true,
+      },
+      orderBy: [{ fechaApertura: 'desc' }, { creadaEn: 'desc' }],
+    });
+    const monto = this.decimalANumero(pago.totalPagado);
+
+    if (!this.puedeVerDatosOrganizacion(usuario)) {
+      this.asegurarResponsableRuta(pago.ruta.responsableUsuarioId, usuario);
+    }
+
+    return {
+      id: `pago-${pago.pagoId}`,
+      cajaMenorId: caja?.cajaMenorId ?? null,
+      cajaMenor: caja?.nombre ?? pago.ruta.nombre,
+      cliente: pago.cliente.nombreCompleto,
+      clienteIdentificacion:
+        pago.cliente.documentos?.[0]?.numeroDocumento ?? null,
+      tipoMovimiento: {
+        id: tipoRecaudo?.tipoMovimientoCajaId ?? 0,
+        codigo: tipoRecaudo?.codigo ?? 'RECAUDO',
+        nombre: tipoRecaudo?.nombre ?? 'Recaudo',
+        naturaleza: tipoRecaudo?.naturaleza ?? 'E',
+      },
+      usuario: pago.cobrador
+        ? {
+            id: pago.cobrador.usuarioId,
+            usuario: pago.cobrador.nombreUsuario,
+            nombres: pago.cobrador.nombres,
+            apellidos: pago.cobrador.apellidos,
+            nombreCompleto: `${pago.cobrador.nombres} ${pago.cobrador.apellidos}`.trim(),
+            correo: pago.cobrador.correo,
+            telefono: pago.cobrador.telefono,
+          }
+        : null,
+      fechaMovimiento: pago.fechaPago.toISOString(),
+      monto,
+      montoConNaturaleza: monto,
+      motivo:
+        pago.observacion ?? `Pago del usuario ${pago.cliente.nombreCompleto}`,
+      referenciaTabla: 'pago',
+      referenciaId: pago.pagoId,
+      creadoEn: pago.creadoEn.toISOString(),
+    };
+  }
+
+  private parsearFecha(valor: string, campo: string): Date {
+    const parsed = new Date(valor);
+    if (Number.isNaN(parsed.getTime())) {
+      throw DomainError.validation(
+        `La fecha enviada en ${campo} no es valida`,
+        'FECHA_INVALIDA',
+      );
+    }
+    return parsed;
+  }
+
+  private requerirTexto(
+    valor: string | undefined | null,
+    mensaje: string,
+  ): string {
+    const limpio = valor?.trim();
+    if (!limpio) {
+      throw DomainError.validation(mensaje, 'CAMPO_OBLIGATORIO');
+    }
+    return limpio;
+  }
+
+  private async registrarAuditoria(
+    tx: Prisma.TransactionClient,
+    input: {
+      usuarioId?: string | null;
+      tabla: string;
+      registroId?: string | null;
+      accion: string;
+      descripcion: string;
+      valoresAnteriores?: unknown;
+      valoresNuevos?: unknown;
+      metadata?: unknown;
+    },
+  ) {
+    try {
+      const valoresAnteriores =
+        input.valoresAnteriores === undefined
+          ? null
+          : JSON.stringify(input.valoresAnteriores);
+      const valoresNuevos =
+        input.valoresNuevos === undefined
+          ? null
+          : JSON.stringify(input.valoresNuevos);
+      const metadata =
+        input.metadata === undefined ? null : JSON.stringify(input.metadata);
+
+      await tx.$executeRaw(Prisma.sql`
+        INSERT INTO public.auditoria (
+          usuario_id,
+          tabla,
+          registro_id,
+          accion,
+          descripcion,
+          valores_anteriores,
+          valores_nuevos,
+          metadata
+        )
+        VALUES (
+          ${input.usuarioId ? Prisma.sql`${input.usuarioId}::uuid` : Prisma.sql`NULL`},
+          ${input.tabla},
+          ${input.registroId ? Prisma.sql`${input.registroId}::uuid` : Prisma.sql`NULL`},
+          ${input.accion},
+          ${input.descripcion},
+          ${valoresAnteriores ? Prisma.sql`${valoresAnteriores}::jsonb` : Prisma.sql`NULL`},
+          ${valoresNuevos ? Prisma.sql`${valoresNuevos}::jsonb` : Prisma.sql`NULL`},
+          ${metadata ? Prisma.sql`${metadata}::jsonb` : Prisma.sql`NULL`}
+        )
+      `);
+    } catch {
+      // Ignorar si la tabla de auditoría no existe en el esquema actual
+    }
+  }
 }

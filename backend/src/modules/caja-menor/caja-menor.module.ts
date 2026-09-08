@@ -5,7 +5,7 @@ import { PrismaModule } from '../../common/prisma/prisma.module';
 import { TenancyModule } from '../../common/tenancy/tenancy.module';
 import { AuthModule } from '../auth/auth.module';
 import { ExportacionesModule } from '../exportaciones/exportaciones.module';
-import { CobrosModule } from '../cobros/cobros.module';
+import { CreditosModule } from '../creditos/creditos.module';
 import { CajaMenorController } from './caja-menor.controller';
 import { CajaMenorService } from './caja-menor.service';
 
@@ -16,7 +16,7 @@ import { CajaMenorService } from './caja-menor.service';
     AuthModule,
     CacheModule,
     ExportacionesModule,
-    forwardRef(() => CobrosModule),
+    forwardRef(() => CreditosModule),
   ],
   controllers: [CajaMenorController],
   providers: [CajaMenorService],

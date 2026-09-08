@@ -46,11 +46,6 @@ export class CobrosController {
     private readonly routing: RoutingService,
   ) {}
 
-  @Get('catalogos')
-  obtenerCatalogos(@CurrentUser() usuario: AuthenticatedUser) {
-    return this.cobros.obtenerCatalogos(usuario);
-  }
-
   @Get('clientes')
   listarClientes(
     @CurrentUser() usuario: AuthenticatedUser,

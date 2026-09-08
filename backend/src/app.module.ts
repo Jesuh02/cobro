@@ -6,9 +6,12 @@ import { resolve } from 'node:path';
 
 import { DomainExceptionFilter } from './common/http/domain-exception.filter';
 import { PrismaModule } from './common/prisma/prisma.module';
+import { TenancyModule } from './common/tenancy/tenancy.module';
 import { validateEnv } from './config/env.validation';
 import { AuthModule } from './modules/auth/auth.module';
+import { CatalogosModule } from './modules/catalogos/catalogos.module';
 import { CobrosModule } from './modules/cobros/cobros.module';
+import { ExportacionesModule } from './modules/exportaciones/exportaciones.module';
 import { HealthModule } from './modules/health/health.module';
 
 @Module({
@@ -43,8 +46,11 @@ import { HealthModule } from './modules/health/health.module';
       },
     ]),
     PrismaModule,
+    TenancyModule,
     HealthModule,
     AuthModule,
+    CatalogosModule,
+    ExportacionesModule,
     CobrosModule,
   ],
   providers: [

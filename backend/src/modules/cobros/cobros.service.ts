@@ -8,6 +8,7 @@ import { cacheKeyFromCriteria } from '../../common/cache/cache-key';
 import { InMemoryCacheService } from '../../common/cache/in-memory-cache.service';
 import { DomainError } from '../../common/domain/domain-error';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { TenantScopeService } from '../../common/tenancy/tenant-scope.service';
 import { AuthenticatedUser } from '../auth/auth.types';
 import {
   permisosEmpleadoPorCodigo,
@@ -33,6 +34,7 @@ import {
   RefinanciarCreditoDto,
 } from './dto';
 import { ExportacionesR2Service } from './exportaciones-r2.service';
+import { ExportacionesService } from '../exportaciones/exportaciones.service';
 
 type ClienteConRelaciones = Prisma.ClienteGetPayload<{
   include: {
@@ -632,6 +634,12 @@ export class CobrosService {
     private readonly notifications: NotificationsService,
     private readonly exportacionesR2: ExportacionesR2Service,
     private readonly cache: InMemoryCacheService,
+    private readonly tenantScope: TenantScopeService = new TenantScopeService(
+      prisma,
+    ),
+    private readonly exportaciones: ExportacionesService = new ExportacionesService(
+      exportacionesR2,
+    ),
   ) {}
 
   private usuarioCacheKey(usuario: AuthenticatedUser) {
@@ -6172,53 +6180,7 @@ export class CobrosService {
     usuario: AuthenticatedUser,
     executor: PrismaExecutor = this.prisma,
   ): Promise<OrganizacionScopeTbl> {
-    const conditions: Prisma.Sql[] = [Prisma.sql`tu.usu_activo`];
-
-    if (this.esIdTbl(usuario.usuarioId)) {
-      conditions.push(Prisma.sql`tu.id_usu = ${usuario.usuarioId}::uuid`);
-    } else {
-      conditions.push(
-        Prisma.sql`lower(tu.usu_usuario) = lower(${usuario.usuario})`,
-      );
-    }
-
-    if (usuario.organizacionId && this.esIdTbl(usuario.organizacionId)) {
-      conditions.push(
-        Prisma.sql`uo.org_id = ${usuario.organizacionId}::uuid`,
-      );
-    }
-
-    const [scope] = await executor.$queryRaw<
-      Array<{ usuario_id: string; organizacion_id: string }>
-    >(Prisma.sql`
-      SELECT
-        tu.id_usu::text AS usuario_id,
-        uo.org_id::text AS organizacion_id
-      FROM public.tbl_usuarios tu
-      JOIN public.tbl_usuarios_organizaciones uo
-        ON uo.usu_id = tu.id_usu
-       AND uo.urg_activo
-      JOIN public.tbl_organizaciones org
-        ON org.id_org = uo.org_id
-       AND org.org_activo
-       AND NOT COALESCE(org.org_es_sistema, FALSE)
-       AND (
-         org.org_acceso_hasta IS NULL
-         OR org.org_acceso_hasta >= CURRENT_DATE
-       )
-      WHERE ${Prisma.join(conditions, ' AND ')}
-      ORDER BY uo.id_urg ASC
-      LIMIT 1
-    `);
-
-    if (!scope) {
-      throw new ForbiddenException('No tienes una institucion activa');
-    }
-
-    return {
-      usuarioId: scope.usuario_id,
-      organizacionId: scope.organizacion_id,
-    };
+    return this.tenantScope.obtenerScopeOrganizacionTbl(usuario, executor);
   }
 
   private async obtenerCatalogosTbl(usuario: AuthenticatedUser) {
@@ -8410,7 +8372,7 @@ export class CobrosService {
   }
 
   private esIdTbl(value: string) {
-    return /^\d+$/.test(value) || /^[0-9a-fA-F-]{36}$/.test(value);
+    return this.tenantScope.esIdTbl(value);
   }
 
   private diasIntervaloFrecuencia(codigo: string) {
@@ -8438,51 +8400,17 @@ export class CobrosService {
     sheet: Worksheet,
     columnasMonetarias: string[],
   ) {
-    sheet.views = [{ state: 'frozen', ySplit: 1 }];
-    sheet.getRow(1).height = 22;
-    sheet.getRow(1).eachCell((cell) => {
-      cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-      cell.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FF1F2937' },
-      };
-      cell.alignment = { vertical: 'middle' };
-    });
-
-    for (const key of columnasMonetarias) {
-      sheet.getColumn(key).numFmt = '#,##0.##########';
-    }
-
-    sheet.eachRow((row, rowNumber) => {
-      if (rowNumber === 1) {
-        return;
-      }
-
-      row.eachCell((cell) => {
-        cell.alignment = { vertical: 'top', wrapText: true };
-      });
-    });
+    return this.exportaciones.formatearHojaExportacion(
+      sheet,
+      columnasMonetarias,
+    );
   }
 
   private crearVistaPreviaExportacion(
     columnas: ColumnaExportacion[],
     filas: FilaExportacion[],
   ): ExportacionVistaPrevia {
-    return {
-      columnas: columnas.map((columna) => columna.header),
-      filas: filas.slice(0, 50).map((fila) =>
-        columnas.map((columna) => {
-          const valor = fila[columna.key];
-
-          if (valor === undefined) {
-            return null;
-          }
-
-          return valor;
-        }),
-      ),
-    };
+    return this.exportaciones.crearVistaPreviaExportacion(columnas, filas);
   }
 
   private async subirWorkbookExportacion(input: {
@@ -8492,33 +8420,11 @@ export class CobrosService {
     filas: number;
     vistaPrevia: ExportacionVistaPrevia;
   }): Promise<ExportacionExcel> {
-    const contenido = Buffer.from(await input.workbook.xlsx.writeBuffer());
-    const nombreArchivo = `${input.nombreBase}-${this.timestampArchivo()}.xlsx`;
-    const resultado = await this.exportacionesR2.subirExcel({
-      carpeta: input.carpeta,
-      nombreArchivo,
-      contenido,
-    });
-
-    return {
-      ...resultado,
-      filas: input.filas,
-      generadoEn: new Date().toISOString(),
-      vistaPrevia: input.vistaPrevia,
-    };
-  }
-
-  private timestampArchivo() {
-    return new Date().toISOString().replace(/[:.]/g, '-');
+    return this.exportaciones.subirWorkbookExportacion(input);
   }
 
   private asegurarTamanoExportacion(rowCount: number) {
-    if (rowCount > maxExportRows) {
-      throw DomainError.validation(
-        `La exportacion supera el maximo de ${maxExportRows} filas; aplica filtros mas especificos`,
-        'EXPORTACION_DEMASIADO_GRANDE',
-      );
-    }
+    return this.exportaciones.asegurarTamanoExportacion(rowCount);
   }
 
   private async crearContactoCliente(
@@ -9594,11 +9500,11 @@ export class CobrosService {
   }
 
   private puedeVerDatosOrganizacion(usuario: AuthenticatedUser) {
-    return this.esAdministrador(usuario) || usuario.roles.includes('AUDITOR');
+    return this.tenantScope.puedeVerDatosOrganizacion(usuario);
   }
 
   private esAdministrador(usuario: AuthenticatedUser) {
-    return usuario.roles.includes('ADMINISTRADOR');
+    return this.tenantScope.esAdministrador(usuario);
   }
 
   private esIdPagoCaja(id: string) {

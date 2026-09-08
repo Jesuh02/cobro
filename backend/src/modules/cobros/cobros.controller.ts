@@ -17,104 +17,23 @@ import { ResourceIdPipe } from '../../common/validation/resource-id';
 import { CobrosService } from './cobros.service';
 import {
   ActualizarCreditoDto,
-  ActualizarClienteDto,
-  ActualizarUbicacionClienteDto,
   ActualizarMovimientoCajaDto,
   CrearCajaMenorDto,
-  CrearClienteDto,
   CrearCreditoDto,
   CrearMovimientoCajaDto,
   ExportarMovimientosCajaQueryDto,
-  EstimarTrayectosDto,
-  ListarClientesQueryDto,
   ListarCobrosRutaQueryDto,
   ListarCreditosQueryDto,
   ListarMovimientosCajaQueryDto,
   ObtenerPresupuestoQueryDto,
   RegistrarPagoDto,
   RefinanciarCreditoDto,
-  TrazarRutaCompletaDto,
-  TrazarRutaDto,
 } from './dto';
-import { RoutingService } from './routing.service';
 
 @Controller()
 @UseGuards(AuthGuard)
 export class CobrosController {
-  constructor(
-    private readonly cobros: CobrosService,
-    private readonly routing: RoutingService,
-  ) {}
-
-  @Get('clientes')
-  listarClientes(
-    @CurrentUser() usuario: AuthenticatedUser,
-    @Query() query: ListarClientesQueryDto,
-  ) {
-    return this.cobros.listarClientes(query, usuario);
-  }
-
-  @Post('clientes')
-  crearCliente(
-    @CurrentUser() usuario: AuthenticatedUser,
-    @Body() body: CrearClienteDto,
-  ) {
-    return this.cobros.crearCliente(body, usuario);
-  }
-
-  @Patch('clientes/:id')
-  actualizarCliente(
-    @CurrentUser() usuario: AuthenticatedUser,
-    @Param('id', new ResourceIdPipe()) id: string,
-    @Body() body: ActualizarClienteDto,
-  ) {
-    return this.cobros.actualizarCliente(id, body, usuario);
-  }
-
-  @Delete('clientes/:id')
-  eliminarCliente(
-    @CurrentUser() usuario: AuthenticatedUser,
-    @Param('id', new ResourceIdPipe()) id: string,
-  ) {
-    return this.cobros.eliminarCliente(id, usuario);
-  }
-
-  @Patch('clientes/:id/ubicacion')
-  actualizarUbicacionCliente(
-    @CurrentUser() usuario: AuthenticatedUser,
-    @Param('id', new ResourceIdPipe()) id: string,
-    @Body() body: ActualizarUbicacionClienteDto,
-  ) {
-    return this.cobros.actualizarUbicacionCliente(id, body, usuario);
-  }
-
-  @Get('rutas')
-  listarRutas(@CurrentUser() usuario: AuthenticatedUser) {
-    return this.cobros.listarRutas(usuario);
-  }
-
-  @Get('cobros/ruta')
-  listarCobrosRuta(
-    @CurrentUser() usuario: AuthenticatedUser,
-    @Query() query: ListarCobrosRutaQueryDto,
-  ) {
-    return this.cobros.listarCobrosRuta(query, usuario);
-  }
-
-  @Post('routing/estimates')
-  estimarTrayectos(@Body() body: EstimarTrayectosDto) {
-    return this.routing.estimateTrips(body);
-  }
-
-  @Post('routing/route')
-  trazarRuta(@Body() body: TrazarRutaDto) {
-    return this.routing.traceRoute(body);
-  }
-
-  @Post('routing/route-through')
-  trazarRutaCompleta(@Body() body: TrazarRutaCompletaDto) {
-    return this.routing.traceRouteThrough(body);
-  }
+  constructor(private readonly cobros: CobrosService) {}
 
   @Get('exportaciones/cobros-ruta')
   exportarCobrosRuta(

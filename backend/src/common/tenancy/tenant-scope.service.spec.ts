@@ -77,4 +77,19 @@ describe('TenantScopeService', () => {
       }),
     ).rejects.toThrow(ForbiddenException);
   });
+
+  it('detects tbl schema availability and caches result', async () => {
+    const queryRaw = jest
+      .fn()
+      .mockResolvedValueOnce([{ disponible: true }]);
+    const service = new TenantScopeService({ $queryRaw: queryRaw } as never);
+
+    const first = await service.usarEsquemaTbl();
+    const second = await service.usarEsquemaTbl();
+
+    expect(first).toBe(true);
+    expect(second).toBe(true);
+    expect(queryRaw).toHaveBeenCalledTimes(1);
+  });
 });
+

@@ -16,7 +16,33 @@ export type OrganizacionScopeTbl = {
 
 @Injectable()
 export class TenantScopeService {
+  private esquemaTblDisponible?: boolean;
+
   constructor(private readonly prisma: PrismaService) {}
+
+  async usarEsquemaTbl(): Promise<boolean> {
+    if (this.esquemaTblDisponible !== undefined) {
+      return this.esquemaTblDisponible;
+    }
+
+    try {
+      const rows = await this.prisma.$queryRaw<Array<{ disponible: boolean }>>(Prisma.sql`
+        SELECT COUNT(*) = 3 AS disponible
+        FROM information_schema.tables
+        WHERE table_schema = 'public'
+          AND table_name IN (
+            'tbl_usuarios',
+            'tbl_organizaciones',
+            'tbl_clientes'
+          )
+      `);
+      this.esquemaTblDisponible = rows[0]?.disponible ?? false;
+    } catch {
+      this.esquemaTblDisponible = false;
+    }
+
+    return this.esquemaTblDisponible;
+  }
 
   esIdTbl(value: string): boolean {
     return /^\d+$/.test(value) || /^[0-9a-fA-F-]{36}$/.test(value);

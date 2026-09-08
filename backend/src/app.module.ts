@@ -10,9 +10,11 @@ import { TenancyModule } from './common/tenancy/tenancy.module';
 import { validateEnv } from './config/env.validation';
 import { AuthModule } from './modules/auth/auth.module';
 import { CatalogosModule } from './modules/catalogos/catalogos.module';
+import { ClientesModule } from './modules/clientes/clientes.module';
 import { CobrosModule } from './modules/cobros/cobros.module';
 import { ExportacionesModule } from './modules/exportaciones/exportaciones.module';
 import { HealthModule } from './modules/health/health.module';
+import { RutasModule } from './modules/rutas/rutas.module';
 
 @Module({
   imports: [
@@ -51,6 +53,8 @@ import { HealthModule } from './modules/health/health.module';
     AuthModule,
     CatalogosModule,
     ExportacionesModule,
+    RutasModule,
+    ClientesModule,
     CobrosModule,
   ],
   providers: [

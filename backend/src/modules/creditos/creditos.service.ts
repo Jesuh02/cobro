@@ -38,9 +38,7 @@ import {
   CreditoExportado,
   CreditoListadoRow,
   CreditoTblRow,
-  CuotaCreditoRow,
   CuotaCreditoTblRow,
-  SumaAplicaciones,
 } from './creditos.types';
 import {
   calcularPlan,
@@ -72,27 +70,7 @@ export class CreditosService {
   }
 
   async usarEsquemaTbl(): Promise<boolean> {
-    if (this.esquemaTblDisponible !== undefined) {
-      return this.esquemaTblDisponible;
-    }
-
-    try {
-      const rows = await this.prisma.$queryRaw<Array<{ existe: boolean }>>(
-        Prisma.sql`
-          SELECT EXISTS (
-            SELECT 1
-            FROM information_schema.tables
-            WHERE table_schema = 'public'
-              AND table_name = 'tbl_creditos'
-          ) AS existe
-        `,
-      );
-      this.esquemaTblDisponible = Boolean(rows[0]?.existe);
-      return this.esquemaTblDisponible;
-    } catch {
-      this.esquemaTblDisponible = false;
-      return false;
-    }
+    return true;
   }
 
   // ==========================================
@@ -106,134 +84,13 @@ export class CreditosService {
     const valorPrincipal = redondear(dto.valorPrincipal);
     const porcentajeInteres = redondear(dto.porcentajeInteres, 4);
 
-    if (await this.usarEsquemaTbl()) {
-      return this.crearCreditoTbl(
-        dto,
-        usuario,
-        fechaInicio,
-        valorPrincipal,
-        porcentajeInteres,
-      );
-    }
-
-    const creditoId = await this.prisma.$transaction(async (tx) => {
-      const [cliente, moneda, frecuenciaPago, estadoActivo, estadoPendiente] =
-        await Promise.all([
-          tx.cliente.findUnique({ where: { clienteId: dto.clienteId } }),
-          tx.moneda.findUnique({ where: { codigoMoneda: dto.monedaCodigo } }),
-          tx.frecuenciaPago.findUnique({
-            where: { frecuenciaPagoId: dto.frecuenciaPagoId },
-          }),
-          tx.estadoCredito.findUnique({ where: { codigo: 'ACTIVO' } }),
-          tx.estadoCuota.findUnique({ where: { codigo: 'PENDIENTE' } }),
-        ]);
-
-      if (!cliente) {
-        throw DomainError.notFound(
-          'Cliente no encontrado',
-          'CLIENTE_NO_ENCONTRADO',
-        );
-      }
-
-      if (!moneda) {
-        throw DomainError.notFound(
-          'Moneda no encontrada',
-          'MONEDA_NO_ENCONTRADA',
-        );
-      }
-
-      if (!frecuenciaPago) {
-        throw DomainError.notFound(
-          'Frecuencia de pago no encontrada',
-          'FRECUENCIA_NO_ENCONTRADA',
-        );
-      }
-
-      if (!estadoActivo || !estadoPendiente) {
-        throw DomainError.notFound(
-          'Faltan estados base para crear el credito',
-          'CATALOGO_CREDITO_INCOMPLETO',
-        );
-      }
-
-      const ruta = await this.obtenerOCrearRutaCredito(tx, dto, usuario);
-
-      const plan = calcularPlan({
-        fechaInicio,
-        valorPrincipal,
-        porcentajeInteres,
-        plazoDias: dto.plazoDias,
-        diasIntervalo: frecuenciaPago.diasIntervalo,
-        omitirDomingos: dto.omitirDomingos ?? true,
-        decimales: moneda.decimales,
-      });
-
-      const credito = await tx.credito.create({
-        data: {
-          clienteId: cliente.clienteId,
-          rutaId: ruta.rutaId,
-          monedaCodigo: moneda.codigoMoneda,
-          frecuenciaPagoId: frecuenciaPago.frecuenciaPagoId,
-          estadoCreditoId: estadoActivo.estadoCreditoId,
-          creadoPorUsuarioId: usuario.usuarioId,
-          fechaInicio,
-          valorPrincipal: this.decimal(valorPrincipal),
-          porcentajeInteres: this.decimal(porcentajeInteres, 4),
-          plazoDias: dto.plazoDias,
-          omitirDomingos: dto.omitirDomingos ?? true,
-          observacion: this.normalizarTextoOpcional(dto.observacion),
-        },
-      });
-
-      const planPago = await tx.creditoPlanPago.create({
-        data: {
-          creditoId: credito.creditoId,
-          numeroCuotas: plan.numeroCuotas,
-          valorCuota: this.decimal(plan.valorCuota),
-          valorTotal: this.decimal(plan.valorTotal),
-          fechaMaxima: plan.fechaMaxima,
-          domingosOmitidos: plan.domingosOmitidos,
-        },
-      });
-
-      await tx.creditoCuota.createMany({
-        data: plan.cuotas.map((cuota) => ({
-          creditoPlanPagoId: planPago.creditoPlanPagoId,
-          estadoCuotaId: estadoPendiente.estadoCuotaId,
-          numeroCuota: cuota.numeroCuota,
-          fechaVencimiento: cuota.fechaVencimiento,
-          valorCapital: this.decimal(cuota.valorCapital),
-          valorInteres: this.decimal(cuota.valorInteres),
-        })),
-      });
-
-      await this.asegurarClienteEnRuta(tx, ruta.rutaId, cliente.clienteId);
-      const movimientoId = await this.registrarDesembolsoCaja(
-        tx,
-        dto,
-        ruta,
-        usuario,
-        valorPrincipal,
-        fechaInicio,
-        cliente.nombreCompleto,
-      );
-
-      await tx.creditoDesembolso.create({
-        data: {
-          creditoId: credito.creditoId,
-          cajaMenorMovimientoId: movimientoId,
-          fechaDesembolso: fechaInicio,
-          monto: this.decimal(valorPrincipal),
-        },
-      });
-
-      return credito.creditoId;
-    });
-
-    this.invalidarCacheLecturas();
-    const credito = await this.obtenerCredito(creditoId, usuario);
-    void this.notifications.notifyCreditApproved(creditoId);
-    return credito;
+    return this.crearCreditoTbl(
+      dto,
+      usuario,
+      fechaInicio,
+      valorPrincipal,
+      porcentajeInteres,
+    );
   }
 
   private async crearCreditoTbl(
@@ -532,7 +389,7 @@ export class CreditosService {
     );
 
     this.invalidarCacheLecturas();
-    const credito = await this.obtenerCredito(creditoId, usuario);
+    const credito = await this.obtenerCreditoTbl(creditoId, usuario);
     void this.notifications.notifyCreditApproved(creditoId);
     return credito;
   }
@@ -618,201 +475,7 @@ export class CreditosService {
     limite?: number,
     offset = 0,
   ) {
-    if (await this.usarEsquemaTbl()) {
-      return this.consultarCreditosTbl(query, usuario, limite, offset);
-    }
-
-    const conditions: Prisma.Sql[] = [Prisma.sql`1 = 1`];
-    const search = this.normalizarTextoOpcional(query.search);
-    const estado = query.estado ?? 'todos';
-
-    if (!this.puedeVerDatosOrganizacion(usuario)) {
-      conditions.push(Prisma.sql`(
-        c.creado_por_usuario_id = ${usuario.usuarioId}::uuid
-        OR r.responsable_usuario_id = ${usuario.usuarioId}::uuid
-      )`);
-    }
-
-    if (query.rutaId) {
-      conditions.push(Prisma.sql`c.ruta_id = ${query.rutaId}::uuid`);
-    }
-
-    if (query.cajaMenorId) {
-      conditions.push(
-        Prisma.sql`cm.caja_menor_id = ${query.cajaMenorId}::uuid`,
-      );
-    }
-
-    if (estado === 'activos') {
-      conditions.push(Prisma.sql`ecr.codigo = 'ACTIVO'`);
-    } else if (estado === 'inactivos') {
-      conditions.push(Prisma.sql`ecr.codigo = 'PAGADO'`);
-    }
-
-    if (query.fechaDesde) {
-      const fechaDesde = this.parsearFecha(query.fechaDesde, 'fechaDesde');
-      conditions.push(Prisma.sql`
-        CASE
-          WHEN ecr.codigo = 'ACTIVO' THEN c.fecha_inicio
-          ELSE COALESCE(
-            pc.fecha_ultimo_pago,
-            (c.actualizado_en AT TIME ZONE 'America/Bogota')::date,
-            c.fecha_inicio
-          )
-        END >= ${fechaDesde}::date
-      `);
-    }
-
-    if (query.fechaHasta) {
-      const fechaHasta = this.parsearFecha(query.fechaHasta, 'fechaHasta');
-      conditions.push(Prisma.sql`
-        CASE
-          WHEN ecr.codigo = 'ACTIVO' THEN c.fecha_inicio
-          ELSE COALESCE(
-            pc.fecha_ultimo_pago,
-            (c.actualizado_en AT TIME ZONE 'America/Bogota')::date,
-            c.fecha_inicio
-          )
-        END <= ${fechaHasta}::date
-      `);
-    }
-
-    if (search) {
-      const pattern = `%${search}%`;
-      conditions.push(Prisma.sql`(
-        cl.nombre_completo ILIKE ${pattern}
-        OR cl.nombre_comercial ILIKE ${pattern}
-        OR r.nombre ILIKE ${pattern}
-        OR cm.nombre ILIKE ${pattern}
-        OR c.observacion ILIKE ${pattern}
-        OR EXISTS (
-          SELECT 1
-          FROM public.cliente_direccion cd_busqueda
-          WHERE cd_busqueda.cliente_id = cl.cliente_id
-            AND cd_busqueda.direccion ILIKE ${pattern}
-        )
-        OR EXISTS (
-          SELECT 1
-          FROM public.cliente_documento cd_busqueda
-          WHERE cd_busqueda.cliente_id = cl.cliente_id
-            AND cd_busqueda.numero_documento ILIKE ${pattern}
-        )
-      )`);
-    }
-
-    const rows = await this.prisma.$queryRaw<CreditoListadoRow[]>(Prisma.sql`
-      WITH abonos_cuota AS (
-        SELECT
-          cc.credito_cuota_id,
-          COALESCE(
-            SUM(
-              pa.monto_capital
-              + pa.monto_interes
-              + pa.monto_mora
-              - pa.monto_descuento
-            ),
-            0
-          ) AS abonado
-        FROM public.credito_cuota cc
-        JOIN public.pago_aplicacion pa ON pa.credito_cuota_id = cc.credito_cuota_id
-        GROUP BY cc.credito_cuota_id
-      ),
-      resumen_credito AS (
-        SELECT
-          cpp.credito_id,
-          COALESCE(SUM(ac.abonado), 0) AS total_abonado,
-          COUNT(*)::int AS numero_cuotas,
-          COUNT(*) FILTER (
-            WHERE ec.codigo NOT IN ('PAGADA', 'ANULADA')
-              AND (cc.valor_total - COALESCE(ac.abonado, 0)) > 0
-          )::int AS cuotas_restantes,
-          COALESCE(MAX(cc.valor_total), 0) AS valor_cuota
-        FROM public.credito_cuota cc
-        JOIN public.credito_plan_pago cpp ON cpp.credito_plan_pago_id = cc.credito_plan_pago_id
-        JOIN public.estado_cuota ec ON ec.estado_cuota_id = cc.estado_cuota_id
-        LEFT JOIN abonos_cuota ac ON ac.credito_cuota_id = cc.credito_cuota_id
-        GROUP BY cpp.credito_id
-      ),
-      pagos_credito AS (
-        SELECT
-          cpp.credito_id,
-          MAX((p.fecha_pago AT TIME ZONE 'America/Bogota')::date) AS fecha_ultimo_pago
-        FROM public.pago p
-        JOIN public.pago_aplicacion pa ON pa.pago_id = p.pago_id
-        JOIN public.credito_cuota cc ON cc.credito_cuota_id = pa.credito_cuota_id
-        JOIN public.credito_plan_pago cpp ON cpp.credito_plan_pago_id = cc.credito_plan_pago_id
-        GROUP BY cpp.credito_id
-      ),
-      documento_principal AS (
-        SELECT DISTINCT ON (cliente_id)
-          cliente_id,
-          numero_documento
-        FROM public.cliente_documento
-        ORDER BY cliente_id, (tipo_documento_id = 1) DESC, cliente_documento_id ASC
-      ),
-      direccion_principal AS (
-        SELECT DISTINCT ON (cliente_id)
-          cliente_id,
-          direccion
-        FROM public.cliente_direccion
-        ORDER BY cliente_id, es_principal DESC, cliente_direccion_id ASC
-      )
-      SELECT
-        c.credito_id,
-        cl.cliente_id,
-        cl.nombre_completo AS cliente,
-        doc.numero_documento AS cedula,
-        cl.nombre_comercial AS negocio,
-        dir.direccion AS direccion,
-        r.ruta_id,
-        r.nombre AS ruta,
-        cm.caja_menor_id,
-        cm.nombre AS caja_menor,
-        c.moneda_codigo,
-        fp.frecuencia_pago_id,
-        fp.codigo AS frecuencia_codigo,
-        fp.nombre AS frecuencia_nombre,
-        fp.dias_intervalo,
-        ecr.codigo AS estado_codigo,
-        ecr.nombre AS estado_nombre,
-        c.valor_principal,
-        c.porcentaje_interes,
-        c.plazo_dias,
-        c.omitir_domingos,
-        COALESCE(cpp.valor_total, 0) AS valor_total,
-        COALESCE(rc.valor_cuota, cpp.valor_cuota, 0) AS valor_cuota,
-        COALESCE(rc.total_abonado, 0) AS total_abonado,
-        GREATEST(COALESCE(cpp.valor_total, 0) - COALESCE(rc.total_abonado, 0), 0) AS saldo,
-        COALESCE(rc.numero_cuotas, cpp.numero_cuotas, 0) AS numero_cuotas,
-        COALESCE(rc.cuotas_restantes, cpp.numero_cuotas, 0) AS cuotas_restantes,
-        c.fecha_inicio,
-        COALESCE(cpp.fecha_maxima, c.fecha_inicio) AS fecha_maxima,
-        c.refinanciado_en,
-        c.valor_principal_anterior,
-        c.valor_principal_refinanciado,
-        c.observacion,
-        c.creado_en,
-        c.actualizado_en
-      FROM public.credito c
-      JOIN public.cliente cl ON cl.cliente_id = c.cliente_id
-      JOIN public.ruta r ON r.ruta_id = c.ruta_id
-      JOIN public.frecuencia_pago fp ON fp.frecuencia_pago_id = c.frecuencia_pago_id
-      JOIN public.estado_credito ecr ON ecr.estado_credito_id = c.estado_credito_id
-      LEFT JOIN public.credito_plan_pago cpp ON cpp.credito_id = c.credito_id
-      LEFT JOIN resumen_credito rc ON rc.credito_id = c.credito_id
-      LEFT JOIN pagos_credito pc ON pc.credito_id = c.credito_id
-      LEFT JOIN documento_principal doc ON doc.cliente_id = cl.cliente_id
-      LEFT JOIN direccion_principal dir ON dir.cliente_id = cl.cliente_id
-      LEFT JOIN public.credito_desembolso cd ON cd.credito_id = c.credito_id
-      LEFT JOIN public.caja_menor_movimiento cmm ON cmm.caja_menor_movimiento_id = cd.caja_menor_movimiento_id
-      LEFT JOIN public.caja_menor cm ON cm.caja_menor_id = cmm.caja_menor_id
-      WHERE ${Prisma.join(conditions, ' AND ')}
-      ORDER BY c.fecha_inicio DESC, c.credito_id DESC
-      ${limite ? Prisma.sql`LIMIT ${limite}` : Prisma.empty}
-      ${offset > 0 ? Prisma.sql`OFFSET ${offset}` : Prisma.empty}
-    `);
-
-    return rows.map((row) => this.formatearCreditoListado(row));
+    return this.consultarCreditosTbl(query, usuario, limite, offset);
   }
 
   private async consultarCreditosTbl(
@@ -898,12 +561,23 @@ export class CreditosService {
         SELECT
           cu.cre_id,
           COALESCE(SUM(ac.abonado), 0) AS total_abonado,
-          COUNT(*)::int AS numero_cuotas,
+          COUNT(*) FILTER (WHERE UPPER(cu.cuo_estado::text) != 'ANULADA')::int AS numero_cuotas,
           COUNT(*) FILTER (
             WHERE UPPER(cu.cuo_estado::text) NOT IN ('PAGADA', 'ANULADA')
               AND (cu.cuo_valor - COALESCE(ac.abonado, 0)) > 0
           )::int AS cuotas_restantes,
-          COALESCE(MAX(cu.cuo_valor), 0) AS valor_cuota
+          COALESCE(
+            (
+              SELECT cu2.cuo_valor
+              FROM public.tbl_cuotas cu2
+              WHERE cu2.cre_id = cu.cre_id
+                AND UPPER(cu2.cuo_estado::text) != 'ANULADA'
+              ORDER BY cu2.cuo_numero DESC
+              LIMIT 1
+            ),
+            MAX(cu.cuo_valor),
+            0
+          ) AS valor_cuota
         FROM public.tbl_cuotas cu
         LEFT JOIN abonos_cuota ac ON ac.id_cuo = cu.id_cuo
         GROUP BY cu.cre_id
@@ -1015,108 +689,7 @@ export class CreditosService {
     query: ListarCreditosQueryDto,
     usuario: AuthenticatedUser,
   ) {
-    if (await this.usarEsquemaTbl()) {
-      return this.contarCreditosPorEstadoTbl(query, usuario);
-    }
-
-    const conditions: Prisma.Sql[] = [Prisma.sql`1 = 1`];
-    const search = this.normalizarTextoOpcional(query.search);
-
-    if (!this.puedeVerDatosOrganizacion(usuario)) {
-      conditions.push(Prisma.sql`(
-        c.creado_por_usuario_id = ${usuario.usuarioId}::uuid
-        OR r.responsable_usuario_id = ${usuario.usuarioId}::uuid
-      )`);
-    }
-
-    if (query.rutaId) {
-      conditions.push(Prisma.sql`c.ruta_id = ${query.rutaId}::uuid`);
-    }
-
-    if (query.cajaMenorId) {
-      conditions.push(
-        Prisma.sql`cm.caja_menor_id = ${query.cajaMenorId}::uuid`,
-      );
-    }
-
-    if (query.fechaDesde) {
-      const fechaDesde = this.parsearFecha(query.fechaDesde, 'fechaDesde');
-      conditions.push(Prisma.sql`
-        CASE
-          WHEN ecr.codigo = 'ACTIVO' THEN c.fecha_inicio
-          ELSE COALESCE(
-            pc.fecha_ultimo_pago,
-            (c.actualizado_en AT TIME ZONE 'America/Bogota')::date,
-            c.fecha_inicio
-          )
-        END >= ${fechaDesde}::date
-      `);
-    }
-
-    if (query.fechaHasta) {
-      const fechaHasta = this.parsearFecha(query.fechaHasta, 'fechaHasta');
-      conditions.push(Prisma.sql`
-        CASE
-          WHEN ecr.codigo = 'ACTIVO' THEN c.fecha_inicio
-          ELSE COALESCE(
-            pc.fecha_ultimo_pago,
-            (c.actualizado_en AT TIME ZONE 'America/Bogota')::date,
-            c.fecha_inicio
-          )
-        END <= ${fechaHasta}::date
-      `);
-    }
-
-    if (search) {
-      const pattern = `%${search}%`;
-      conditions.push(Prisma.sql`(
-        cl.nombre_completo ILIKE ${pattern}
-        OR cl.nombre_comercial ILIKE ${pattern}
-        OR r.nombre ILIKE ${pattern}
-        OR cm.nombre ILIKE ${pattern}
-        OR c.observacion ILIKE ${pattern}
-        OR EXISTS (
-          SELECT 1
-          FROM public.cliente_direccion cd_busqueda
-          WHERE cd_busqueda.cliente_id = cl.cliente_id
-            AND cd_busqueda.direccion ILIKE ${pattern}
-        )
-        OR EXISTS (
-          SELECT 1
-          FROM public.cliente_documento cd_busqueda
-          WHERE cd_busqueda.cliente_id = cl.cliente_id
-            AND cd_busqueda.numero_documento ILIKE ${pattern}
-        )
-      )`);
-    }
-
-    return this.prisma.$queryRaw<
-      Array<{ total: number; activos: number; inactivos: number }>
-    >(Prisma.sql`
-      WITH pagos_credito AS (
-        SELECT
-          cpp.credito_id,
-          MAX((p.fecha_pago AT TIME ZONE 'America/Bogota')::date) AS fecha_ultimo_pago
-        FROM public.pago p
-        JOIN public.pago_aplicacion pa ON pa.pago_id = p.pago_id
-        JOIN public.credito_cuota cc ON cc.credito_cuota_id = pa.credito_cuota_id
-        JOIN public.credito_plan_pago cpp ON cpp.credito_plan_pago_id = cc.credito_plan_pago_id
-        GROUP BY cpp.credito_id
-      )
-      SELECT
-        COUNT(*)::int AS total,
-        COUNT(*) FILTER (WHERE ecr.codigo = 'ACTIVO')::int AS activos,
-        COUNT(*) FILTER (WHERE ecr.codigo = 'PAGADO')::int AS inactivos
-      FROM public.credito c
-      JOIN public.cliente cl ON cl.cliente_id = c.cliente_id
-      JOIN public.ruta r ON r.ruta_id = c.ruta_id
-      JOIN public.estado_credito ecr ON ecr.estado_credito_id = c.estado_credito_id
-      LEFT JOIN pagos_credito pc ON pc.credito_id = c.credito_id
-      LEFT JOIN public.credito_desembolso cd ON cd.credito_id = c.credito_id
-      LEFT JOIN public.caja_menor_movimiento cmm ON cmm.caja_menor_movimiento_id = cd.caja_menor_movimiento_id
-      LEFT JOIN public.caja_menor cm ON cm.caja_menor_id = cmm.caja_menor_id
-      WHERE ${Prisma.join(conditions, ' AND ')}
-    `);
+    return this.contarCreditosPorEstadoTbl(query, usuario);
   }
 
   private async contarCreditosPorEstadoTbl(
@@ -1213,115 +786,7 @@ export class CreditosService {
   // ==========================================
 
   async obtenerCredito(creditoId: string, usuario: AuthenticatedUser) {
-    if (this.esIdTbl(creditoId) && (await this.usarEsquemaTbl())) {
-      return this.obtenerCreditoTbl(creditoId, usuario);
-    }
-
-    const credito = await this.prisma.credito.findUnique({
-      where: { creditoId },
-      include: {
-        cliente: {
-          include: {
-            documentos: { include: { tipoDocumento: true } },
-            direcciones: true,
-          },
-        },
-        ruta: true,
-        moneda: true,
-        frecuenciaPago: true,
-        estadoCredito: true,
-        planPago: true,
-        desembolso: {
-          include: {
-            cajaMenorMovimiento: {
-              include: { cajaMenor: true },
-            },
-          },
-        },
-      },
-    });
-
-    if (!credito) {
-      throw DomainError.notFound(
-        'Credito no encontrado',
-        'CREDITO_NO_ENCONTRADO',
-      );
-    }
-
-    this.asegurarAccesoCredito(credito, usuario);
-    const resumen = credito.planPago
-      ? await this.resumenCredito(credito.planPago.creditoPlanPagoId)
-      : { totalAbonado: 0, cuotasRestantes: 0 };
-    const totalAbonado = resumen.totalAbonado;
-    const valorTotal = credito.planPago
-      ? this.decimalANumero(credito.planPago.valorTotal)
-      : 0;
-    const documentoPrincipal =
-      credito.cliente.documentos.find(
-        (documento) => documento.tipoDocumento.codigo === 'CC',
-      ) ?? credito.cliente.documentos[0];
-    const direccionPrincipal =
-      credito.cliente.direcciones.find((direccion) => direccion.esPrincipal) ??
-      credito.cliente.direcciones[0];
-    const cajaMenor =
-      credito.desembolso?.cajaMenorMovimiento?.cajaMenor ?? null;
-
-    return {
-      id: credito.creditoId,
-      clienteId: credito.clienteId,
-      cliente: credito.cliente.nombreCompleto,
-      cedula: documentoPrincipal?.numeroDocumento ?? null,
-      negocio: credito.cliente.nombreComercial,
-      direccion: direccionPrincipal?.direccion ?? null,
-      rutaId: credito.rutaId,
-      ruta: credito.ruta.nombre,
-      cajaMenorId: cajaMenor?.cajaMenorId ?? null,
-      cajaMenor: cajaMenor?.nombre ?? null,
-      monedaCodigo: credito.monedaCodigo,
-      frecuenciaPago: {
-        id: credito.frecuenciaPago.frecuenciaPagoId,
-        codigo: credito.frecuenciaPago.codigo,
-        nombre: credito.frecuenciaPago.nombre,
-        diasIntervalo: credito.frecuenciaPago.diasIntervalo,
-      },
-      estado: {
-        codigo: credito.estadoCredito.codigo,
-        nombre: credito.estadoCredito.nombre,
-      },
-      fechaInicio: this.fechaIso(credito.fechaInicio),
-      valorPrincipal: this.decimalANumero(credito.valorPrincipal),
-      porcentajeInteres: this.decimalANumero(credito.porcentajeInteres),
-      plazoDias: credito.plazoDias,
-      omitirDomingos: credito.omitirDomingos,
-      valorTotal,
-      valorCuota: credito.planPago
-        ? this.decimalANumero(credito.planPago.valorCuota)
-        : 0,
-      totalAbonado,
-      saldo: redondear(Math.max(valorTotal - totalAbonado, 0)),
-      numeroCuotas: credito.planPago?.numeroCuotas ?? 0,
-      cuotasRestantes: resumen.cuotasRestantes,
-      fechaMaxima: credito.planPago
-        ? this.fechaIso(credito.planPago.fechaMaxima)
-        : this.fechaIso(credito.fechaInicio),
-      observacion: credito.observacion,
-      refinanciacion:
-        credito.refinanciadoEn &&
-        credito.valorPrincipalAnterior &&
-        credito.valorPrincipalRefinanciado
-          ? {
-              fecha: this.fechaIso(credito.refinanciadoEn),
-              valorAnterior: this.decimalANumero(
-                credito.valorPrincipalAnterior,
-              ),
-              valorNuevo: this.decimalANumero(
-                credito.valorPrincipalRefinanciado,
-              ),
-            }
-          : null,
-      creadoEn: this.fechaIso(credito.creadoEn),
-      actualizadoEn: this.fechaIso(credito.actualizadoEn),
-    };
+    return this.obtenerCreditoTbl(creditoId, usuario);
   }
 
   private async obtenerCreditoTbl(
@@ -1353,8 +818,18 @@ export class CreditosService {
         cr.cre_tasa_interes AS porcentaje_interes,
         cr.cre_interes_total AS interes_total,
         cr.cre_total_pagar AS valor_total,
-        COUNT(cu.id_cuo)::int AS numero_cuotas,
-        COALESCE(MAX(cu.cuo_valor), 0) AS valor_cuota,
+        COUNT(cu.id_cuo) FILTER (WHERE UPPER(cu.cuo_estado::text) != 'ANULADA')::int AS numero_cuotas,
+        COALESCE(
+          (
+            SELECT cu2.cuo_valor
+            FROM public.tbl_cuotas cu2
+            WHERE cu2.cre_id = cr.id_cre
+              AND UPPER(cu2.cuo_estado::text) != 'ANULADA'
+            ORDER BY cu2.cuo_numero DESC
+            LIMIT 1
+          ),
+          0
+        ) AS valor_cuota,
         COALESCE(SUM(cu.cuo_total_pagado), 0) AS total_abonado,
         COUNT(*) FILTER (
           WHERE UPPER(cu.cuo_estado::text) NOT IN ('PAGADA', 'ANULADA')
@@ -1461,64 +936,7 @@ export class CreditosService {
   }
 
   async listarCuotasCredito(creditoId: string, usuario: AuthenticatedUser) {
-    if (this.esIdTbl(creditoId) && (await this.usarEsquemaTbl())) {
-      return this.listarCuotasCreditoTbl(creditoId, usuario);
-    }
-
-    await this.validarAccesoCreditoPorId(creditoId, usuario);
-
-    const rows = await this.prisma.$queryRaw<CuotaCreditoRow[]>(Prisma.sql`
-      WITH abonos_cuota AS (
-        SELECT
-          pa.credito_cuota_id,
-          COALESCE(
-            SUM(
-              pa.monto_capital
-              + pa.monto_interes
-              + pa.monto_mora
-              - pa.monto_descuento
-            ),
-            0
-          ) AS abonado
-        FROM public.pago_aplicacion pa
-        GROUP BY pa.credito_cuota_id
-      )
-      SELECT
-        cc.credito_cuota_id,
-        cc.numero_cuota,
-        cc.fecha_vencimiento,
-        ec.codigo AS estado_codigo,
-        ec.nombre AS estado_nombre,
-        cc.valor_capital,
-        cc.valor_interes,
-        cc.valor_total,
-        COALESCE(ac.abonado, 0) AS abonado,
-        GREATEST(cc.valor_total - COALESCE(ac.abonado, 0), 0) AS saldo
-      FROM public.credito_cuota cc
-      JOIN public.estado_cuota ec
-        ON ec.estado_cuota_id = cc.estado_cuota_id
-      JOIN public.credito_plan_pago cpp
-        ON cpp.credito_plan_pago_id = cc.credito_plan_pago_id
-      LEFT JOIN abonos_cuota ac
-        ON ac.credito_cuota_id = cc.credito_cuota_id
-      WHERE cpp.credito_id = ${creditoId}::uuid
-      ORDER BY cc.numero_cuota ASC
-    `);
-
-    return rows.map((row) => ({
-      id: row.credito_cuota_id,
-      numeroCuota: row.numero_cuota,
-      fechaVencimiento: this.fechaIso(row.fecha_vencimiento),
-      estado: {
-        codigo: row.estado_codigo,
-        nombre: row.estado_nombre,
-      },
-      valorCapital: this.decimalANumero(row.valor_capital),
-      valorInteres: this.decimalANumero(row.valor_interes),
-      valorTotal: this.decimalANumero(row.valor_total),
-      abonado: this.decimalANumero(row.abonado),
-      saldo: this.decimalANumero(row.saldo),
-    }));
+    return this.listarCuotasCreditoTbl(creditoId, usuario);
   }
 
   private async listarCuotasCreditoTbl(
@@ -1587,388 +1005,19 @@ export class CreditosService {
     const fechaInicio = this.parsearFecha(dto.fechaInicio, 'fechaInicio');
     const valorPrincipal = redondear(dto.valorPrincipal);
     const porcentajeInteres = redondear(dto.porcentajeInteres, 4);
-
-    const creditoActualizadoId = await this.prisma.$transaction(
-      async (tx) => {
-        await tx.$queryRaw(Prisma.sql`
-          SELECT credito_id
-          FROM public.credito
-          WHERE credito_id = ${creditoId}::uuid
-          FOR UPDATE
-        `);
-
-        const credito = await tx.credito.findUnique({
-          where: { creditoId },
-          include: {
-            cliente: true,
-            ruta: true,
-            moneda: true,
-            frecuenciaPago: true,
-            estadoCredito: true,
-            planPago: { include: { cuotas: true } },
-            desembolso: {
-              include: {
-                cajaMenorMovimiento: {
-                  include: {
-                    cajaMenor: true,
-                    tipoMovimientoCaja: true,
-                    usuario: true,
-                  },
-                },
-              },
-            },
-          },
-        });
-
-        if (!credito || !credito.planPago) {
-          throw DomainError.notFound(
-            'Credito no encontrado',
-            'CREDITO_NO_ENCONTRADO',
-          );
-        }
-
-        const pagosAplicados = await tx.pagoAplicacion.count({
-          where: { creditoCuota: { planPago: { creditoId } } },
-        });
-        const tienePagosAplicados = pagosAplicados > 0;
-
-        const [
-          cliente,
-          moneda,
-          frecuenciaPago,
-          estadoPendiente,
-          tipoDesembolso,
-        ] = await Promise.all([
-          tx.cliente.findUnique({ where: { clienteId: dto.clienteId } }),
-          tx.moneda.findUnique({ where: { codigoMoneda: dto.monedaCodigo } }),
-          tx.frecuenciaPago.findUnique({
-            where: { frecuenciaPagoId: dto.frecuenciaPagoId },
-          }),
-          tx.estadoCuota.findUnique({ where: { codigo: 'PENDIENTE' } }),
-          tx.tipoMovimientoCaja.findUnique({
-            where: { codigo: 'DESEMBOLSO_CREDITO' },
-          }),
-        ]);
-
-        if (!cliente) {
-          throw DomainError.notFound(
-            'Cliente no encontrado',
-            'CLIENTE_NO_ENCONTRADO',
-          );
-        }
-
-        if (!moneda) {
-          throw DomainError.notFound(
-            'Moneda no encontrada',
-            'MONEDA_NO_ENCONTRADA',
-          );
-        }
-
-        if (!frecuenciaPago) {
-          throw DomainError.notFound(
-            'Frecuencia de pago no encontrada',
-            'FRECUENCIA_NO_ENCONTRADA',
-          );
-        }
-
-        if (!estadoPendiente || !tipoDesembolso) {
-          throw DomainError.notFound(
-            'Faltan catalogos base para modificar el credito',
-            'CATALOGO_CREDITO_INCOMPLETO',
-          );
-        }
-
-        const ruta = dto.rutaId
-          ? await tx.ruta.findUnique({
-              where: { rutaId: dto.rutaId },
-              include: { estadoRuta: true },
-            })
-          : await tx.ruta.findUnique({
-              where: { rutaId: credito.rutaId },
-              include: { estadoRuta: true },
-            });
-
-        if (!ruta) {
-          throw DomainError.notFound(
-            'Ruta no encontrada',
-            'RUTA_NO_ENCONTRADA',
-          );
-        }
-
-        this.asegurarResponsableRuta(ruta.responsableUsuarioId, usuario);
-
-        if (ruta.estadoRuta.codigo !== 'ABIERTA') {
-          throw DomainError.conflict(
-            'La ruta no esta abierta para modificar creditos',
-            'RUTA_NO_ABIERTA',
-          );
-        }
-
-        const cajaMenorId =
-          dto.cajaMenorId ??
-          credito.desembolso?.cajaMenorMovimiento?.cajaMenorId;
-
-        if (!cajaMenorId) {
-          throw DomainError.validation(
-            'No se puede modificar credito sin caja menor',
-            'CREDITO_REQUIERE_CAJA_MENOR',
-          );
-        }
-
-        const caja = await tx.cajaMenor.findUnique({
-          where: { cajaMenorId },
-        });
-
-        if (!caja) {
-          throw DomainError.notFound(
-            'Caja menor no encontrada',
-            'CAJA_MENOR_NO_ENCONTRADA',
-          );
-        }
-
-        if (!caja.activa) {
-          throw DomainError.conflict(
-            'La caja menor no esta activa',
-            'CAJA_MENOR_INACTIVA',
-          );
-        }
-
-        if (caja.responsableUsuarioId !== ruta.responsableUsuarioId) {
-          throw DomainError.conflict(
-            'La caja menor no pertenece al responsable de la ruta',
-            'CAJA_MENOR_RUTA_RESPONSABLE_DIFERENTE',
-          );
-        }
-
-        if (caja.monedaCodigo !== moneda.codigoMoneda) {
-          throw DomainError.conflict(
-            'La moneda de la caja menor no coincide con el credito',
-            'CAJA_MENOR_MONEDA_DIFERENTE',
-          );
-        }
-
-        const omitirDomingos = dto.omitirDomingos ?? credito.omitirDomingos;
-        const valorPrincipalActual = redondear(
-          this.decimalANumero(credito.valorPrincipal),
-        );
-        const cambiaValorPrincipal = valorPrincipalActual !== valorPrincipal;
-        const cambiaCondicionesFinancieras =
-          moneda.codigoMoneda !== credito.monedaCodigo ||
-          frecuenciaPago.frecuenciaPagoId !== credito.frecuenciaPagoId ||
-          this.fechaIso(fechaInicio) !== this.fechaIso(credito.fechaInicio) ||
-          cambiaValorPrincipal ||
-          redondear(this.decimalANumero(credito.porcentajeInteres), 4) !==
-            porcentajeInteres ||
-          dto.plazoDias !== credito.plazoDias ||
-          omitirDomingos !== credito.omitirDomingos;
-
-        if (tienePagosAplicados && cambiaCondicionesFinancieras) {
-          throw DomainError.conflict(
-            'No se pueden modificar valor, interes, plazo, frecuencia, moneda, fecha u omitir domingos en un credito con pagos registrados',
-            'CREDITO_CON_PAGOS_CAMPOS_FINANCIEROS_NO_EDITABLES',
-          );
-        }
-
-        const plan = tienePagosAplicados
-          ? null
-          : calcularPlan({
-              fechaInicio,
-              valorPrincipal,
-              porcentajeInteres,
-              plazoDias: dto.plazoDias,
-              diasIntervalo: frecuenciaPago.diasIntervalo,
-              omitirDomingos,
-              decimales: moneda.decimales,
-            });
-
-        const movimientoAnterior = credito.desembolso?.cajaMenorMovimiento;
-        let cajaMenorMovimientoId = movimientoAnterior?.cajaMenorMovimientoId;
-
-        if (movimientoAnterior) {
-          const movimientoActualizado = await tx.cajaMenorMovimiento.update({
-            where: {
-              cajaMenorMovimientoId: movimientoAnterior.cajaMenorMovimientoId,
-            },
-            data: {
-              cajaMenorId: caja.cajaMenorId,
-              tipoMovimientoCajaId: tipoDesembolso.tipoMovimientoCajaId,
-              usuarioId: usuario.usuarioId,
-              fechaMovimiento: fechaInicio,
-              monto: this.decimal(valorPrincipal),
-              motivo: `Desembolso de credito para ${cliente.nombreCompleto}`,
-              referenciaTabla: 'credito_desembolso',
-              referenciaId: creditoId,
-            },
-          });
-          cajaMenorMovimientoId = movimientoActualizado.cajaMenorMovimientoId;
-        } else {
-          await this.asegurarSalidaCajaConPresupuesto(
-            tx,
-            caja.cajaMenorId,
-            valorPrincipal,
-            'La modificacion deja la caja menor sin presupuesto disponible',
-            'CAJA_MENOR_SALDO_INSUFICIENTE',
-          );
-
-          const movimientoCreado = await tx.cajaMenorMovimiento.create({
-            data: {
-              cajaMenorId: caja.cajaMenorId,
-              tipoMovimientoCajaId: tipoDesembolso.tipoMovimientoCajaId,
-              usuarioId: usuario.usuarioId,
-              fechaMovimiento: fechaInicio,
-              monto: this.decimal(valorPrincipal),
-              motivo: `Desembolso de credito para ${cliente.nombreCompleto}`,
-              referenciaTabla: 'credito_desembolso',
-              referenciaId: creditoId,
-            },
-          });
-          cajaMenorMovimientoId = movimientoCreado.cajaMenorMovimientoId;
-        }
-
-        if (credito.desembolso) {
-          await tx.creditoDesembolso.update({
-            where: {
-              creditoDesembolsoId: credito.desembolso.creditoDesembolsoId,
-            },
-            data: {
-              cajaMenorMovimientoId,
-              fechaDesembolso: fechaInicio,
-              monto: this.decimal(valorPrincipal),
-            },
-          });
-        } else if (cajaMenorMovimientoId) {
-          await tx.creditoDesembolso.create({
-            data: {
-              creditoId,
-              cajaMenorMovimientoId,
-              fechaDesembolso: fechaInicio,
-              monto: this.decimal(valorPrincipal),
-            },
-          });
-        }
-
-        await tx.credito.update({
-          where: { creditoId },
-          data: {
-            clienteId: cliente.clienteId,
-            rutaId: ruta.rutaId,
-            monedaCodigo: moneda.codigoMoneda,
-            frecuenciaPagoId: frecuenciaPago.frecuenciaPagoId,
-            fechaInicio,
-            valorPrincipal: this.decimal(valorPrincipal),
-            porcentajeInteres: this.decimal(porcentajeInteres, 4),
-            plazoDias: dto.plazoDias,
-            omitirDomingos,
-            observacion: this.normalizarTextoOpcional(dto.observacion),
-          },
-        });
-
-        if (plan) {
-          await tx.creditoPlanPago.update({
-            where: { creditoPlanPagoId: credito.planPago.creditoPlanPagoId },
-            data: {
-              numeroCuotas: plan.numeroCuotas,
-              valorCuota: this.decimal(plan.valorCuota),
-              valorTotal: this.decimal(plan.valorTotal),
-              fechaMaxima: plan.fechaMaxima,
-              domingosOmitidos: plan.domingosOmitidos,
-            },
-          });
-
-          await tx.creditoCuota.deleteMany({
-            where: {
-              creditoPlanPagoId: credito.planPago.creditoPlanPagoId,
-            },
-          });
-
-          await tx.creditoCuota.createMany({
-            data: plan.cuotas.map((cuota) => ({
-              creditoPlanPagoId: credito.planPago!.creditoPlanPagoId,
-              estadoCuotaId: estadoPendiente.estadoCuotaId,
-              numeroCuota: cuota.numeroCuota,
-              fechaVencimiento: cuota.fechaVencimiento,
-              valorCapital: this.decimal(cuota.valorCapital),
-              valorInteres: this.decimal(cuota.valorInteres),
-            })),
-          });
-        }
-
-        await this.asegurarClienteEnRuta(tx, ruta.rutaId, cliente.clienteId);
-        return creditoId;
-      },
-      { maxWait: 10_000, timeout: 20_000 },
+    return this.actualizarCreditoTbl(
+      creditoId,
+      dto,
+      usuario,
+      fechaInicio,
+      valorPrincipal,
+      porcentajeInteres,
     );
-
-    this.invalidarCacheLecturas();
-    return this.obtenerCredito(creditoActualizadoId, usuario);
   }
 
   async eliminarCredito(creditoId: string, usuario: AuthenticatedUser) {
     this.asegurarPermiso(usuario, 'ELIMINAR_CREDITOS');
-
-    await this.prisma.$transaction(
-      async (tx) => {
-        await tx.$queryRaw(Prisma.sql`
-          SELECT credito_id
-          FROM public.credito
-          WHERE credito_id = ${creditoId}::uuid
-          FOR UPDATE
-        `);
-
-        const credito = await tx.credito.findUnique({
-          where: { creditoId },
-          include: {
-            cliente: true,
-            planPago: true,
-            desembolso: {
-              include: {
-                cajaMenorMovimiento: true,
-              },
-            },
-          },
-        });
-
-        if (!credito) {
-          throw DomainError.notFound(
-            'Credito no encontrado',
-            'CREDITO_NO_ENCONTRADO',
-          );
-        }
-
-        const pagosAplicados = await tx.pagoAplicacion.count({
-          where: { creditoCuota: { planPago: { creditoId } } },
-        });
-
-        if (pagosAplicados > 0) {
-          throw DomainError.conflict(
-            'No se puede eliminar un credito con pagos registrados',
-            'CREDITO_CON_PAGOS_NO_ELIMINABLE',
-          );
-        }
-
-        const movimiento = credito.desembolso?.cajaMenorMovimiento;
-
-        if (credito.desembolso) {
-          await tx.creditoDesembolso.delete({
-            where: {
-              creditoDesembolsoId: credito.desembolso.creditoDesembolsoId,
-            },
-          });
-        }
-
-        await tx.credito.delete({ where: { creditoId } });
-
-        if (movimiento) {
-          await tx.cajaMenorMovimiento.delete({
-            where: { cajaMenorMovimientoId: movimiento.cajaMenorMovimientoId },
-          });
-        }
-      },
-      { maxWait: 10_000, timeout: 20_000 },
-    );
-
-    this.invalidarCacheLecturas();
-    return { ok: true };
+    return this.eliminarCreditoTbl(creditoId, usuario);
   }
 
   async refinanciarCredito(
@@ -1982,45 +1031,94 @@ export class CreditosService {
     const valorNuevo = redondear(dto.valorPrincipal);
     const porcentajeInteres = redondear(dto.porcentajeInteres, 4);
 
+    return this.refinanciarCreditoTbl(
+      creditoId,
+      dto,
+      usuario,
+      fechaInicio,
+      valorNuevo,
+      porcentajeInteres,
+    );
+  }
+
+  private async refinanciarCreditoTbl(
+    creditoId: string,
+    dto: RefinanciarCreditoDto,
+    usuario: AuthenticatedUser,
+    fechaInicio: Date,
+    valorNuevo: number,
+    porcentajeInteres: number,
+  ) {
     const creditoRefinanciadoId = await this.prisma.$transaction(
       async (tx) => {
-        await tx.$queryRaw(Prisma.sql`
-          SELECT credito_id
-          FROM public.credito
-          WHERE credito_id = ${creditoId}::uuid
-          FOR UPDATE
+        const orgScope = await this.tenantScope.obtenerScopeOrganizacionTbl(
+          usuario,
+          tx,
+        );
+        const scope = {
+          usuario_id: orgScope.usuarioId,
+          org_id: orgScope.organizacionId,
+        };
+
+        const [credito] = await tx.$queryRaw<
+          Array<{
+            id: string;
+            cliente_id: string;
+            valor_principal: Prisma.Decimal;
+            tasa_interes: Prisma.Decimal;
+            total_pagar: Prisma.Decimal;
+            estado: string;
+            mon_id: string;
+            usu_id: string;
+            pcr_id: string;
+            moneda_codigo: string;
+            decimales: number | bigint;
+            org_id: string;
+            cliente_nombre: string;
+            ruta_id: string | null;
+          }>
+        >(Prisma.sql`
+          SELECT
+            cr.id_cre::text AS id,
+            cr.cli_id::text AS cliente_id,
+            cr.cre_total AS valor_principal,
+            cr.cre_tasa_interes AS tasa_interes,
+            cr.cre_total_pagar AS total_pagar,
+            UPPER(cr.cre_estado::text) AS estado,
+            cr.mon_id::text AS mon_id,
+            cr.usu_id::text AS usu_id,
+            cr.pcr_id::text AS pcr_id,
+            mon.mon_codigo::text AS moneda_codigo,
+            mon.mon_decimales AS decimales,
+            cl.org_id::text AS org_id,
+            TRIM(CONCAT_WS(' ', p.per_primer_nombre, p.per_apellido)) AS cliente_nombre,
+            ruta_credito.ruta_id::text AS ruta_id
+          FROM public.tbl_creditos cr
+          JOIN public.tbl_clientes cl ON cl.id_cli = cr.cli_id
+          JOIN public.tbl_personas p ON p.id_per = cl.cli_persona
+          JOIN public.tbl_monedas mon ON mon.id_mon = cr.mon_id
+          LEFT JOIN LATERAL (
+            SELECT r.id_rut AS ruta_id
+            FROM public.tbl_rutas_clientes rc
+            JOIN public.tbl_rutas r ON r.id_rut = rc.rut_id
+            WHERE rc.cli_id = cl.id_cli
+              AND r.org_id = cl.org_id
+            ORDER BY (r.usu_id = cr.usu_id) DESC, r.rut_activa DESC
+            LIMIT 1
+          ) ruta_credito ON TRUE
+          WHERE cr.id_cre = ${creditoId}::uuid
+            AND cl.org_id = ${scope.org_id}::uuid
+          FOR UPDATE OF cr
         `);
 
-        const credito = await tx.credito.findUnique({
-          where: { creditoId },
-          include: {
-            cliente: true,
-            ruta: true,
-            moneda: true,
-            frecuenciaPago: true,
-            estadoCredito: true,
-            planPago: {
-              include: {
-                cuotas: {
-                  include: { estadoCuota: true },
-                  orderBy: { numeroCuota: 'asc' },
-                },
-              },
-            },
-            desembolso: true,
-          },
-        });
-
-        if (!credito || !credito.planPago) {
+        if (!credito) {
           throw DomainError.notFound(
             'Credito no encontrado',
             'CREDITO_NO_ENCONTRADO',
           );
         }
 
-        this.asegurarAccesoCredito(credito, usuario);
-
-        if (['PAGADO', 'ANULADO'].includes(credito.estadoCredito.codigo)) {
+        if (['PAGADO', 'ANULADO'].includes(credito.estado)) {
           throw DomainError.conflict(
             'Solo se pueden refinanciar creditos activos',
             'CREDITO_NO_ACTIVO',
@@ -2029,7 +1127,7 @@ export class CreditosService {
 
         if (
           dto.monedaCodigo &&
-          dto.monedaCodigo.trim().toUpperCase() !== credito.monedaCodigo
+          dto.monedaCodigo.trim().toUpperCase() !== credito.moneda_codigo
         ) {
           throw DomainError.conflict(
             'La refinanciacion debe conservar la moneda del credito',
@@ -2037,7 +1135,7 @@ export class CreditosService {
           );
         }
 
-        const valorAnterior = this.decimalANumero(credito.valorPrincipal);
+        const valorAnterior = this.decimalANumero(credito.valor_principal);
         if (valorNuevo <= valorAnterior) {
           throw DomainError.validation(
             'El nuevo valor debe ser mayor al valor actual del credito',
@@ -2045,182 +1143,296 @@ export class CreditosService {
           );
         }
 
-        const incremento = redondear(
-          valorNuevo - valorAnterior,
-          credito.moneda.decimales,
+        const decimales = Number(credito.decimales ?? 2);
+        const incremento = redondear(valorNuevo - valorAnterior, decimales);
+
+        const frecuenciaMap: Record<number, string> = {
+          1: 'DIARIO',
+          2: 'SEMANAL',
+          3: 'QUINCENAL',
+          4: 'MENSUAL',
+        };
+        const frecuenciaCodigo =
+          frecuenciaMap[Number(dto.frecuenciaPagoId)] ?? 'DIARIO';
+
+        const [producto] = await tx.$queryRaw<
+          Array<{ id: string; dias_intervalo: number }>
+        >(Prisma.sql`
+          SELECT
+            pc.id_pcr::text AS id,
+            CASE pc.pcr_frecuencia::text
+              WHEN 'SEMANAL' THEN 7
+              WHEN 'QUINCENAL' THEN 15
+              WHEN 'MENSUAL' THEN 30
+              ELSE 1
+            END AS dias_intervalo
+          FROM public.tbl_productos_creditos pc
+          WHERE pc.pcr_frecuencia::text = ${frecuenciaCodigo}
+             OR pc.id_pcr::text = ${String(dto.frecuenciaPagoId)}
+          ORDER BY (pc.pcr_frecuencia::text = ${frecuenciaCodigo}) DESC
+          LIMIT 1
+        `);
+
+        if (!producto) {
+          throw DomainError.notFound(
+            'Frecuencia de pago no encontrada',
+            'FRECUENCIA_NO_ENCONTRADA',
+          );
+        }
+
+        const [caja] = await tx.$queryRaw<
+          Array<{ id: string; nombre: string; sesion_id: string | null }>
+        >(Prisma.sql`
+          SELECT
+            c.id_caj::text AS id,
+            c.caj_nombre AS nombre,
+            sc.id_sca::text AS sesion_id
+          FROM public.tbl_cajas c
+          LEFT JOIN LATERAL (
+            SELECT sca.id_sca
+            FROM public.tbl_sesiones_cajas sca
+            WHERE sca.caj_id = c.id_caj
+              AND sca.sca_estado::text = 'ABIERTA'
+            ORDER BY sca.sca_fecha_apertura DESC, sca.id_sca DESC
+            LIMIT 1
+          ) sc ON TRUE
+          WHERE c.id_caj = ${dto.cajaMenorId}::uuid
+            AND c.org_id = ${credito.org_id}::uuid
+            AND c.mon_id = ${credito.mon_id}::uuid
+            AND c.caj_tipo::text = 'MENOR'
+            AND c.caj_activa
+          LIMIT 1
+        `);
+
+        if (!caja) {
+          throw DomainError.notFound(
+            'Caja menor no encontrada o no coincide con la moneda',
+            'CAJA_MENOR_NO_ENCONTRADA',
+          );
+        }
+
+        const [presupuesto] = await tx.$queryRaw<
+          Array<{ presupuesto: Prisma.Decimal }>
+        >(
+          Prisma.sql`
+            SELECT presupuesto
+            FROM public.vista_presupuesto_actual
+            WHERE caja_menor_id::text = ${caja.id}
+            LIMIT 1
+          `,
         );
 
-        const [frecuenciaPago, estadoPendiente, estadoAnulada, rutaDestino] =
-          await Promise.all([
-            tx.frecuenciaPago.findUnique({
-              where: { frecuenciaPagoId: dto.frecuenciaPagoId },
-            }),
-            tx.estadoCuota.findUnique({ where: { codigo: 'PENDIENTE' } }),
-            tx.estadoCuota.findUnique({ where: { codigo: 'ANULADA' } }),
-            dto.rutaId
-              ? tx.ruta.findUnique({
-                  where: { rutaId: dto.rutaId },
-                  include: { estadoRuta: true },
-                })
-              : tx.ruta.findUnique({
-                  where: { rutaId: credito.rutaId },
-                  include: { estadoRuta: true },
-                }),
-          ]);
-
-        if (!frecuenciaPago || !estadoPendiente || !estadoAnulada) {
-          throw DomainError.notFound(
-            'Faltan catalogos base para refinanciar el credito',
-            'CATALOGO_CREDITO_INCOMPLETO',
-          );
-        }
-
-        if (!rutaDestino) {
-          throw DomainError.notFound(
-            'Ruta no encontrada',
-            'RUTA_NO_ENCONTRADA',
-          );
-        }
-
-        this.asegurarResponsableRuta(rutaDestino.responsableUsuarioId, usuario);
-
-        if (rutaDestino.estadoRuta.codigo !== 'ABIERTA') {
+        if (
+          this.decimalANumero(presupuesto?.presupuesto ?? null) < incremento
+        ) {
           throw DomainError.conflict(
-            'La ruta no esta abierta para refinanciar creditos',
-            'RUTA_NO_ABIERTA',
+            'No se puede refinanciar credito sin saldo suficiente en caja menor',
+            'CAJA_MENOR_SALDO_INSUFICIENTE',
           );
         }
 
-        const cuotaIds = credito.planPago.cuotas.map(
-          (cuota) => cuota.creditoCuotaId,
+        const rutaId = await this.obtenerOCrearRutaCreditoTbl(
+          tx,
+          dto.rutaId ?? credito.ruta_id ?? undefined,
+          credito.org_id,
+          scope.usuario_id,
+          usuario.usuario,
         );
-        const sumas =
-          cuotaIds.length === 0
-            ? []
-            : await tx.pagoAplicacion.groupBy({
-                by: ['creditoCuotaId'],
-                where: { creditoCuotaId: { in: cuotaIds } },
-                _sum: {
-                  montoCapital: true,
-                  montoInteres: true,
-                  montoMora: true,
-                  montoDescuento: true,
-                },
-              });
-        const sumasPorCuota = new Map<string, SumaAplicaciones>();
-        let capitalAbonado = 0;
-        let interesAbonado = 0;
 
-        for (const suma of sumas) {
-          const item: SumaAplicaciones = { _sum: suma._sum };
-          sumasPorCuota.set(suma.creditoCuotaId, item);
-          capitalAbonado += this.decimalANumero(suma._sum.montoCapital);
-          interesAbonado += this.decimalANumero(suma._sum.montoInteres);
-          interesAbonado += this.decimalANumero(suma._sum.montoMora);
-          interesAbonado -= this.decimalANumero(suma._sum.montoDescuento);
+        const cuotasExistentes = await tx.$queryRaw<
+          Array<{
+            id: string;
+            numero: number | bigint;
+            valor: Prisma.Decimal;
+            total_pagado: Prisma.Decimal;
+            estado: string;
+          }>
+        >(Prisma.sql`
+          SELECT
+            cu.id_cuo::text AS id,
+            cu.cuo_numero::int AS numero,
+            cu.cuo_valor AS valor,
+            cu.cuo_total_pagado AS total_pagado,
+            UPPER(cu.cuo_estado::text) AS estado
+          FROM public.tbl_cuotas cu
+          WHERE cu.cre_id = ${creditoId}::uuid
+          ORDER BY cu.cuo_numero ASC
+        `);
+
+        const [abonosRow] = await tx.$queryRaw<
+          Array<{ capital_abonado: Prisma.Decimal; interes_abonado: Prisma.Decimal }>
+        >(Prisma.sql`
+          SELECT
+            COALESCE(SUM(cp.cpa_capital), 0) AS capital_abonado,
+            COALESCE(SUM(cp.cpa_interes), 0) AS interes_abonado
+          FROM public.tbl_cuotas cu
+          JOIN public.tbl_cuotas_pagos cp ON cp.cuo_id = cu.id_cuo
+          WHERE cu.cre_id = ${creditoId}::uuid
+        `);
+
+        let capitalAbonado = this.decimalANumero(abonosRow?.capital_abonado);
+        let interesAbonado = this.decimalANumero(abonosRow?.interes_abonado);
+
+        const totalAbonado = cuotasExistentes.reduce(
+          (acc, c) => acc + this.decimalANumero(c.total_pagado),
+          0,
+        );
+
+        if (capitalAbonado === 0 && interesAbonado === 0 && totalAbonado > 0) {
+          capitalAbonado = totalAbonado;
         }
 
-        const cuotasPagadas = credito.planPago.cuotas.filter((cuota) => {
-          if (cuota.estadoCuota.codigo === 'PAGADA') {
-            return true;
-          }
+        const ultimoNumeroCuota = cuotasExistentes.reduce(
+          (max, c) => Math.max(max, Number(c.numero)),
+          0,
+        );
 
-          const sumasCuota =
-            sumasPorCuota.get(cuota.creditoCuotaId) ??
-            this.sumasAplicacionesVacias();
-          return this.saldoCuota(cuota, sumasCuota) <= 0;
-        });
         const totalNuevo = redondear(
           valorNuevo + valorNuevo * (porcentajeInteres / 100),
-          credito.moneda.decimales,
+          decimales,
         );
-        const interesNuevo = redondear(
-          totalNuevo - valorNuevo,
-          credito.moneda.decimales,
-        );
+        const interesNuevo = redondear(totalNuevo - valorNuevo, decimales);
         const capitalPendiente = redondear(
           Math.max(0, valorNuevo - capitalAbonado),
-          credito.moneda.decimales,
+          decimales,
         );
         const interesPendiente = redondear(
           Math.max(0, interesNuevo - interesAbonado),
-          credito.moneda.decimales,
+          decimales,
         );
+
         const planPendiente = calcularPlanPendiente({
           fechaInicio,
           valorCapital: capitalPendiente,
           valorInteres: interesPendiente,
           plazoDias: dto.plazoDias,
-          diasIntervalo: frecuenciaPago.diasIntervalo,
-          omitirDomingos: dto.omitirDomingos ?? credito.omitirDomingos,
-          decimales: credito.moneda.decimales,
+          diasIntervalo: Number(producto.dias_intervalo),
+          omitirDomingos: dto.omitirDomingos ?? true,
+          decimales,
         });
 
-        await this.registrarRefinanciacionCaja(
-          tx,
-          {
-            cajaMenorId: dto.cajaMenorId,
-            monedaCodigo: credito.monedaCodigo,
-          },
-          rutaDestino,
-          usuario,
-          incremento,
-          fechaInicio,
-          credito.cliente.nombreCompleto,
-          credito.creditoId,
-        );
+        // Marcar cuotas pendientes anteriores como ANULADA
+        await tx.$executeRaw(Prisma.sql`
+          UPDATE public.tbl_cuotas
+          SET cuo_estado = 'ANULADA'::public.cuota_estado_enum
+          WHERE cre_id = ${creditoId}::uuid
+            AND UPPER(cuo_estado::text) != 'PAGADA'
+            AND cuo_total_pagado < cuo_valor
+        `);
 
-        await tx.creditoCuota.updateMany({
-          where: {
-            creditoPlanPagoId: credito.planPago.creditoPlanPagoId,
-            estadoCuota: { codigo: { not: 'PAGADA' } },
-          },
-          data: { estadoCuotaId: estadoAnulada.estadoCuotaId },
-        });
+        // Insertar nuevas cuotas del plan refinanciado
+        for (let i = 0; i < planPendiente.cuotas.length; i++) {
+          const cuota = planPendiente.cuotas[i];
+          await tx.$executeRaw(Prisma.sql`
+            INSERT INTO public.tbl_cuotas (
+              cuo_numero,
+              cuo_valor,
+              cuo_total_pagado,
+              cuo_estado,
+              cuo_fecha_vencimiento,
+              cre_id
+            )
+            VALUES (
+              ${ultimoNumeroCuota + i + 1},
+              ${this.decimal(cuota.valorCapital + cuota.valorInteres, decimales)},
+              0,
+              'PENDIENTE'::public.cuota_estado_enum,
+              ${cuota.fechaVencimiento}::date,
+              ${creditoId}::uuid
+            )
+          `);
+        }
 
-        const ultimoNumeroCuota = credito.planPago.cuotas.reduce(
-          (maximo, cuota) => Math.max(maximo, cuota.numeroCuota),
-          0,
-        );
+        // Actualizar datos del crédito en tbl_creditos
+        await tx.$executeRaw(Prisma.sql`
+          UPDATE public.tbl_creditos
+          SET
+            cre_total = ${this.decimal(valorNuevo, decimales)},
+            cre_tasa_interes = ${this.decimal(porcentajeInteres, 4)},
+            cre_interes_total = ${this.decimal(interesNuevo, decimales)},
+            cre_total_pagar = ${this.decimal(totalNuevo, decimales)},
+            cre_fecha_inicio = ${fechaInicio}::date,
+            cre_fecha_fin = ${planPendiente.fechaMaxima}::date,
+            pcr_id = ${producto.id}::uuid,
+            cre_estado = 'ACTIVO'::public.credito_estado_enum
+          WHERE id_cre = ${creditoId}::uuid
+        `);
 
-        await tx.creditoCuota.createMany({
-          data: planPendiente.cuotas.map((cuota, index) => ({
-            creditoPlanPagoId: credito.planPago!.creditoPlanPagoId,
-            estadoCuotaId: estadoPendiente.estadoCuotaId,
-            numeroCuota: ultimoNumeroCuota + index + 1,
-            fechaVencimiento: cuota.fechaVencimiento,
-            valorCapital: this.decimal(cuota.valorCapital),
-            valorInteres: this.decimal(cuota.valorInteres),
-          })),
-        });
+        // Asegurar asignación a ruta
+        await tx.$executeRaw(Prisma.sql`
+          INSERT INTO public.tbl_rutas_clientes (rut_id, cli_id)
+          VALUES (${rutaId}::uuid, ${credito.cliente_id}::uuid)
+          ON CONFLICT (rut_id, cli_id) DO UPDATE
+          SET rcl_activo = TRUE
+        `);
 
-        await tx.credito.update({
-          where: { creditoId },
-          data: {
-            rutaId: rutaDestino.rutaId,
-            frecuenciaPagoId: frecuenciaPago.frecuenciaPagoId,
-            fechaInicio,
-            valorPrincipal: this.decimal(valorNuevo),
-            porcentajeInteres: this.decimal(porcentajeInteres, 4),
-            plazoDias: dto.plazoDias,
-            omitirDomingos: dto.omitirDomingos ?? credito.omitirDomingos,
-            observacion: this.normalizarTextoOpcional(dto.observacion),
-            refinanciadoEn: new Date(),
-            valorPrincipalAnterior: this.decimal(valorAnterior),
-            valorPrincipalRefinanciado: this.decimal(valorNuevo),
-          },
-        });
+        // Obtener o abrir sesión de caja menor
+        const sesionId =
+          caja.sesion_id ??
+          (
+            await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+              INSERT INTO public.tbl_sesiones_cajas (
+                sca_fecha_apertura,
+                sca_monto_inicial,
+                caj_id,
+                usu_id
+              )
+              VALUES (
+                ${fechaInicio},
+                0,
+                ${caja.id}::uuid,
+                ${scope.usuario_id}::uuid
+              )
+              RETURNING id_sca::text AS id
+            `)
+          )[0]?.id;
 
-        await tx.creditoPlanPago.update({
-          where: { creditoPlanPagoId: credito.planPago.creditoPlanPagoId },
-          data: {
-            numeroCuotas: cuotasPagadas.length + planPendiente.numeroCuotas,
-            valorCuota: this.decimal(planPendiente.valorCuota),
-            valorTotal: this.decimal(totalNuevo),
-            fechaMaxima: planPendiente.fechaMaxima,
-            domingosOmitidos: planPendiente.domingosOmitidos,
-          },
-        });
+        if (!sesionId) {
+          throw DomainError.conflict(
+            'No se pudo abrir la sesion de caja menor',
+            'SESION_CAJA_NO_CREADA',
+          );
+        }
+
+        // Registrar movimiento de desembolso por el incremento en caja menor
+        if (this.cajaMenorService) {
+          await this.cajaMenorService.registrarMovimientoDesembolsoTbl(tx, {
+            monto: incremento,
+            creditoId,
+            fecha: new Date(),
+            organizacionId: credito.org_id,
+            usuarioId: scope.usuario_id,
+            sesionId,
+          });
+        } else {
+          await tx.$executeRaw(Prisma.sql`
+            INSERT INTO public.tbl_movimientos_cajas (
+              mca_tipo,
+              mca_monto,
+              mca_referencia_id,
+              mca_referencia_tipo,
+              mca_creacion,
+              org_id,
+              usu_id,
+              sca_id
+            )
+            VALUES (
+              'DESEMBOLSO_CREDITO'::public.movimiento_caja_tipo_enum,
+              ${this.decimal(incremento, decimales)},
+              ${creditoId}::uuid,
+              'CREDITO'::public.movimiento_referencia_tipo_enum,
+              ${new Date()},
+              ${credito.org_id}::uuid,
+              ${scope.usuario_id}::uuid,
+              ${sesionId}::uuid
+            )
+          `);
+          await tx.$executeRaw(Prisma.sql`
+            UPDATE public.tbl_sesiones_cajas
+            SET sca_total_gasto = sca_total_gasto + ${this.decimal(incremento, decimales)}
+            WHERE id_sca = ${sesionId}::uuid
+          `);
+        }
 
         return creditoId;
       },
@@ -2228,7 +1440,337 @@ export class CreditosService {
     );
 
     this.invalidarCacheLecturas();
-    return this.obtenerCredito(creditoRefinanciadoId, usuario);
+    return this.obtenerCreditoTbl(creditoRefinanciadoId, usuario);
+  }
+
+  private async actualizarCreditoTbl(
+    creditoId: string,
+    dto: ActualizarCreditoDto,
+    usuario: AuthenticatedUser,
+    fechaInicio: Date,
+    valorPrincipal: number,
+    porcentajeInteres: number,
+  ) {
+    const creditoActualizadoId = await this.prisma.$transaction(
+      async (tx) => {
+        const orgScope = await this.tenantScope.obtenerScopeOrganizacionTbl(
+          usuario,
+          tx,
+        );
+        const scope = {
+          usuario_id: orgScope.usuarioId,
+          org_id: orgScope.organizacionId,
+        };
+
+        const [credito] = await tx.$queryRaw<
+          Array<{
+            id: string;
+            cli_id: string;
+            mon_id: string;
+            org_id: string;
+            valor_principal: Prisma.Decimal;
+          }>
+        >(Prisma.sql`
+          SELECT
+            cr.id_cre::text AS id,
+            cr.cli_id::text AS cli_id,
+            cr.mon_id::text AS mon_id,
+            cl.org_id::text AS org_id,
+            cr.cre_total AS valor_principal
+          FROM public.tbl_creditos cr
+          JOIN public.tbl_clientes cl ON cl.id_cli = cr.cli_id
+          WHERE cr.id_cre = ${creditoId}::uuid
+            AND cl.org_id = ${scope.org_id}::uuid
+          FOR UPDATE OF cr
+        `);
+
+        if (!credito) {
+          throw DomainError.notFound(
+            'Credito no encontrado',
+            'CREDITO_NO_ENCONTRADO',
+          );
+        }
+
+        const [pagos] = await tx.$queryRaw<Array<{ count: number | bigint }>>(
+          Prisma.sql`
+            SELECT COUNT(cp.id_cpa) AS count
+            FROM public.tbl_cuotas cu
+            JOIN public.tbl_cuotas_pagos cp ON cp.cuo_id = cu.id_cuo
+            WHERE cu.cre_id = ${creditoId}::uuid
+          `,
+        );
+
+        if (Number(pagos?.count ?? 0) > 0) {
+          throw DomainError.conflict(
+            'No se puede modificar un credito con pagos registrados',
+            'CREDITO_CON_PAGOS_NO_MODIFICABLE',
+          );
+        }
+
+        const [cliente] = await tx.$queryRaw<
+          Array<{ id: string; org_id: string }>
+        >(Prisma.sql`
+          SELECT c.id_cli::text AS id, c.org_id::text AS org_id
+          FROM public.tbl_clientes c
+          WHERE c.id_cli = ${dto.clienteId}::uuid
+            AND c.cli_activo
+            AND c.org_id = ${scope.org_id}::uuid
+          LIMIT 1
+        `);
+
+        if (!cliente) {
+          throw DomainError.notFound(
+            'Cliente no encontrado',
+            'CLIENTE_NO_ENCONTRADO',
+          );
+        }
+
+        const [moneda] = await tx.$queryRaw<
+          Array<{ id: string; decimales: number | bigint }>
+        >(Prisma.sql`
+          SELECT id_mon::text AS id, mon_decimales AS decimales
+          FROM public.tbl_monedas
+          WHERE mon_activa
+            AND UPPER(TRIM(mon_codigo::text)) = ${dto.monedaCodigo}
+          LIMIT 1
+        `);
+
+        if (!moneda) {
+          throw DomainError.notFound(
+            'Moneda no encontrada',
+            'MONEDA_NO_ENCONTRADA',
+          );
+        }
+
+        const frecuenciaMap: Record<number, string> = {
+          1: 'DIARIO',
+          2: 'SEMANAL',
+          3: 'QUINCENAL',
+          4: 'MENSUAL',
+        };
+        const frecuenciaCodigo =
+          frecuenciaMap[Number(dto.frecuenciaPagoId)] ?? 'DIARIO';
+
+        const [producto] = await tx.$queryRaw<
+          Array<{ id: string; dias_intervalo: number }>
+        >(Prisma.sql`
+          SELECT
+            pc.id_pcr::text AS id,
+            CASE pc.pcr_frecuencia::text
+              WHEN 'SEMANAL' THEN 7
+              WHEN 'QUINCENAL' THEN 15
+              WHEN 'MENSUAL' THEN 30
+              ELSE 1
+            END AS dias_intervalo
+          FROM public.tbl_productos_creditos pc
+          WHERE pc.pcr_frecuencia::text = ${frecuenciaCodigo}
+             OR pc.id_pcr::text = ${String(dto.frecuenciaPagoId)}
+          ORDER BY (pc.pcr_frecuencia::text = ${frecuenciaCodigo}) DESC
+          LIMIT 1
+        `);
+
+        if (!producto) {
+          throw DomainError.notFound(
+            'Frecuencia de pago no encontrada',
+            'FRECUENCIA_NO_ENCONTRADA',
+          );
+        }
+
+        const rutaId = await this.obtenerOCrearRutaCreditoTbl(
+          tx,
+          dto.rutaId,
+          cliente.org_id,
+          scope.usuario_id,
+          usuario.usuario,
+        );
+
+        const decimales = Number(moneda.decimales);
+        const plan = calcularPlan({
+          fechaInicio,
+          valorPrincipal,
+          porcentajeInteres,
+          plazoDias: dto.plazoDias,
+          diasIntervalo: Number(producto.dias_intervalo),
+          omitirDomingos: dto.omitirDomingos ?? true,
+          decimales,
+        });
+        const interesTotal = redondear(
+          plan.valorTotal - valorPrincipal,
+          decimales,
+        );
+
+        await tx.$executeRaw(Prisma.sql`
+          UPDATE public.tbl_creditos
+          SET
+            cre_total = ${this.decimal(valorPrincipal, decimales)},
+            cre_tasa_interes = ${this.decimal(porcentajeInteres, 4)},
+            cre_interes_total = ${this.decimal(interesTotal, decimales)},
+            cre_total_pagar = ${this.decimal(plan.valorTotal, decimales)},
+            cre_fecha_inicio = ${fechaInicio}::date,
+            cre_fecha_fin = ${plan.fechaMaxima}::date,
+            cli_id = ${cliente.id}::uuid,
+            pcr_id = ${producto.id}::uuid,
+            mon_id = ${moneda.id}::uuid
+          WHERE id_cre = ${creditoId}::uuid
+        `);
+
+        await tx.$executeRaw(Prisma.sql`
+          DELETE FROM public.tbl_cuotas
+          WHERE cre_id = ${creditoId}::uuid
+        `);
+
+        for (const cuota of plan.cuotas) {
+          await tx.$executeRaw(Prisma.sql`
+            INSERT INTO public.tbl_cuotas (
+              cuo_numero,
+              cuo_valor,
+              cuo_total_pagado,
+              cuo_estado,
+              cuo_fecha_vencimiento,
+              cre_id
+            )
+            VALUES (
+              ${cuota.numeroCuota},
+              ${this.decimal(cuota.valorCapital + cuota.valorInteres, decimales)},
+              0,
+              'PENDIENTE'::public.cuota_estado_enum,
+              ${cuota.fechaVencimiento}::date,
+              ${creditoId}::uuid
+            )
+          `);
+        }
+
+        await tx.$executeRaw(Prisma.sql`
+          INSERT INTO public.tbl_rutas_clientes (rut_id, cli_id)
+          VALUES (${rutaId}::uuid, ${cliente.id}::uuid)
+          ON CONFLICT (rut_id, cli_id) DO UPDATE
+          SET rcl_activo = TRUE
+        `);
+
+        const [movimiento] = await tx.$queryRaw<
+          Array<{ id: string; monto: Prisma.Decimal; sca_id: string | null }>
+        >(Prisma.sql`
+          SELECT id_mca::text AS id, mca_monto AS monto, sca_id::text AS sca_id
+          FROM public.tbl_movimientos_cajas
+          WHERE mca_referencia_id = ${creditoId}::uuid
+            AND mca_referencia_tipo::text = 'CREDITO'
+            AND mca_tipo::text = 'DESEMBOLSO_CREDITO'
+          ORDER BY mca_creacion ASC
+          LIMIT 1
+        `);
+
+        if (movimiento) {
+          const montoAnterior = this.decimalANumero(movimiento.monto);
+          const diferencia = redondear(valorPrincipal - montoAnterior, decimales);
+          await tx.$executeRaw(Prisma.sql`
+            UPDATE public.tbl_movimientos_cajas
+            SET mca_monto = ${this.decimal(valorPrincipal, decimales)}
+            WHERE id_mca = ${movimiento.id}::uuid
+          `);
+          if (movimiento.sca_id && Math.abs(diferencia) > 0) {
+            await tx.$executeRaw(Prisma.sql`
+              UPDATE public.tbl_sesiones_cajas
+              SET sca_total_gasto = GREATEST(sca_total_gasto + ${this.decimal(diferencia, decimales)}, 0)
+              WHERE id_sca = ${movimiento.sca_id}::uuid
+            `);
+          }
+        }
+
+        return creditoId;
+      },
+      { maxWait: 10_000, timeout: 20_000 },
+    );
+
+    this.invalidarCacheLecturas();
+    return this.obtenerCreditoTbl(creditoActualizadoId, usuario);
+  }
+
+  private async eliminarCreditoTbl(
+    creditoId: string,
+    usuario: AuthenticatedUser,
+  ) {
+    await this.prisma.$transaction(
+      async (tx) => {
+        const orgScope = await this.tenantScope.obtenerScopeOrganizacionTbl(
+          usuario,
+          tx,
+        );
+
+        const [credito] = await tx.$queryRaw<
+          Array<{ id: string; org_id: string }>
+        >(Prisma.sql`
+          SELECT cr.id_cre::text AS id, cl.org_id::text AS org_id
+          FROM public.tbl_creditos cr
+          JOIN public.tbl_clientes cl ON cl.id_cli = cr.cli_id
+          WHERE cr.id_cre = ${creditoId}::uuid
+            AND cl.org_id = ${orgScope.organizacionId}::uuid
+          FOR UPDATE OF cr
+        `);
+
+        if (!credito) {
+          throw DomainError.notFound(
+            'Credito no encontrado',
+            'CREDITO_NO_ENCONTRADO',
+          );
+        }
+
+        const [pagos] = await tx.$queryRaw<Array<{ count: number | bigint }>>(
+          Prisma.sql`
+            SELECT COUNT(cp.id_cpa) AS count
+            FROM public.tbl_cuotas cu
+            JOIN public.tbl_cuotas_pagos cp ON cp.cuo_id = cu.id_cuo
+            WHERE cu.cre_id = ${creditoId}::uuid
+          `,
+        );
+
+        if (Number(pagos?.count ?? 0) > 0) {
+          throw DomainError.conflict(
+            'No se puede eliminar un credito con pagos registrados',
+            'CREDITO_CON_PAGOS_NO_ELIMINABLE',
+          );
+        }
+
+        const movimientos = await tx.$queryRaw<
+          Array<{ id: string; monto: Prisma.Decimal; sca_id: string | null }>
+        >(Prisma.sql`
+          SELECT
+            id_mca::text AS id,
+            mca_monto AS monto,
+            sca_id::text AS sca_id
+          FROM public.tbl_movimientos_cajas
+          WHERE mca_referencia_id = ${creditoId}::uuid
+            AND mca_referencia_tipo::text = 'CREDITO'
+        `);
+
+        for (const mov of movimientos) {
+          if (mov.sca_id) {
+            await tx.$executeRaw(Prisma.sql`
+              UPDATE public.tbl_sesiones_cajas
+              SET sca_total_gasto = GREATEST(sca_total_gasto - ${mov.monto}, 0)
+              WHERE id_sca = ${mov.sca_id}::uuid
+            `);
+          }
+          await tx.$executeRaw(Prisma.sql`
+            DELETE FROM public.tbl_movimientos_cajas
+            WHERE id_mca = ${mov.id}::uuid
+          `);
+        }
+
+        await tx.$executeRaw(Prisma.sql`
+          DELETE FROM public.tbl_cuotas
+          WHERE cre_id = ${creditoId}::uuid
+        `);
+
+        await tx.$executeRaw(Prisma.sql`
+          DELETE FROM public.tbl_creditos
+          WHERE id_cre = ${creditoId}::uuid
+        `);
+      },
+      { maxWait: 10_000, timeout: 20_000 },
+    );
+
+    this.invalidarCacheLecturas();
+    return { ok: true };
   }
 
   // ==========================================
@@ -2578,59 +2120,6 @@ export class CreditosService {
     );
   }
 
-  private asegurarResponsableRuta(
-    responsableUsuarioId: string,
-    usuario: AuthenticatedUser,
-  ) {
-    if (this.esAdministrador(usuario)) return;
-    if (responsableUsuarioId !== usuario.usuarioId) {
-      throw new ForbiddenException(
-        'No puedes gestionar operaciones sobre rutas de otro usuario',
-      );
-    }
-  }
-
-  private asegurarAccesoCredito(
-    credito: {
-      creadoPorUsuarioId?: string | null;
-      ruta?: { responsableUsuarioId: string };
-    },
-    usuario: AuthenticatedUser,
-  ) {
-    if (this.puedeVerDatosOrganizacion(usuario)) return;
-    if (
-      credito.creadoPorUsuarioId !== usuario.usuarioId &&
-      credito.ruta?.responsableUsuarioId !== usuario.usuarioId
-    ) {
-      throw new ForbiddenException('No tienes acceso a este credito');
-    }
-  }
-
-  private async validarAccesoCreditoPorId(
-    creditoId: string,
-    usuario: AuthenticatedUser,
-  ) {
-    const credito = await this.prisma.credito.findUnique({
-      where: { creditoId },
-      select: {
-        creadoPorUsuarioId: true,
-        ruta: {
-          select: {
-            responsableUsuarioId: true,
-          },
-        },
-      },
-    });
-
-    if (!credito) {
-      throw DomainError.notFound(
-        'Credito no encontrado',
-        'CREDITO_NO_ENCONTRADO',
-      );
-    }
-
-    this.asegurarAccesoCredito(credito, usuario);
-  }
 
   private async validarAccesoCreditoTbl(
     creditoId: string,
@@ -2663,44 +2152,6 @@ export class CreditosService {
     }
   }
 
-  private async resumenCredito(planPagoId: string) {
-    const rows = await this.prisma.$queryRaw<
-      Array<{ total_abonado: Prisma.Decimal; cuotas_restantes: number }>
-    >(Prisma.sql`
-      WITH abonos_cuota AS (
-        SELECT
-          cc.credito_cuota_id,
-          COALESCE(
-            SUM(
-              pa.monto_capital
-              + pa.monto_interes
-              + pa.monto_mora
-              - pa.monto_descuento
-            ),
-            0
-          ) AS abonado
-        FROM public.credito_cuota cc
-        JOIN public.pago_aplicacion pa ON pa.credito_cuota_id = cc.credito_cuota_id
-        WHERE cc.credito_plan_pago_id = ${planPagoId}::uuid
-        GROUP BY cc.credito_cuota_id
-      )
-      SELECT
-        COALESCE(SUM(ac.abonado), 0) AS total_abonado,
-        COUNT(*) FILTER (
-          WHERE ec.codigo NOT IN ('PAGADA', 'ANULADA')
-            AND (cc.valor_total - COALESCE(ac.abonado, 0)) > 0
-        )::int AS cuotas_restantes
-      FROM public.credito_cuota cc
-      JOIN public.estado_cuota ec ON ec.estado_cuota_id = cc.estado_cuota_id
-      LEFT JOIN abonos_cuota ac ON ac.credito_cuota_id = cc.credito_cuota_id
-      WHERE cc.credito_plan_pago_id = ${planPagoId}::uuid
-    `);
-
-    return {
-      totalAbonado: this.decimalANumero(rows[0]?.total_abonado),
-      cuotasRestantes: Number(rows[0]?.cuotas_restantes ?? 0),
-    };
-  }
 
   private formatearCreditoListado(row: CreditoListadoRow) {
     return {
@@ -2766,91 +2217,6 @@ export class CreditosService {
     }
   }
 
-  private nombreDesdeCodigo(codigo: string): string {
-    return codigo
-      .toLowerCase()
-      .split('_')
-      .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
-      .join(' ');
-  }
-
-  private async obtenerOCrearRutaCredito(
-    tx: Prisma.TransactionClient,
-    dto: CrearCreditoDto,
-    usuario: AuthenticatedUser,
-  ) {
-    if (dto.rutaId) {
-      const ruta = await tx.ruta.findUnique({
-        where: { rutaId: dto.rutaId },
-        include: { estadoRuta: true },
-      });
-
-      if (!ruta) {
-        throw DomainError.notFound('Ruta no encontrada', 'RUTA_NO_ENCONTRADA');
-      }
-
-      this.asegurarResponsableRuta(ruta.responsableUsuarioId, usuario);
-
-      if (ruta.estadoRuta.codigo !== 'ABIERTA') {
-        throw DomainError.conflict(
-          'La ruta no esta abierta para nuevos creditos',
-          'RUTA_NO_ABIERTA',
-        );
-      }
-
-      return ruta;
-    }
-
-    const estadoAbierta = await tx.estadoRuta.findUnique({
-      where: { codigo: 'ABIERTA' },
-    });
-
-    if (!estadoAbierta) {
-      throw DomainError.notFound(
-        'No existe el estado de ruta ABIERTA en los catalogos',
-        'ESTADO_RUTA_ABIERTA_NO_EXISTE',
-      );
-    }
-
-    const rutaAbierta = await tx.ruta.findFirst({
-      where: {
-        responsableUsuarioId: usuario.usuarioId,
-        estadoRutaId: estadoAbierta.estadoRutaId,
-      },
-      include: { estadoRuta: true },
-      orderBy: [{ esPrincipal: 'desc' }, { creadoEn: 'asc' }],
-    });
-
-    if (rutaAbierta) {
-      return rutaAbierta;
-    }
-
-    const rutasResponsable = await tx.ruta.findMany({
-      where: { responsableUsuarioId: usuario.usuarioId },
-      select: { nombre: true },
-    });
-    const nombresExistentes = new Set(
-      rutasResponsable.map((ruta) => ruta.nombre),
-    );
-    let nombre = 'Ruta principal';
-    let indice = 1;
-
-    while (nombresExistentes.has(nombre)) {
-      indice += 1;
-      nombre = `Ruta principal ${indice}`;
-    }
-
-    return tx.ruta.create({
-      data: {
-        responsableUsuarioId: usuario.usuarioId,
-        estadoRutaId: estadoAbierta.estadoRutaId,
-        nombre,
-        descripcion: 'Creada automaticamente al registrar un credito',
-        esPrincipal: rutasResponsable.length === 0,
-      },
-      include: { estadoRuta: true },
-    });
-  }
 
   private async obtenerOCrearRutaCreditoTbl(
     tx: PrismaExecutor,
@@ -2914,250 +2280,11 @@ export class CreditosService {
     return creada.id;
   }
 
-  private async asegurarClienteEnRuta(
-    tx: Prisma.TransactionClient,
-    rutaId: string,
-    clienteId: string,
-  ) {
-    const existente = await tx.rutaCliente.findUnique({
-      where: { rutaId_clienteId: { rutaId, clienteId } },
-    });
-
-    if (existente) {
-      if (!existente.activo) {
-        await tx.rutaCliente.update({
-          where: { rutaId_clienteId: { rutaId, clienteId } },
-          data: { activo: true },
-        });
-      }
-      return;
-    }
-
-    const ultimoOrden = await tx.rutaCliente.aggregate({
-      where: { rutaId },
-      _max: { ordenVisita: true },
-    });
-    const ordenVisita = (ultimoOrden._max.ordenVisita ?? 0) + 1;
-
-    await tx.rutaCliente.create({
-      data: {
-        rutaId,
-        clienteId,
-        ordenVisita,
-        activo: true,
-      },
-    });
-  }
-
-  private async registrarDesembolsoCaja(
-    tx: Prisma.TransactionClient,
-    dto: CrearCreditoDto,
-    ruta: { responsableUsuarioId: string; nombre: string },
-    usuario: AuthenticatedUser,
-    valorPrincipal: number,
-    fechaInicio: Date,
-    clienteNombre: string,
-  ) {
-    if (!dto.cajaMenorId) {
-      throw DomainError.validation(
-        'No se puede hacer credito sin caja menor',
-        'CREDITO_REQUIERE_CAJA_MENOR',
-      );
-    }
-
-    const [caja, tipoDesembolso] = await Promise.all([
-      tx.cajaMenor.findUnique({ where: { cajaMenorId: dto.cajaMenorId } }),
-      tx.tipoMovimientoCaja.findUnique({
-        where: { codigo: 'DESEMBOLSO_CREDITO' },
-      }),
-    ]);
-
-    if (!caja) {
-      throw DomainError.notFound(
-        'Caja menor no encontrada',
-        'CAJA_MENOR_NO_ENCONTRADA',
-      );
-    }
-
-    if (!caja.activa) {
-      throw DomainError.conflict(
-        'La caja menor no esta activa',
-        'CAJA_MENOR_INACTIVA',
-      );
-    }
-
-    if (caja.responsableUsuarioId !== ruta.responsableUsuarioId) {
-      throw DomainError.conflict(
-        'La caja menor no pertenece al responsable de la ruta',
-        'CAJA_MENOR_RUTA_RESPONSABLE_DIFERENTE',
-      );
-    }
-
-    if (caja.monedaCodigo !== dto.monedaCodigo) {
-      throw DomainError.conflict(
-        'La moneda de la caja menor no coincide con el credito',
-        'CAJA_MENOR_MONEDA_DIFERENTE',
-      );
-    }
-
-    if (!tipoDesembolso) {
-      throw DomainError.notFound(
-        'Falta el tipo DESEMBOLSO_CREDITO',
-        'TIPO_DESEMBOLSO_CREDITO_NO_EXISTE',
-      );
-    }
-
-    await this.asegurarSalidaCajaConPresupuesto(
-      tx,
-      caja.cajaMenorId,
-      valorPrincipal,
-      'No se puede hacer credito sin caja suficiente',
-      'CAJA_MENOR_SALDO_INSUFICIENTE',
-    );
-
-    const movimiento = await tx.cajaMenorMovimiento.create({
-      data: {
-        cajaMenorId: caja.cajaMenorId,
-        tipoMovimientoCajaId: tipoDesembolso.tipoMovimientoCajaId,
-        usuarioId: usuario.usuarioId,
-        fechaMovimiento: fechaInicio,
-        monto: this.decimal(valorPrincipal),
-        motivo: `Desembolso de credito para ${clienteNombre}`,
-      },
-    });
-
-    return movimiento.cajaMenorMovimientoId;
-  }
-
-  private async registrarRefinanciacionCaja(
-    tx: Prisma.TransactionClient,
-    dto: { cajaMenorId: string; monedaCodigo: string },
-    ruta: { responsableUsuarioId: string; rutaId: string },
-    usuario: AuthenticatedUser,
-    incremento: number,
-    fechaInicio: Date,
-    clienteNombre: string,
-    creditoId: string,
-  ) {
-    const [caja, tipoDesembolso] = await Promise.all([
-      tx.cajaMenor.findUnique({ where: { cajaMenorId: dto.cajaMenorId } }),
-      tx.tipoMovimientoCaja.findUnique({
-        where: { codigo: 'DESEMBOLSO_CREDITO' },
-      }),
-    ]);
-
-    if (!caja) {
-      throw DomainError.notFound(
-        'Caja menor no encontrada',
-        'CAJA_MENOR_NO_ENCONTRADA',
-      );
-    }
-
-    if (!caja.activa) {
-      throw DomainError.conflict(
-        'La caja menor no esta activa',
-        'CAJA_MENOR_INACTIVA',
-      );
-    }
-
-    if (caja.responsableUsuarioId !== ruta.responsableUsuarioId) {
-      throw DomainError.conflict(
-        'La caja menor no pertenece al responsable de la ruta',
-        'CAJA_MENOR_RUTA_RESPONSABLE_DIFERENTE',
-      );
-    }
-
-    if (caja.monedaCodigo !== dto.monedaCodigo) {
-      throw DomainError.conflict(
-        'La moneda de la caja menor no coincide con el credito',
-        'CAJA_MENOR_MONEDA_DIFERENTE',
-      );
-    }
-
-    if (!tipoDesembolso) {
-      throw DomainError.notFound(
-        'Falta el tipo DESEMBOLSO_CREDITO',
-        'TIPO_DESEMBOLSO_CREDITO_NO_EXISTE',
-      );
-    }
-
-    await this.asegurarSalidaCajaConPresupuesto(
-      tx,
-      caja.cajaMenorId,
-      incremento,
-      'No se puede refinanciar credito sin saldo suficiente en caja menor',
-      'CAJA_MENOR_SALDO_INSUFICIENTE',
-    );
-
-    const movimiento = await tx.cajaMenorMovimiento.create({
-      data: {
-        cajaMenorId: caja.cajaMenorId,
-        tipoMovimientoCajaId: tipoDesembolso.tipoMovimientoCajaId,
-        usuarioId: usuario.usuarioId,
-        fechaMovimiento: fechaInicio,
-        monto: this.decimal(incremento),
-        motivo: `Refinanciacion de credito para ${clienteNombre} (+${incremento})`,
-        referenciaTabla: 'credito_refinanciacion',
-        referenciaId: creditoId,
-      },
-    });
-
-    return movimiento.cajaMenorMovimientoId;
-  }
-
-  private async asegurarSalidaCajaConPresupuesto(
-    tx: Prisma.TransactionClient,
-    cajaMenorId: string,
-    montoSalida: number,
-    mensaje: string,
-    codigo: string,
-  ) {
-    await tx.$queryRaw(Prisma.sql`
-      SELECT caja_menor_id
-      FROM public.caja_menor
-      WHERE caja_menor_id = ${cajaMenorId}::uuid
-      FOR UPDATE
-    `);
-
-    const presupuestoRows = await tx.$queryRaw<
-      Array<{ presupuesto: Prisma.Decimal }>
-    >(
-      Prisma.sql`
-        SELECT presupuesto
-        FROM public.vista_presupuesto_actual
-        WHERE caja_menor_id = ${cajaMenorId}::uuid
-      `,
-    );
-    const presupuestoDisponible = this.decimalANumero(
-      presupuestoRows[0]?.presupuesto,
-    );
-
-    if (montoSalida > presupuestoDisponible) {
-      throw DomainError.conflict(mensaje, codigo);
-    }
-  }
-
-  private sumasAplicacionesVacias(): SumaAplicaciones {
-    return {
-      _sum: {
-        montoCapital: null,
-        montoInteres: null,
-        montoMora: null,
-        montoDescuento: null,
-      },
-    };
-  }
-
-  private saldoCuota(
-    cuota: { valorTotal: Prisma.Decimal },
-    sumas: SumaAplicaciones,
-  ) {
-    const totalAplicado =
-      this.decimalANumero(sumas._sum.montoCapital) +
-      this.decimalANumero(sumas._sum.montoInteres) +
-      this.decimalANumero(sumas._sum.montoMora) -
-      this.decimalANumero(sumas._sum.montoDescuento);
-
-    return redondear(this.decimalANumero(cuota.valorTotal) - totalAplicado);
+  private nombreDesdeCodigo(codigo: string): string {
+    return codigo
+      .toLowerCase()
+      .split('_')
+      .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+      .join(' ');
   }
 }

@@ -273,29 +273,13 @@ describe('CreditosService', () => {
     ).rejects.toThrow(ForbiddenException);
   });
 
-  it('rejects crearCredito if client does not exist in Prisma mode', async () => {
-    mockPrisma.cliente.findUnique.mockResolvedValue(null);
-    mockPrisma.moneda.findUnique.mockResolvedValue({
-      codigoMoneda: 'COP',
-      decimales: 2,
-    });
-    mockPrisma.frecuenciaPago.findUnique.mockResolvedValue({
-      frecuenciaPagoId: 1,
-      diasIntervalo: 1,
-    });
-    mockPrisma.estadoCredito.findUnique.mockResolvedValue({
-      estadoCreditoId: 1,
-      codigo: 'ACTIVO',
-    });
-    mockPrisma.estadoCuota.findUnique.mockResolvedValue({
-      estadoCuotaId: 1,
-      codigo: 'PENDIENTE',
-    });
+  it('rejects crearCredito if client does not exist', async () => {
+    mockPrisma.$queryRaw.mockResolvedValueOnce([]);
 
     await expect(
       service.crearCredito(
         {
-          clienteId: 'cli-inexistente',
+          clienteId: '11111111-1111-4111-8111-111111111111',
           monedaCodigo: 'COP',
           frecuenciaPagoId: 1,
           fechaInicio: '2026-09-01',
@@ -309,32 +293,140 @@ describe('CreditosService', () => {
   });
 
   it('rejects refinanciarCredito if new principal is not greater than previous principal', async () => {
-    mockPrisma.credito.findUnique.mockResolvedValue({
-      creditoId: 'cred-1',
-      valorPrincipal: new Prisma.Decimal('100000'),
-      monedaCodigo: 'COP',
-      estadoCredito: { codigo: 'ACTIVO' },
-      planPago: { cuotas: [] },
-      ruta: { responsableUsuarioId: '11111111-1111-4111-8111-111111111111' },
-      cliente: { nombreCompleto: 'Juan Perez' },
-    });
+    mockPrisma.$queryRaw.mockResolvedValueOnce([
+      {
+        id: '11111111-1111-4111-8111-111111111111',
+        cliente_id: '22222222-2222-4222-8222-222222222222',
+        mon_id: '33333333-3333-4333-8333-333333333333',
+        org_id: '22222222-2222-4222-8222-222222222222',
+        valor_principal: new Prisma.Decimal('100000'),
+        porcentaje_interes: new Prisma.Decimal('20'),
+        estado: 'ACTIVO',
+        ruta_id: null,
+        cliente_nombre: 'Juan Perez',
+      },
+    ]);
 
     await expect(
       service.refinanciarCredito(
-        'cred-1',
+        '11111111-1111-4111-8111-111111111111',
         {
           frecuenciaPagoId: 1,
           fechaInicio: '2026-09-01',
           valorPrincipal: 90_000,
           porcentajeInteres: 20,
           plazoDias: 30,
-          cajaMenorId: 'caj-1',
+          cajaMenorId: '88888888-8888-4888-8888-888888888888',
         },
         usuarioTest(),
       ),
     ).rejects.toThrow(
       'El nuevo valor debe ser mayor al valor actual del credito',
     );
+  });
+
+  it('refinances a credit in tbl mode correctly', async () => {
+    jest.spyOn(service, 'usarEsquemaTbl').mockResolvedValue(true);
+    const mockTx = {
+      $queryRaw: jest
+        .fn()
+        // 1: lock and fetch credit
+        .mockResolvedValueOnce([
+          {
+            id: '11111111-1111-4111-8111-111111111111',
+            cliente_id: '22222222-2222-4222-8222-222222222222',
+            valor_principal: new Prisma.Decimal('1000'),
+            tasa_interes: new Prisma.Decimal('20'),
+            total_pagar: new Prisma.Decimal('1200'),
+            estado: 'ACTIVO',
+            mon_id: '33333333-3333-4333-8333-333333333333',
+            usu_id: '44444444-4444-4444-8444-444444444444',
+            pcr_id: '55555555-5555-4555-8555-555555555555',
+            moneda_codigo: 'COP',
+            decimales: 2,
+            org_id: '66666666-6666-4666-8666-666666666666',
+            cliente_nombre: 'Juan Perez',
+            ruta_id: '77777777-7777-4777-8777-777777777777',
+          },
+        ])
+        // 2: frecuencia / producto
+        .mockResolvedValueOnce([
+          { id: '55555555-5555-4555-8555-555555555555', dias_intervalo: 1 },
+        ])
+        // 3: caja
+        .mockResolvedValueOnce([
+          {
+            id: '88888888-8888-4888-8888-888888888888',
+            nombre: 'Caja 1',
+            sesion_id: '99999999-9999-4999-8999-999999999999',
+          },
+        ])
+        // 4: presupuesto
+        .mockResolvedValueOnce([{ presupuesto: new Prisma.Decimal('5000') }])
+        // 5: ruta
+        .mockResolvedValueOnce([
+          { id: '77777777-7777-4777-8777-777777777777' },
+        ])
+        // 6: cuotasExistentes
+        .mockResolvedValueOnce([
+          {
+            id: 'c1',
+            numero: 1n,
+            valor: new Prisma.Decimal('80'),
+            total_pagado: new Prisma.Decimal('80'),
+            estado: 'PAGADA',
+          },
+          {
+            id: 'c2',
+            numero: 2n,
+            valor: new Prisma.Decimal('80'),
+            total_pagado: new Prisma.Decimal('0'),
+            estado: 'PENDIENTE',
+          },
+        ])
+        // 7: abonosRow
+        .mockResolvedValueOnce([
+          {
+            capital_abonado: new Prisma.Decimal('80'),
+            interes_abonado: new Prisma.Decimal('0'),
+          },
+        ]),
+      $executeRaw: jest.fn().mockResolvedValue(1),
+    };
+
+    mockPrisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => cb(mockTx));
+    jest
+      .spyOn(service as unknown as { obtenerCreditoTbl: () => Promise<unknown> }, 'obtenerCreditoTbl')
+      .mockResolvedValue({ id: '11111111-1111-4111-8111-111111111111' } as never);
+
+    const res = await service.refinanciarCredito(
+      '11111111-1111-4111-8111-111111111111',
+      {
+        frecuenciaPagoId: 1,
+        fechaInicio: '2026-09-08',
+        valorPrincipal: 2000,
+        porcentajeInteres: 20,
+        plazoDias: 30,
+        cajaMenorId: '88888888-8888-4888-8888-888888888888',
+      },
+      usuarioTest(['COBRADOR'], ['REFINANCIAR_CREDITOS']),
+    );
+
+    expect(res).toBeDefined();
+    expect(mockTx.$executeRaw).toHaveBeenCalled();
+  });
+
+  it('permite obtenerCredito y listarCuotasCredito a empleados autorizados sin requerir VER_CREDITOS', async () => {
+    jest
+      .spyOn(service as unknown as { obtenerCreditoTbl: () => Promise<unknown> }, 'obtenerCreditoTbl')
+      .mockResolvedValue({ id: 'credito-1' } as never);
+    jest
+      .spyOn(service as unknown as { listarCuotasCreditoTbl: () => Promise<unknown> }, 'listarCuotasCreditoTbl')
+      .mockResolvedValue([{ id: 'cuota-1' }] as never);
+
+    const empleado = usuarioTest(['COBRADOR'], []);
+    await expect(service.obtenerCredito('credito-1', empleado)).resolves.toEqual({ id: 'credito-1' });
+    await expect(service.listarCuotasCredito('credito-1', empleado)).resolves.toEqual([{ id: 'cuota-1' }]);
   });
 });
 

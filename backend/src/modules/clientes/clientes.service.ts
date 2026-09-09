@@ -43,19 +43,8 @@ type ClienteTblDetalleRow = ClienteTblRow & {
   persona_id: string;
 };
 
-type ClienteConRelaciones = Prisma.ClienteGetPayload<{
-  include: {
-    estadoCliente: true;
-    contactos: { include: { tipoContacto: true } };
-    documentos: { include: { tipoDocumento: true } };
-    direcciones: { include: { tipoDireccion: true } };
-  };
-}>;
-
 @Injectable()
 export class ClientesService {
-  private esquemaTblDisponible?: boolean;
-  private readonly tablaExisteCache = new Map<string, boolean>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -68,48 +57,7 @@ export class ClientesService {
     query: ListarClientesQueryDto,
     usuario: AuthenticatedUser,
   ) {
-    if (await this.usarEsquemaTbl()) {
-      return this.listarClientesTbl(query, usuario);
-    }
-
-    const search = this.normalizarTextoOpcional(query.search);
-    const where: Prisma.ClienteWhereInput =
-      this.tenantScope.puedeVerDatosOrganizacion(usuario)
-        ? {}
-        : { creadoPorUsuarioId: usuario.usuarioId };
-
-    if (search) {
-      where.OR = [
-        { nombreCompleto: { contains: search, mode: 'insensitive' } },
-        { nombreComercial: { contains: search, mode: 'insensitive' } },
-        {
-          contactos: {
-            some: { valor: { contains: search, mode: 'insensitive' } },
-          },
-        },
-        {
-          documentos: { some: { numeroDocumento: { contains: search } } },
-        },
-        {
-          direcciones: {
-            some: { direccion: { contains: search, mode: 'insensitive' } },
-          },
-        },
-      ];
-    }
-
-    const clientes = await this.prisma.cliente.findMany({
-      where,
-      include: {
-        estadoCliente: true,
-        contactos: { include: { tipoContacto: true } },
-        documentos: { include: { tipoDocumento: true } },
-        direcciones: { include: { tipoDireccion: true } },
-      },
-      orderBy: { nombreCompleto: 'asc' },
-    });
-
-    return clientes.map((cliente) => this.formatearCliente(cliente));
+    return this.listarClientesTbl(query, usuario);
   }
 
   async listarClientesTbl(
@@ -174,15 +122,15 @@ export class ClientesService {
   }
 
   async crearCliente(dto: CrearClienteDto, usuario: AuthenticatedUser) {
-    const nombreCompleto = this.requerirTexto(
-      dto.nombreCompleto,
-      'El nombre del cliente es obligatorio',
-    );
-    const cedula = this.normalizarTextoOpcional(dto.cedula);
-    const nombreComercial = this.normalizarTextoOpcional(dto.nombreComercial);
-    const direccion = this.normalizarTextoOpcional(dto.direccion);
-    const latitud = dto.latitud;
-    const longitud = dto.longitud;
+    return this.crearClienteTbl(dto, usuario);
+  }
+
+  async crearClienteTbl(
+    input: CrearClienteDto,
+    usuario: AuthenticatedUser,
+  ) {
+    const latitud = input.latitud;
+    const longitud = input.longitud;
     if (
       [latitud, longitud].some(
         (value: unknown) =>
@@ -195,123 +143,7 @@ export class ClientesService {
         'COORDENADAS_INVALIDAS',
       );
     }
-    if ((latitud === undefined) !== (longitud === undefined)) {
-      throw DomainError.validation(
-        'La latitud y la longitud deben enviarse juntas',
-        'COORDENADAS_INCOMPLETAS',
-      );
-    }
-    if (latitud !== undefined && !direccion) {
-      throw DomainError.validation(
-        'La dirección es obligatoria cuando se envían coordenadas',
-        'DIRECCION_COORDENADAS_REQUERIDA',
-      );
-    }
-    const notas = this.normalizarTextoOpcional(dto.notas);
-    const correo = this.normalizarCorreo(dto.correo);
-    const telefono = this.normalizarTextoOpcional(dto.telefono);
-    const whatsapp = this.normalizarTextoOpcional(dto.whatsapp);
 
-    if (await this.usarEsquemaTbl()) {
-      return this.crearClienteTbl(
-        {
-          nombreCompleto,
-          cedula,
-          nombreComercial,
-          direccion,
-          notas,
-          correo,
-          telefono,
-          whatsapp,
-          latitud,
-          longitud,
-        },
-        usuario,
-      );
-    }
-
-    const cliente = await this.prisma.$transaction(async (tx) => {
-      const estadoActivo = await tx.estadoCliente.findUnique({
-        where: { codigo: 'ACTIVO' },
-      });
-
-      if (!estadoActivo) {
-        throw DomainError.notFound(
-          'No existe el estado de cliente ACTIVO en los catalogos',
-          'ESTADO_CLIENTE_ACTIVO_NO_EXISTE',
-        );
-      }
-
-      const created = await tx.cliente.create({
-        data: {
-          estadoClienteId: estadoActivo.estadoClienteId,
-          creadoPorUsuarioId: usuario.usuarioId,
-          nombreCompleto,
-          nombreComercial,
-          notas,
-        },
-      });
-
-      await this.crearDocumentoCliente(tx, created.clienteId, 'CC', cedula);
-      await this.crearContactoCliente(tx, created.clienteId, 'CORREO', correo);
-      await this.crearContactoCliente(
-        tx,
-        created.clienteId,
-        'TELEFONO',
-        telefono,
-      );
-      await this.crearContactoCliente(
-        tx,
-        created.clienteId,
-        'WHATSAPP',
-        whatsapp,
-      );
-      await this.crearDireccionCliente(
-        tx,
-        created.clienteId,
-        direccion,
-        latitud,
-        longitud,
-      );
-
-      const completo = await tx.cliente.findUnique({
-        where: { clienteId: created.clienteId },
-        include: {
-          estadoCliente: true,
-          contactos: { include: { tipoContacto: true } },
-          documentos: { include: { tipoDocumento: true } },
-          direcciones: { include: { tipoDireccion: true } },
-        },
-      });
-
-      if (!completo) {
-        throw DomainError.notFound(
-          'Cliente no encontrado despues de crear',
-          'CLIENTE_NO_ENCONTRADO',
-        );
-      }
-
-      return completo;
-    });
-
-    return this.formatearCliente(cliente);
-  }
-
-  async crearClienteTbl(
-    input: {
-      nombreCompleto: string;
-      cedula: string | null;
-      nombreComercial: string | null;
-      direccion: string | null;
-      notas: string | null;
-      correo: string | null;
-      telefono: string | null;
-      whatsapp: string | null;
-      latitud?: number;
-      longitud?: number;
-    },
-    usuario: AuthenticatedUser,
-  ) {
     const nombrePersona = this.dividirNombrePersonaTbl(input.nombreCompleto);
     const telefono = input.telefono ?? input.whatsapp;
     const cedula = input.cedula ?? this.generarDocumentoClienteTbl();
@@ -397,26 +229,7 @@ export class ClientesService {
           SET rcl_activo = TRUE
         `);
 
-        await this.registrarAuditoria(tx, {
-          usuarioId: usuario.usuarioId,
-          tabla: 'tbl_clientes',
-          registroId: cliente.id,
-          accion: 'CREAR',
-          descripcion: `Se creo cliente ${input.nombreCompleto}`,
-          valoresNuevos: {
-            nombreCompleto: input.nombreCompleto,
-            cedula: input.cedula,
-            nombreComercial: input.nombreComercial,
-            direccion: input.direccion,
-            notas: input.notas,
-            correo: input.correo,
-            telefono,
-            latitud: input.latitud ?? null,
-            longitud: input.longitud ?? null,
-            organizacionId: scope.organizacionId,
-          },
-        });
-
+        
         return cliente.id;
       },
       { maxWait: 10_000, timeout: 10_000 },
@@ -458,159 +271,7 @@ export class ClientesService {
     dto: ActualizarClienteDto,
     usuario: AuthenticatedUser,
   ) {
-    this.asegurarAdministrador(usuario);
-
-    if (await this.usarEsquemaTbl()) {
-      return this.actualizarClienteTbl(clienteId, dto, usuario);
-    }
-
-    const nombreCompleto = this.requerirTexto(
-      dto.nombreCompleto,
-      'El nombre del cliente es obligatorio',
-    );
-    const cedula = this.normalizarTextoOpcional(dto.cedula);
-    const nombreComercial = this.normalizarTextoOpcional(dto.nombreComercial);
-    const direccion = this.normalizarTextoOpcional(dto.direccion);
-    const notas = this.normalizarTextoOpcional(dto.notas);
-    const correo = this.normalizarCorreo(dto.correo);
-    const telefono = this.normalizarTextoOpcional(dto.telefono);
-    const whatsapp = this.normalizarTextoOpcional(dto.whatsapp);
-    const latitud = dto.latitud;
-    const longitud = dto.longitud;
-    if (
-      [latitud, longitud].some(
-        (value: unknown) =>
-          value !== undefined &&
-          (typeof value !== 'number' || !Number.isFinite(value)),
-      )
-    ) {
-      throw DomainError.validation(
-        'Las coordenadas deben ser números finitos',
-        'COORDENADAS_INVALIDAS',
-      );
-    }
-    if ((latitud === undefined) !== (longitud === undefined)) {
-      throw DomainError.validation(
-        'La latitud y la longitud deben enviarse juntas',
-        'COORDENADAS_INCOMPLETAS',
-      );
-    }
-    if (latitud !== undefined && !direccion) {
-      throw DomainError.validation(
-        'La dirección es obligatoria cuando se envían coordenadas',
-        'DIRECCION_COORDENADAS_REQUERIDA',
-      );
-    }
-
-    await this.prisma.$transaction(
-      async (tx) => {
-        const actual = await tx.cliente.findUnique({
-          where: { clienteId },
-          include: {
-            estadoCliente: true,
-            contactos: { include: { tipoContacto: true } },
-            documentos: { include: { tipoDocumento: true } },
-            direcciones: { include: { tipoDireccion: true } },
-          },
-        });
-
-        if (!actual) {
-          throw DomainError.notFound(
-            'Cliente no encontrado',
-            'CLIENTE_NO_ENCONTRADO',
-          );
-        }
-
-        await tx.cliente.update({
-          where: { clienteId },
-          data: {
-            nombreCompleto,
-            nombreComercial,
-            notas,
-            actualizadoEn: new Date(),
-          },
-        });
-
-        await this.reemplazarDocumentoCliente(tx, clienteId, 'CC', cedula);
-        await this.reemplazarContactoCliente(tx, clienteId, 'CORREO', correo);
-        await this.reemplazarContactoCliente(
-          tx,
-          clienteId,
-          'TELEFONO',
-          telefono,
-        );
-        await this.reemplazarContactoCliente(
-          tx,
-          clienteId,
-          'WHATSAPP',
-          whatsapp,
-        );
-        const direccionPrincipal =
-          actual.direcciones.find((item) => item.esPrincipal) ??
-          actual.direcciones[0];
-        const latitudFinal =
-          latitud ??
-          (direccionPrincipal?.latitud === null ||
-          direccionPrincipal?.latitud === undefined
-            ? null
-            : this.decimalANumero(direccionPrincipal.latitud));
-        const longitudFinal =
-          longitud ??
-          (direccionPrincipal?.longitud === null ||
-          direccionPrincipal?.longitud === undefined
-            ? null
-            : this.decimalANumero(direccionPrincipal.longitud));
-        await this.reemplazarDireccionCliente(
-          tx,
-          clienteId,
-          direccion,
-          latitudFinal,
-          longitudFinal,
-        );
-
-        await this.registrarAuditoria(tx, {
-          usuarioId: usuario.usuarioId,
-          tabla: 'cliente',
-          registroId: clienteId,
-          accion: 'MODIFICAR',
-          descripcion: `Se modifico cliente ${actual.nombreCompleto}`,
-          valoresAnteriores: this.formatearCliente(actual),
-          valoresNuevos: {
-            nombreCompleto,
-            cedula,
-            nombreComercial,
-            direccion,
-            notas,
-            correo,
-            telefono,
-            whatsapp,
-            latitud: latitudFinal,
-            longitud: longitudFinal,
-          },
-        });
-      },
-      { maxWait: 10_000, timeout: 10_000 },
-    );
-
-    const cliente = await this.prisma.cliente.findUnique({
-      where: { clienteId },
-      include: {
-        estadoCliente: true,
-        contactos: { include: { tipoContacto: true } },
-        documentos: { include: { tipoDocumento: true } },
-        direcciones: { include: { tipoDireccion: true } },
-      },
-    });
-
-    if (!cliente) {
-      throw DomainError.notFound(
-        'Cliente no encontrado despues de modificar',
-        'CLIENTE_NO_ENCONTRADO',
-      );
-    }
-
-    this.invalidarCacheLecturas();
-    return this.formatearCliente(cliente);
+    return this.actualizarClienteTbl(clienteId, dto, usuario);
   }
 
   async actualizarClienteTbl(
@@ -739,24 +400,7 @@ export class ClientesService {
           WHERE id_cli::text = ${clienteId}
         `);
 
-        await this.registrarAuditoria(tx, {
-          usuarioId: usuario.usuarioId,
-          tabla: 'tbl_clientes',
-          registroId: clienteId,
-          accion: 'MODIFICAR',
-          descripcion: `Se modifico cliente ${actual.nombre_completo}`,
-          valoresAnteriores: this.formatearClienteTbl(actual),
-          valoresNuevos: {
-            nombreCompleto,
-            cedula: cedulaFinal,
-            nombreComercial,
-            direccion,
-            telefono,
-            latitud: latitudFinal,
-            longitud: longitudFinal,
-          },
-        });
-      },
+              },
       { maxWait: 10_000, timeout: 10_000 },
     );
 
@@ -795,57 +439,7 @@ export class ClientesService {
   }
 
   async eliminarCliente(clienteId: string, usuario: AuthenticatedUser) {
-    this.asegurarAdministrador(usuario);
-
-    if (await this.usarEsquemaTbl()) {
-      return this.eliminarClienteTbl(clienteId, usuario);
-    }
-
-    await this.prisma.$transaction(async (tx) => {
-      const cliente = await tx.cliente.findUnique({
-        where: { clienteId },
-        include: {
-          estadoCliente: true,
-          contactos: { include: { tipoContacto: true } },
-          documentos: { include: { tipoDocumento: true } },
-          direcciones: { include: { tipoDireccion: true } },
-        },
-      });
-
-      if (!cliente) {
-        throw DomainError.notFound(
-          'Cliente no encontrado',
-          'CLIENTE_NO_ENCONTRADO',
-        );
-      }
-
-      const [creditos, pagos] = await Promise.all([
-        tx.credito.count({ where: { clienteId } }),
-        tx.pago.count({ where: { clienteId } }),
-      ]);
-
-      if (creditos > 0 || pagos > 0) {
-        throw DomainError.conflict(
-          'No se puede eliminar un cliente con creditos o pagos registrados',
-          'CLIENTE_CON_MOVIMIENTOS_NO_ELIMINABLE',
-        );
-      }
-
-      await this.registrarAuditoria(tx, {
-        usuarioId: usuario.usuarioId,
-        tabla: 'cliente',
-        registroId: clienteId,
-        accion: 'ELIMINAR',
-        descripcion: `Se elimino cliente ${cliente.nombreCompleto}`,
-        valoresAnteriores: this.formatearCliente(cliente),
-      });
-
-      await tx.rutaCliente.deleteMany({ where: { clienteId } });
-      await tx.cliente.delete({ where: { clienteId } });
-    });
-
-    this.invalidarCacheLecturas();
-    return { ok: true };
+    return this.eliminarClienteTbl(clienteId, usuario);
   }
 
   async eliminarClienteTbl(clienteId: string, usuario: AuthenticatedUser) {
@@ -906,15 +500,7 @@ export class ClientesService {
         );
       }
 
-      await this.registrarAuditoria(tx, {
-        usuarioId: usuario.usuarioId,
-        tabla: 'tbl_clientes',
-        registroId: clienteId,
-        accion: 'ELIMINAR',
-        descripcion: `Se elimino cliente ${cliente.nombre_completo}`,
-        valoresAnteriores: this.formatearClienteTbl(cliente),
-      });
-
+      
       await tx.$executeRaw(Prisma.sql`
         DELETE FROM public.tbl_rutas_clientes
         USING public.tbl_rutas r
@@ -942,109 +528,7 @@ export class ClientesService {
     dto: ActualizarUbicacionClienteDto,
     usuario: AuthenticatedUser,
   ) {
-    if (
-      !Number.isFinite(dto.latitud) ||
-      !Number.isFinite(dto.longitud) ||
-      dto.latitud < -90 ||
-      dto.latitud > 90 ||
-      dto.longitud < -180 ||
-      dto.longitud > 180
-    ) {
-      throw DomainError.validation(
-        'Las coordenadas no son válidas',
-        'COORDENADAS_INVALIDAS',
-      );
-    }
-
-    if (await this.usarEsquemaTbl()) {
-      return this.actualizarUbicacionClienteTbl(clienteId, dto, usuario);
-    }
-
-    const direccionSolicitada = this.normalizarTextoOpcional(dto.direccion);
-    return this.prisma.$transaction(async (tx) => {
-      const cliente = await tx.cliente.findUnique({
-        where: { clienteId },
-        include: {
-          direcciones: {
-            orderBy: [{ esPrincipal: 'desc' }, { direccion: 'asc' }],
-          },
-        },
-      });
-      if (!cliente) {
-        throw DomainError.notFound(
-          'Cliente no encontrado',
-          'CLIENTE_NO_ENCONTRADO',
-        );
-      }
-
-      if (!this.tenantScope.esAdministrador(usuario)) {
-        const creditoVisible = await tx.credito.findFirst({
-          where: {
-            clienteId,
-            OR: [
-              { creadoPorUsuarioId: usuario.usuarioId },
-              { ruta: { responsableUsuarioId: usuario.usuarioId } },
-            ],
-          },
-          select: { creditoId: true },
-        });
-        if (!creditoVisible) {
-          throw new ForbiddenException('No tienes acceso a este cliente');
-        }
-      }
-
-      const direccionActual = cliente.direcciones[0];
-      const direccion = direccionSolicitada ?? direccionActual?.direccion;
-      if (!direccion) {
-        throw DomainError.validation(
-          'La dirección es obligatoria para guardar la ubicación',
-          'DIRECCION_COORDENADAS_REQUERIDA',
-        );
-      }
-
-      if (direccionActual) {
-        await tx.clienteDireccion.update({
-          where: {
-            clienteDireccionId: direccionActual.clienteDireccionId,
-          },
-          data: {
-            direccion,
-            latitud: dto.latitud,
-            longitud: dto.longitud,
-            esPrincipal: true,
-          },
-        });
-      } else {
-        const tipoDireccion = await tx.tipoDireccion.findUnique({
-          where: { codigo: 'CASA' },
-        });
-        if (!tipoDireccion) {
-          throw DomainError.notFound(
-            'No existe el tipo de dirección CASA',
-            'TIPO_DIRECCION_NO_EXISTE',
-          );
-        }
-        await tx.clienteDireccion.create({
-          data: {
-            clienteId,
-            tipoDireccionId: tipoDireccion.tipoDireccionId,
-            direccion,
-            municipio: 'No especificado',
-            departamento: 'No especificado',
-            latitud: dto.latitud,
-            longitud: dto.longitud,
-            esPrincipal: true,
-          },
-        });
-      }
-
-      return {
-        clienteId,
-        direccion,
-        latitud: dto.latitud,
-        longitud: dto.longitud,
-      };
-    });
+    return this.actualizarUbicacionClienteTbl(clienteId, dto, usuario);
   }
 
   async actualizarUbicacionClienteTbl(
@@ -1123,30 +607,6 @@ export class ClientesService {
     };
   }
 
-  private async usarEsquemaTbl(): Promise<boolean> {
-    if (this.esquemaTblDisponible !== undefined) {
-      return this.esquemaTblDisponible;
-    }
-
-    try {
-      const rows = await this.prisma.$queryRaw<Array<{ disponible: boolean }>>`
-        SELECT COUNT(*) = 3 AS disponible
-        FROM information_schema.tables
-        WHERE table_schema = 'public'
-          AND table_name IN (
-            'tbl_usuarios',
-            'tbl_organizaciones',
-            'tbl_clientes'
-          )
-      `;
-      this.esquemaTblDisponible = rows[0]?.disponible ?? false;
-    } catch {
-      this.esquemaTblDisponible = false;
-    }
-
-    return this.esquemaTblDisponible;
-  }
-
   private formatearClienteTbl(cliente: ClienteTblRow) {
     const cedula = this.esDocumentoClienteGeneradoTbl(cliente.cedula)
       ? null
@@ -1206,75 +666,6 @@ export class ClientesService {
     };
   }
 
-  private formatearCliente(cliente: ClienteConRelaciones) {
-    const contactoPrincipal = (codigo: string) =>
-      cliente.contactos.find(
-        (contacto) =>
-          contacto.tipoContacto.codigo === codigo && contacto.esPrincipal,
-      ) ??
-      cliente.contactos.find(
-        (contacto) => contacto.tipoContacto.codigo === codigo,
-      );
-    const documentoPrincipal = (codigo: string) =>
-      cliente.documentos.find(
-        (documento) => documento.tipoDocumento.codigo === codigo,
-      );
-    const direccionPrincipal =
-      cliente.direcciones.find((direccion) => direccion.esPrincipal) ??
-      cliente.direcciones[0];
-
-    return {
-      id: cliente.clienteId,
-      nombreCompleto: cliente.nombreCompleto,
-      nombreComercial: cliente.nombreComercial,
-      notas: cliente.notas,
-      cedula: documentoPrincipal('CC')?.numeroDocumento ?? null,
-      direccion: direccionPrincipal?.direccion ?? null,
-      correo: contactoPrincipal('CORREO')?.valor ?? null,
-      telefono: contactoPrincipal('TELEFONO')?.valor ?? null,
-      whatsapp: contactoPrincipal('WHATSAPP')?.valor ?? null,
-      estado: {
-        codigo: cliente.estadoCliente.codigo,
-        nombre: cliente.estadoCliente.nombre,
-      },
-      documentos: cliente.documentos.map((documento) => ({
-        id: documento.clienteDocumentoId,
-        tipo: {
-          id: documento.tipoDocumentoId,
-          codigo: documento.tipoDocumento.codigo,
-          nombre: documento.tipoDocumento.nombre,
-        },
-        numeroDocumento: documento.numeroDocumento,
-        expedidoEn: documento.expedidoEn,
-      })),
-      direcciones: cliente.direcciones.map((direccion) => ({
-        id: direccion.clienteDireccionId,
-        tipo: {
-          id: direccion.tipoDireccionId,
-          codigo: direccion.tipoDireccion.codigo,
-          nombre: direccion.tipoDireccion.nombre,
-        },
-        direccion: direccion.direccion,
-        barrio: direccion.barrio,
-        municipio: direccion.municipio,
-        departamento: direccion.departamento,
-        pais: direccion.pais,
-        referencia: direccion.referencia,
-        latitud:
-          direccion.latitud === null
-            ? null
-            : this.decimalANumero(direccion.latitud),
-        longitud:
-          direccion.longitud === null
-            ? null
-            : this.decimalANumero(direccion.longitud),
-        esPrincipal: direccion.esPrincipal,
-      })),
-      creadoEn: cliente.creadoEn.toISOString(),
-      actualizadoEn: cliente.actualizadoEn.toISOString(),
-    };
-  }
-
   private generarDocumentoClienteTbl(): string {
     return `AUTO-CLIENTE-${randomUUID()}`;
   }
@@ -1304,314 +695,8 @@ export class ClientesService {
     }
   }
 
-  private async registrarAuditoria(
-    tx: PrismaExecutor,
-    input: {
-      usuarioId?: string | null;
-      tabla: string;
-      registroId?: string | null;
-      accion: string;
-      descripcion: string;
-      valoresAnteriores?: unknown;
-      valoresNuevos?: unknown;
-      metadata?: unknown;
-    },
-  ) {
-    if (!(await this.tablaExiste(tx, 'public.auditoria'))) {
-      return;
-    }
-
-    const valoresAnteriores =
-      input.valoresAnteriores === undefined
-        ? null
-        : JSON.stringify(input.valoresAnteriores);
-    const valoresNuevos =
-      input.valoresNuevos === undefined
-        ? null
-        : JSON.stringify(input.valoresNuevos);
-    const metadata =
-      input.metadata === undefined ? null : JSON.stringify(input.metadata);
-
-    await tx.$executeRaw(Prisma.sql`
-      INSERT INTO public.auditoria (
-        usuario_id,
-        tabla,
-        registro_id,
-        accion,
-        descripcion,
-        valores_anteriores,
-        valores_nuevos,
-        metadata
-      )
-      VALUES (
-        ${input.usuarioId ?? null}::uuid,
-        ${input.tabla},
-        ${input.registroId ?? null},
-        ${input.accion},
-        ${input.descripcion},
-        ${valoresAnteriores}::jsonb,
-        ${valoresNuevos}::jsonb,
-        ${metadata}::jsonb
-      )
-    `);
-  }
-
-  private async tablaExiste(client: PrismaExecutor, nombre: string) {
-    const enCache = this.tablaExisteCache.get(nombre);
-    if (enCache !== undefined) {
-      return enCache;
-    }
-
-    const resultado = await client.$queryRaw<Array<{ nombre: string | null }>>(
-      Prisma.sql`SELECT to_regclass(${nombre})::text AS nombre`,
-    );
-
-    const existe = resultado[0]?.nombre !== null;
-    this.tablaExisteCache.set(nombre, existe);
-    return existe;
-  }
-
   private invalidarCacheLecturas() {
     this.cache.deleteByPrefix('cobros:');
-  }
-
-  private async crearContactoCliente(
-    tx: Prisma.TransactionClient,
-    clienteId: string,
-    codigoTipo: string,
-    valor: string | null,
-  ) {
-    if (!valor) {
-      return;
-    }
-
-    const tipo = await tx.tipoContacto.findUnique({
-      where: { codigo: codigoTipo },
-    });
-
-    if (!tipo) {
-      throw DomainError.notFound(
-        `No existe el tipo de contacto ${codigoTipo}`,
-        'TIPO_CONTACTO_NO_EXISTE',
-      );
-    }
-
-    await tx.clienteContacto.create({
-      data: {
-        clienteId,
-        tipoContactoId: tipo.tipoContactoId,
-        valor,
-        esPrincipal: true,
-      },
-    });
-  }
-
-  private async reemplazarContactoCliente(
-    tx: Prisma.TransactionClient,
-    clienteId: string,
-    codigoTipo: string,
-    valor: string | null,
-  ) {
-    const tipo = await tx.tipoContacto.findUnique({
-      where: { codigo: codigoTipo },
-    });
-
-    if (!tipo) {
-      throw DomainError.notFound(
-        `No existe el tipo de contacto ${codigoTipo}`,
-        'TIPO_CONTACTO_NO_EXISTE',
-      );
-    }
-
-    await tx.clienteContacto.deleteMany({
-      where: { clienteId, tipoContactoId: tipo.tipoContactoId },
-    });
-
-    if (!valor) {
-      return;
-    }
-
-    await tx.clienteContacto.create({
-      data: {
-        clienteId,
-        tipoContactoId: tipo.tipoContactoId,
-        valor,
-        esPrincipal: true,
-      },
-    });
-  }
-
-  private async crearDocumentoCliente(
-    tx: Prisma.TransactionClient,
-    clienteId: string,
-    codigoTipo: string,
-    numeroDocumento: string | null,
-  ) {
-    if (!numeroDocumento) {
-      return;
-    }
-
-    const tipo = await tx.tipoDocumento.findUnique({
-      where: { codigo: codigoTipo },
-    });
-
-    if (!tipo) {
-      throw DomainError.notFound(
-        `No existe el tipo de documento ${codigoTipo}`,
-        'TIPO_DOCUMENTO_NO_EXISTE',
-      );
-    }
-
-    const existente = await tx.clienteDocumento.findFirst({
-      where: {
-        tipoDocumentoId: tipo.tipoDocumentoId,
-        numeroDocumento,
-      },
-      select: { clienteId: true },
-    });
-
-    if (existente) {
-      throw DomainError.conflict(
-        'Ya existe un cliente con esta cedula',
-        'CEDULA_YA_REGISTRADA',
-      );
-    }
-
-    await tx.clienteDocumento.create({
-      data: {
-        clienteId,
-        tipoDocumentoId: tipo.tipoDocumentoId,
-        numeroDocumento,
-      },
-    });
-  }
-
-  private async reemplazarDocumentoCliente(
-    tx: Prisma.TransactionClient,
-    clienteId: string,
-    codigoTipo: string,
-    numeroDocumento: string | null,
-  ) {
-    const tipo = await tx.tipoDocumento.findUnique({
-      where: { codigo: codigoTipo },
-    });
-
-    if (!tipo) {
-      throw DomainError.notFound(
-        `No existe el tipo de documento ${codigoTipo}`,
-        'TIPO_DOCUMENTO_NO_EXISTE',
-      );
-    }
-
-    if (numeroDocumento) {
-      const existente = await tx.clienteDocumento.findFirst({
-        where: {
-          tipoDocumentoId: tipo.tipoDocumentoId,
-          numeroDocumento,
-          NOT: { clienteId },
-        },
-        select: { clienteId: true },
-      });
-
-      if (existente) {
-        throw DomainError.conflict(
-          'Ya existe un cliente con esta cedula',
-          'CEDULA_YA_REGISTRADA',
-        );
-      }
-    }
-
-    await tx.clienteDocumento.deleteMany({
-      where: { clienteId, tipoDocumentoId: tipo.tipoDocumentoId },
-    });
-
-    if (!numeroDocumento) {
-      return;
-    }
-
-    await tx.clienteDocumento.create({
-      data: {
-        clienteId,
-        tipoDocumentoId: tipo.tipoDocumentoId,
-        numeroDocumento,
-      },
-    });
-  }
-
-  private async crearDireccionCliente(
-    tx: Prisma.TransactionClient,
-    clienteId: string,
-    direccion: string | null,
-    latitud?: number,
-    longitud?: number,
-  ) {
-    if (!direccion) {
-      return;
-    }
-
-    const tipo = await tx.tipoDireccion.findUnique({
-      where: { codigo: 'CASA' },
-    });
-
-    if (!tipo) {
-      throw DomainError.notFound(
-        'No existe el tipo de direccion CASA',
-        'TIPO_DIRECCION_NO_EXISTE',
-      );
-    }
-
-    await tx.clienteDireccion.create({
-      data: {
-        clienteId,
-        tipoDireccionId: tipo.tipoDireccionId,
-        direccion,
-        municipio: 'No especificado',
-        departamento: 'No especificado',
-        latitud,
-        longitud,
-        esPrincipal: true,
-      },
-    });
-  }
-
-  private async reemplazarDireccionCliente(
-    tx: Prisma.TransactionClient,
-    clienteId: string,
-    direccion: string | null,
-    latitud?: number | null,
-    longitud?: number | null,
-  ) {
-    const tipo = await tx.tipoDireccion.findUnique({
-      where: { codigo: 'CASA' },
-    });
-
-    if (!tipo) {
-      throw DomainError.notFound(
-        'No existe el tipo de direccion CASA',
-        'TIPO_DIRECCION_NO_EXISTE',
-      );
-    }
-
-    await tx.clienteDireccion.deleteMany({
-      where: { clienteId, tipoDireccionId: tipo.tipoDireccionId },
-    });
-
-    if (!direccion) {
-      return;
-    }
-
-    await tx.clienteDireccion.create({
-      data: {
-        clienteId,
-        tipoDireccionId: tipo.tipoDireccionId,
-        direccion,
-        municipio: 'No especificado',
-        departamento: 'No especificado',
-        latitud: latitud ?? undefined,
-        longitud: longitud ?? undefined,
-        esPrincipal: true,
-      },
-    });
   }
 
   private decimalANumero(value: Prisma.Decimal | null): number {

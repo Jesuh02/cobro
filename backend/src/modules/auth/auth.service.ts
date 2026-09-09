@@ -32,22 +32,7 @@ import { PasswordService } from './password.service';
 import {
   esPermisoEmpleado,
   permisosEmpleadoCodigos,
-  permisosEmpleadoPredeterminadosCodigos,
-  permisosEmpleadoPorCodigo,
 } from './permissions';
-
-const usuarioConRolesInclude = {
-  estadoUsuario: true,
-  roles: {
-    include: {
-      rol: true,
-    },
-  },
-} satisfies Prisma.UsuarioInclude;
-
-type UsuarioConRoles = Prisma.UsuarioGetPayload<{
-  include: typeof usuarioConRolesInclude;
-}>;
 
 type UsuarioTblAuth = {
   id: string;
@@ -152,55 +137,9 @@ export class AuthService {
 
   async login(dto: LoginDto): Promise<AuthSessionResponse> {
     const nombreUsuario = this.normalizarUsuario(dto.usuario);
-    let usuario: UsuarioConRoles | null = null;
-
-    try {
-      usuario = await this.prisma.usuario.findUnique({
-        where: { nombreUsuario },
-        include: usuarioConRolesInclude,
-      });
-    } catch (error) {
-      if (this.esErrorEsquemaAuthFaltante(error)) {
-        return this.loginTbl(nombreUsuario, dto.contrasena);
-      }
-      throw error;
-    }
-
-    if (!usuario) {
-      const usuarioTbl = await this.obtenerUsuarioTblPorNombre(nombreUsuario);
-
-      if (usuarioTbl) {
-        return this.loginTbl(nombreUsuario, dto.contrasena, usuarioTbl);
-      }
-    }
-
-    const passwordHash = usuario?.passwordHash ?? 'disabled';
-    const passwordIsValid = await this.passwords.verify(
-      dto.contrasena,
-      passwordHash,
-    );
-
-    if (!usuario || !passwordIsValid) {
-      throw new UnauthorizedException('Usuario o contrasena invalidos');
-    }
-
-    if (usuario.estadoUsuario.codigo !== 'ACTIVO') {
-      throw new UnauthorizedException('El usuario no esta activo');
-    }
-
-    if (this.passwords.needsRehash(usuario.passwordHash)) {
-      const upgradedHash = await this.passwords.hash(dto.contrasena);
-      await this.prisma.usuario.updateMany({
-        where: {
-          usuarioId: usuario.usuarioId,
-          passwordHash: usuario.passwordHash,
-        },
-        data: { passwordHash: upgradedHash, actualizadoEn: new Date() },
-      });
-    }
-
-    return this.crearSesion(usuario);
+    return this.loginTbl(nombreUsuario, dto.contrasena);
   }
+
 
   async registrarInstitucion(
     dto: RegistrarInstitucionDto,
@@ -752,81 +691,29 @@ export class AuthService {
   async obtenerUsuarioAutenticado(
     usuarioId: string,
   ): Promise<AuthUserResponse> {
-    if (this.esIdTbl(usuarioId)) {
-      const usuarioTbl = await this.obtenerUsuarioTblPorId(usuarioId);
+    const usuarioTbl = await this.obtenerUsuarioTblPorId(usuarioId);
 
-      if (!usuarioTbl || !usuarioTbl.activo) {
-        throw new UnauthorizedException('Sesion invalida');
-      }
-
-      this.validarAccesoUsuarioTbl(usuarioTbl);
-
-      return this.formatearUsuarioTbl(usuarioTbl);
-    }
-
-    let usuario: UsuarioConRoles | null = null;
-
-    try {
-      usuario = await this.prisma.usuario.findUnique({
-        where: { usuarioId },
-        include: usuarioConRolesInclude,
-      });
-    } catch (error) {
-      if (this.esErrorEsquemaAuthFaltante(error)) {
-        throw new UnauthorizedException('Sesion invalida');
-      }
-      throw error;
-    }
-
-    if (!usuario || usuario.estadoUsuario.codigo !== 'ACTIVO') {
+    if (!usuarioTbl || !usuarioTbl.activo) {
       throw new UnauthorizedException('Sesion invalida');
     }
 
-    return this.formatearUsuario(usuario);
+    this.validarAccesoUsuarioTbl(usuarioTbl);
+
+    return this.formatearUsuarioTbl(usuarioTbl);
   }
 
   async validarUsuarioAutenticado(
     usuarioId: string,
   ): Promise<AuthenticatedUser> {
-    if (this.esIdTbl(usuarioId)) {
-      const usuarioTbl = await this.obtenerUsuarioTblPorId(usuarioId);
+    const usuarioTbl = await this.obtenerUsuarioTblPorId(usuarioId);
 
-      if (!usuarioTbl || !usuarioTbl.activo) {
-        throw new UnauthorizedException('Sesion invalida');
-      }
-
-      this.validarAccesoUsuarioTbl(usuarioTbl);
-
-      const formateado = this.formatearUsuarioTbl(usuarioTbl);
-
-      return {
-        usuarioId: formateado.id,
-        usuario: formateado.usuario,
-        organizacionId: formateado.organizacionId,
-        roles: formateado.roles,
-        permisos: formateado.permisos,
-      };
-    }
-
-    let usuario: UsuarioConRoles | null = null;
-
-    try {
-      usuario = await this.prisma.usuario.findUnique({
-        where: { usuarioId },
-        include: usuarioConRolesInclude,
-      });
-    } catch (error) {
-      if (this.esErrorEsquemaAuthFaltante(error)) {
-        throw new UnauthorizedException('Sesion invalida');
-      }
-      throw error;
-    }
-
-    if (!usuario || usuario.estadoUsuario.codigo !== 'ACTIVO') {
+    if (!usuarioTbl || !usuarioTbl.activo) {
       throw new UnauthorizedException('Sesion invalida');
     }
 
-    const formateado = this.formatearUsuario(usuario);
+    this.validarAccesoUsuarioTbl(usuarioTbl);
+
+    const formateado = this.formatearUsuarioTbl(usuarioTbl);
 
     return {
       usuarioId: formateado.id,
@@ -841,29 +728,7 @@ export class AuthService {
     usuario: AuthenticatedUser,
   ): Promise<AuthUserResponse[]> {
     this.requerirVerEmpleados(usuario);
-
-    if (await this.usarEsquemaTbl()) {
-      return this.listarEmpleadosTbl(usuario);
-    }
-
-    try {
-      const usuarios = await this.prisma.usuario.findMany({
-        where: {
-          roles: {
-            some: { rol: { codigo: 'COBRADOR' } },
-          },
-        },
-        include: usuarioConRolesInclude,
-        orderBy: [{ estadoUsuarioId: 'asc' }, { nombres: 'asc' }],
-      });
-
-      return usuarios.map((usuario) => this.formatearUsuario(usuario));
-    } catch (error) {
-      if (this.esErrorEsquemaAuthFaltante(error)) {
-        return this.listarEmpleadosTbl(usuario);
-      }
-      throw error;
-    }
+    return this.listarEmpleadosTbl(usuario);
   }
 
   async actualizarEmpleado(
@@ -872,79 +737,7 @@ export class AuthService {
     dto: ActualizarUsuarioDto,
   ): Promise<AuthUserResponse> {
     this.requerirAdministrador(administrador);
-
-    if (await this.usarEsquemaTbl()) {
-      return this.actualizarEmpleadoTbl(administrador, empleadoId, dto);
-    }
-
-    const nombreUsuario = this.normalizarUsuario(dto.usuario);
-    const correo = dto.correo.trim().toLowerCase();
-    const nombre = this.separarNombre(dto.nombreCompleto);
-    const contrasena = dto.contrasena?.trim();
-
-    const actualizado = await this.prisma.$transaction(async (tx) => {
-      const empleado = await tx.usuario.findFirst({
-        where: {
-          usuarioId: empleadoId,
-          roles: {
-            some: { rol: { codigo: 'COBRADOR' } },
-          },
-        },
-        include: usuarioConRolesInclude,
-      });
-
-      if (!empleado) {
-        throw new NotFoundException('Empleado no encontrado');
-      }
-
-      const [existenteUsuario, existenteCorreo] = await Promise.all([
-        tx.usuario.findUnique({ where: { nombreUsuario } }),
-        tx.usuario.findFirst({
-          where: { correo: { equals: correo, mode: 'insensitive' } },
-        }),
-      ]);
-
-      if (
-        existenteUsuario &&
-        existenteUsuario.usuarioId !== empleado.usuarioId
-      ) {
-        throw new ConflictException('El usuario ya existe');
-      }
-
-      if (existenteCorreo && existenteCorreo.usuarioId !== empleado.usuarioId) {
-        throw new ConflictException('El correo ya esta registrado');
-      }
-
-      const usuarioActualizado = await tx.usuario.update({
-        where: { usuarioId: empleadoId },
-        data: {
-          nombreUsuario,
-          nombres: nombre.nombres,
-          apellidos: nombre.apellidos,
-          correo,
-          ...(contrasena
-            ? { passwordHash: await this.passwords.hash(contrasena) }
-            : {}),
-          actualizadoEn: new Date(),
-        },
-        include: usuarioConRolesInclude,
-      });
-
-      await this.registrarAuditoria(tx, {
-        usuarioId: administrador.usuarioId,
-        tabla: 'usuario',
-        registroId: empleadoId,
-        accion: 'MODIFICAR',
-        descripcion: `Se modifico empleado ${empleado.nombreUsuario}`,
-        valoresAnteriores: this.usuarioAuditoria(empleado),
-        valoresNuevos: this.usuarioAuditoria(usuarioActualizado),
-        metadata: { tipo: 'empleado', contrasenaCambiada: Boolean(contrasena) },
-      });
-
-      return usuarioActualizado;
-    });
-
-    return this.formatearUsuario(actualizado);
+    return this.actualizarEmpleadoTbl(administrador, empleadoId, dto);
   }
 
   private normalizarRangoActividad(
@@ -1005,302 +798,7 @@ export class AuthService {
     this.requerirVerEmpleados(usuario);
     const rango = this.normalizarRangoActividad(filtros);
 
-    if (await this.usarEsquemaTbl()) {
-      return this.listarActividadEmpleadosTbl(usuario, rango);
-    }
-
-    const rows = await this.prisma.$queryRaw<ActividadEmpleadoRow[]>(Prisma.sql`
-      WITH parametros AS (
-        SELECT
-          ${rango.fechaInicio}::date AS fecha_inicio,
-          ${rango.fechaFin}::date AS fecha_fin,
-          ${rango.empleadoId}::text AS empleado_id
-      ),
-      empleados AS (
-        SELECT
-          u.usuario_id,
-          u.nombre_usuario,
-          concat_ws(' ', u.nombres, u.apellidos) AS nombre_completo,
-          u.correo,
-          eu.codigo = 'ACTIVO' AS activo
-        FROM public.usuario u
-        JOIN public.estado_usuario eu
-          ON eu.estado_usuario_id = u.estado_usuario_id
-        JOIN public.usuario_rol ur
-          ON ur.usuario_id = u.usuario_id
-        JOIN public.rol r
-          ON r.rol_id = ur.rol_id
-         AND r.codigo = 'COBRADOR'
-        CROSS JOIN parametros params
-        WHERE params.empleado_id IS NULL
-          OR u.usuario_id::text = params.empleado_id
-      ),
-      abonos_cuota AS (
-        SELECT
-          cc.credito_cuota_id,
-          COALESCE(
-            SUM(
-              pa.monto_capital
-              + pa.monto_interes
-              + pa.monto_mora
-              - pa.monto_descuento
-            ),
-            0
-          ) AS abonado
-        FROM public.credito_cuota cc
-        LEFT JOIN public.pago_aplicacion pa
-          ON pa.credito_cuota_id = cc.credito_cuota_id
-        GROUP BY cc.credito_cuota_id
-      ),
-      creditos_base AS (
-        SELECT
-          c.credito_id,
-          c.creado_por_usuario_id AS usuario_id,
-          c.ruta_id,
-          c.cliente_id,
-          c.valor_principal,
-          c.creado_en
-        FROM public.credito c
-        JOIN public.estado_credito ec
-          ON ec.estado_credito_id = c.estado_credito_id
-        WHERE c.creado_por_usuario_id IS NOT NULL
-          AND ec.codigo <> 'ANULADO'
-      ),
-      cuotas_estado AS (
-        SELECT
-          cb.usuario_id,
-          cb.ruta_id,
-          cb.cliente_id,
-          cb.credito_id,
-          cc.credito_cuota_id,
-          cc.fecha_vencimiento,
-          GREATEST(cc.valor_total - COALESCE(ac.abonado, 0), 0) AS saldo
-        FROM creditos_base cb
-        JOIN public.credito_plan_pago cpp
-          ON cpp.credito_id = cb.credito_id
-        JOIN public.credito_cuota cc
-          ON cc.credito_plan_pago_id = cpp.credito_plan_pago_id
-        JOIN public.estado_cuota ecu
-          ON ecu.estado_cuota_id = cc.estado_cuota_id
-        LEFT JOIN abonos_cuota ac
-          ON ac.credito_cuota_id = cc.credito_cuota_id
-        WHERE ecu.codigo <> 'ANULADA'
-      ),
-      pagos_hoy_cuota AS (
-        SELECT DISTINCT pa.credito_cuota_id
-        FROM public.pago_aplicacion pa
-        JOIN public.pago p
-          ON p.pago_id = pa.pago_id
-        WHERE (p.fecha_pago AT TIME ZONE 'America/Bogota')::date
-          BETWEEN (SELECT fecha_inicio FROM parametros)
-          AND (SELECT fecha_fin FROM parametros)
-      ),
-      agenda_hoy AS (
-        SELECT
-          ce.usuario_id,
-          ce.ruta_id,
-          COUNT(DISTINCT ce.credito_id)::int AS deberes_hoy,
-          COUNT(DISTINCT ce.credito_id) FILTER (
-            WHERE ce.saldo <= 0 OR phc.credito_cuota_id IS NOT NULL
-          )::int AS cumplidos_hoy,
-          COUNT(DISTINCT ce.credito_id) FILTER (
-            WHERE ce.saldo > 0 AND phc.credito_cuota_id IS NULL
-          )::int AS pendientes_hoy
-        FROM cuotas_estado ce
-        LEFT JOIN pagos_hoy_cuota phc
-          ON phc.credito_cuota_id = ce.credito_cuota_id
-        WHERE ce.fecha_vencimiento
-          BETWEEN (SELECT fecha_inicio FROM parametros)
-          AND (SELECT fecha_fin FROM parametros)
-        GROUP BY ce.usuario_id, ce.ruta_id
-      ),
-      proxima_cuota AS (
-        SELECT DISTINCT ON (ce.credito_id)
-          ce.usuario_id,
-          ce.ruta_id,
-          ce.credito_id,
-          ce.fecha_vencimiento
-        FROM cuotas_estado ce
-        WHERE ce.saldo > 0
-        ORDER BY ce.credito_id, ce.fecha_vencimiento ASC
-      ),
-      atrasos AS (
-        SELECT
-          usuario_id,
-          ruta_id,
-          COUNT(*)::int AS atrasados
-        FROM proxima_cuota
-        WHERE fecha_vencimiento < (SELECT fecha_inicio FROM parametros)
-        GROUP BY usuario_id, ruta_id
-      ),
-      pagos_resumen AS (
-        SELECT
-          p.cobrador_usuario_id AS usuario_id,
-          p.ruta_id,
-          COALESCE(SUM(p.total_pagado) FILTER (
-            WHERE (p.fecha_pago AT TIME ZONE 'America/Bogota')::date
-              BETWEEN (SELECT fecha_inicio FROM parametros)
-              AND (SELECT fecha_fin FROM parametros)
-          ), 0) AS recaudo_hoy,
-          COALESCE(SUM(p.total_pagado) FILTER (
-            WHERE date_trunc('month', p.fecha_pago AT TIME ZONE 'America/Bogota') =
-              date_trunc(
-                'month',
-                (SELECT fecha_fin FROM parametros)::timestamp
-              )
-          ), 0) AS recaudo_mes,
-          COUNT(*) FILTER (
-            WHERE (p.fecha_pago AT TIME ZONE 'America/Bogota')::date
-              BETWEEN (SELECT fecha_inicio FROM parametros)
-              AND (SELECT fecha_fin FROM parametros)
-          )::int AS pagos_hoy,
-          MAX(p.fecha_pago) FILTER (
-            WHERE (p.fecha_pago AT TIME ZONE 'America/Bogota')::date
-              BETWEEN (SELECT fecha_inicio FROM parametros)
-              AND (SELECT fecha_fin FROM parametros)
-          ) AS ultima_actividad
-        FROM public.pago p
-        WHERE p.cobrador_usuario_id IS NOT NULL
-        GROUP BY p.cobrador_usuario_id, p.ruta_id
-      ),
-      rutas_creditos AS (
-        SELECT
-          cb.usuario_id,
-          cb.ruta_id,
-          r.nombre,
-          COUNT(DISTINCT cb.credito_id)::int AS creditos,
-          COUNT(DISTINCT cb.cliente_id)::int AS clientes
-        FROM creditos_base cb
-        JOIN public.ruta r
-          ON r.ruta_id = cb.ruta_id
-        GROUP BY cb.usuario_id, cb.ruta_id, r.nombre
-      ),
-      rutas_json AS (
-        SELECT
-          rc.usuario_id,
-          jsonb_agg(
-            jsonb_build_object(
-              'rutaId', rc.ruta_id,
-              'nombre', rc.nombre,
-              'creditos', rc.creditos,
-              'clientes', rc.clientes,
-              'debenHoy', COALESCE(ah.deberes_hoy, 0),
-              'cumplidosHoy', COALESCE(ah.cumplidos_hoy, 0),
-              'pendientesHoy', COALESCE(ah.pendientes_hoy, 0),
-              'atrasados', COALESCE(a.atrasados, 0),
-              'recaudadoHoy', COALESCE(pr.recaudo_hoy, 0)
-            )
-            ORDER BY COALESCE(ah.pendientes_hoy, 0) DESC,
-              COALESCE(a.atrasados, 0) DESC,
-              rc.nombre ASC
-          ) AS rutas
-        FROM rutas_creditos rc
-        LEFT JOIN agenda_hoy ah
-          ON ah.usuario_id = rc.usuario_id
-         AND ah.ruta_id = rc.ruta_id
-        LEFT JOIN atrasos a
-          ON a.usuario_id = rc.usuario_id
-         AND a.ruta_id = rc.ruta_id
-        LEFT JOIN pagos_resumen pr
-          ON pr.usuario_id = rc.usuario_id
-         AND pr.ruta_id = rc.ruta_id
-        GROUP BY rc.usuario_id
-      ),
-      creditos_resumen AS (
-        SELECT
-          usuario_id,
-          COUNT(*)::int AS total_creditos,
-          COUNT(*) FILTER (
-            WHERE (creado_en AT TIME ZONE 'America/Bogota')::date
-              BETWEEN (SELECT fecha_inicio FROM parametros)
-              AND (SELECT fecha_fin FROM parametros)
-          )::int AS creditos_hoy,
-          COUNT(*) FILTER (
-            WHERE date_trunc('month', creado_en AT TIME ZONE 'America/Bogota') =
-              date_trunc(
-                'month',
-                (SELECT fecha_fin FROM parametros)::timestamp
-              )
-          )::int AS creditos_mes,
-          COALESCE(SUM(valor_principal) FILTER (
-            WHERE (creado_en AT TIME ZONE 'America/Bogota')::date
-              BETWEEN (SELECT fecha_inicio FROM parametros)
-              AND (SELECT fecha_fin FROM parametros)
-          ), 0) AS valor_creditos_hoy,
-          COALESCE(SUM(valor_principal), 0) AS valor_creditos_total,
-          MAX(creado_en) FILTER (
-            WHERE (creado_en AT TIME ZONE 'America/Bogota')::date
-              BETWEEN (SELECT fecha_inicio FROM parametros)
-              AND (SELECT fecha_fin FROM parametros)
-          ) AS ultima_actividad
-        FROM creditos_base
-        GROUP BY usuario_id
-      ),
-      agenda_resumen AS (
-        SELECT
-          usuario_id,
-          COALESCE(SUM(deberes_hoy), 0)::int AS deberes_hoy,
-          COALESCE(SUM(cumplidos_hoy), 0)::int AS cumplidos_hoy,
-          COALESCE(SUM(pendientes_hoy), 0)::int AS pendientes_hoy
-        FROM agenda_hoy
-        GROUP BY usuario_id
-      ),
-      atrasos_resumen AS (
-        SELECT
-          usuario_id,
-          COALESCE(SUM(atrasados), 0)::int AS atrasados
-        FROM atrasos
-        GROUP BY usuario_id
-      ),
-      pagos_totales AS (
-        SELECT
-          usuario_id,
-          COALESCE(SUM(recaudo_hoy), 0) AS recaudo_hoy,
-          COALESCE(SUM(recaudo_mes), 0) AS recaudo_mes,
-          COALESCE(SUM(pagos_hoy), 0)::int AS pagos_hoy,
-          MAX(ultima_actividad) AS ultima_actividad
-        FROM pagos_resumen
-        GROUP BY usuario_id
-      )
-      SELECT
-        e.usuario_id,
-        e.nombre_usuario AS usuario,
-        e.nombre_completo,
-        e.correo,
-        e.activo,
-        COALESCE(rj.rutas, '[]'::jsonb) AS rutas,
-        COALESCE(cr.total_creditos, 0) AS total_creditos,
-        COALESCE(cr.creditos_hoy, 0) AS creditos_hoy,
-        COALESCE(cr.creditos_mes, 0) AS creditos_mes,
-        COALESCE(cr.valor_creditos_hoy, 0) AS valor_creditos_hoy,
-        COALESCE(cr.valor_creditos_total, 0) AS valor_creditos_total,
-        COALESCE(pt.recaudo_hoy, 0) AS recaudo_hoy,
-        COALESCE(pt.recaudo_mes, 0) AS recaudo_mes,
-        COALESCE(pt.pagos_hoy, 0) AS pagos_hoy,
-        COALESCE(ar.deberes_hoy, 0) AS deberes_hoy,
-        COALESCE(ar.cumplidos_hoy, 0) AS cumplidos_hoy,
-        COALESCE(ar.pendientes_hoy, 0) AS pendientes_hoy,
-        COALESCE(atrasos_total.atrasados, 0) AS atrasados,
-        COALESCE(
-          GREATEST(cr.ultima_actividad, pt.ultima_actividad),
-          cr.ultima_actividad,
-          pt.ultima_actividad
-        ) AS ultima_actividad
-      FROM empleados e
-      LEFT JOIN rutas_json rj
-        ON rj.usuario_id = e.usuario_id
-      LEFT JOIN creditos_resumen cr
-        ON cr.usuario_id = e.usuario_id
-      LEFT JOIN agenda_resumen ar
-        ON ar.usuario_id = e.usuario_id
-      LEFT JOIN atrasos_resumen atrasos_total
-        ON atrasos_total.usuario_id = e.usuario_id
-      LEFT JOIN pagos_totales pt
-        ON pt.usuario_id = e.usuario_id
-      ORDER BY e.activo DESC, e.nombre_completo ASC
-    `);
-
-    return this.formatearActividadEmpleados(rows);
+    return this.listarActividadEmpleadosTbl(usuario, rango);
   }
 
   private formatearActividadEmpleados(rows: ActividadEmpleadoRow[]) {
@@ -1735,79 +1233,7 @@ export class AuthService {
     dto: ActualizarPermisosUsuariosDto,
   ): Promise<AuthUserResponse[]> {
     this.requerirAdministrador(administrador);
-
-    if (await this.usarEsquemaTbl()) {
-      return this.actualizarPermisosEmpleadosTbl(administrador, dto);
-    }
-
-    const permisos = this.validarPermisos(dto.permisos);
-    const usuariosObjetivo = await this.obtenerEmpleadosObjetivo(dto);
-
-    if (usuariosObjetivo.length === 0) {
-      throw new BadRequestException('Selecciona al menos un empleado');
-    }
-
-    await this.prisma.$transaction(async (tx) => {
-      const rolesPermiso = await this.asegurarRolesPermisos(tx);
-      const rolesPermitidos = rolesPermiso.filter((rol) =>
-        permisos.includes(rol.codigo),
-      );
-      const usuarioIds = usuariosObjetivo.map((empleado) => empleado.usuarioId);
-      const usuariosAntes = await tx.usuario.findMany({
-        where: { usuarioId: { in: usuarioIds } },
-        include: usuarioConRolesInclude,
-      });
-      const permisosAntes = new Map(
-        usuariosAntes.map((empleado) => [
-          empleado.usuarioId,
-          this.permisosUsuario(empleado),
-        ]),
-      );
-
-      await tx.usuarioRol.deleteMany({
-        where: {
-          usuarioId: { in: usuarioIds },
-          rol: { codigo: { in: permisosEmpleadoCodigos } },
-        },
-      });
-
-      if (rolesPermitidos.length > 0) {
-        await tx.usuarioRol.createMany({
-          data: usuariosObjetivo.flatMap((empleado) =>
-            rolesPermitidos.map((rol) => ({
-              usuarioId: empleado.usuarioId,
-              rolId: rol.rolId,
-            })),
-          ),
-          skipDuplicates: true,
-        });
-      }
-
-      for (const empleado of usuariosAntes) {
-        const anteriores = permisosAntes.get(empleado.usuarioId) ?? [];
-        await this.registrarAuditoria(tx, {
-          usuarioId: administrador.usuarioId,
-          tabla: 'usuario',
-          registroId: empleado.usuarioId,
-          accion: 'MODIFICAR_PERMISOS',
-          descripcion: `Se actualizaron permisos de ${empleado.nombreUsuario}`,
-          valoresAnteriores: { permisos: anteriores },
-          valoresNuevos: { permisos },
-          metadata: {
-            tipo: 'empleado',
-            aplicarATodos: dto.todos === true,
-            agregados: permisos.filter(
-              (permiso) => !anteriores.includes(permiso),
-            ),
-            quitados: anteriores.filter(
-              (permiso) => !permisos.includes(permiso),
-            ),
-          },
-        });
-      }
-    });
-
-    return this.listarEmpleados(administrador);
+    return this.actualizarPermisosEmpleadosTbl(administrador, dto);
   }
 
   private async actualizarPermisosEmpleadosTbl(
@@ -2067,63 +1493,7 @@ export class AuthService {
       throw new BadRequestException('No puedes desactivar tu propio usuario');
     }
 
-    if (await this.usarEsquemaTbl()) {
-      return this.actualizarEstadoEmpleadoTbl(administrador, empleadoId, dto);
-    }
-
-    const empleado = await this.prisma.usuario.findFirst({
-      where: {
-        usuarioId: empleadoId,
-        roles: {
-          some: { rol: { codigo: 'COBRADOR' } },
-        },
-      },
-      include: usuarioConRolesInclude,
-    });
-
-    if (!empleado) {
-      throw new NotFoundException('Empleado no encontrado');
-    }
-
-    const estado = await this.prisma.estadoUsuario.findUnique({
-      where: { codigo: dto.activo ? 'ACTIVO' : 'INACTIVO' },
-    });
-
-    if (!estado) {
-      throw new ConflictException('No existe el estado solicitado');
-    }
-
-    const actualizado = await this.prisma.$transaction(async (tx) => {
-      const usuarioActualizado = await tx.usuario.update({
-        where: { usuarioId: empleadoId },
-        data: {
-          estadoUsuarioId: estado.estadoUsuarioId,
-          actualizadoEn: new Date(),
-        },
-        include: usuarioConRolesInclude,
-      });
-
-      await this.registrarAuditoria(tx, {
-        usuarioId: administrador.usuarioId,
-        tabla: 'usuario',
-        registroId: empleadoId,
-        accion: dto.activo ? 'ACTIVAR' : 'ANULAR',
-        descripcion: dto.activo
-          ? `Se activo empleado ${empleado.nombreUsuario}`
-          : `Se anulo empleado ${empleado.nombreUsuario}`,
-        valoresAnteriores: {
-          estado: empleado.estadoUsuario.codigo,
-        },
-        valoresNuevos: {
-          estado: estado.codigo,
-        },
-        metadata: { tipo: 'empleado' },
-      });
-
-      return usuarioActualizado;
-    });
-
-    return this.formatearUsuario(actualizado);
+    return this.actualizarEstadoEmpleadoTbl(administrador, empleadoId, dto);
   }
 
   verificarToken(token: string): AuthenticatedUser {
@@ -2213,13 +1583,7 @@ export class AuthService {
     }
   }
 
-  private async requerirEsquemaTblSuperAdmin() {
-    if (!(await this.usarEsquemaTbl())) {
-      throw new ConflictException(
-        'La administracion de instituciones requiere el esquema tbl_*',
-      );
-    }
-  }
+  private async requerirEsquemaTblSuperAdmin() {}
 
   private requerirIdTbl(value: string, mensaje: string) {
     if (!this.esIdTbl(value)) {
@@ -2243,87 +1607,7 @@ export class AuthService {
     rolCodigo: string,
     administrador?: AuthenticatedUser,
   ): Promise<AuthUserResponse> {
-    if (await this.usarEsquemaTbl()) {
-      return this.crearUsuarioTbl(dto, rolCodigo, administrador);
-    }
-
-    const nombreUsuario = this.normalizarUsuario(dto.usuario);
-    const correo = dto.correo.trim().toLowerCase();
-    const nombre = this.separarNombre(dto.nombreCompleto);
-    const passwordHash = await this.passwords.hash(dto.contrasena);
-
-    const creado = await this.prisma.$transaction(async (tx) => {
-      const [estadoActivo, rol, existenteUsuario, existenteCorreo] =
-        await Promise.all([
-          tx.estadoUsuario.findUnique({ where: { codigo: 'ACTIVO' } }),
-          tx.rol.findUnique({ where: { codigo: rolCodigo } }),
-          tx.usuario.findUnique({ where: { nombreUsuario } }),
-          tx.usuario.findFirst({
-            where: { correo: { equals: correo, mode: 'insensitive' } },
-          }),
-        ]);
-
-      if (!estadoActivo) {
-        throw new ConflictException('No existe el estado ACTIVO de usuario');
-      }
-
-      if (!rol) {
-        throw new ConflictException(`No existe el rol ${rolCodigo}`);
-      }
-
-      if (existenteUsuario) {
-        throw new ConflictException('El usuario ya existe');
-      }
-
-      if (existenteCorreo) {
-        throw new ConflictException('El correo ya esta registrado');
-      }
-
-      const rolesEmpleado =
-        rolCodigo === 'COBRADOR'
-          ? (await this.asegurarRolesPermisos(tx)).filter((rolPermiso) =>
-              permisosEmpleadoPredeterminadosCodigos.includes(
-                rolPermiso.codigo,
-              ),
-            )
-          : [];
-
-      const creado = await tx.usuario.create({
-        data: {
-          estadoUsuarioId: estadoActivo.estadoUsuarioId,
-          nombreUsuario,
-          passwordHash,
-          nombres: nombre.nombres,
-          apellidos: nombre.apellidos,
-          correo,
-          roles: {
-            create: [
-              { rolId: rol.rolId },
-              ...rolesEmpleado.map((rolPermiso) => ({
-                rolId: rolPermiso.rolId,
-              })),
-            ],
-          },
-        },
-        include: usuarioConRolesInclude,
-      });
-
-      if (administrador) {
-        await this.registrarAuditoria(tx, {
-          usuarioId: administrador.usuarioId,
-          tabla: 'usuario',
-          registroId: creado.usuarioId,
-          accion: 'CREAR',
-          descripcion: `Se creo empleado ${creado.nombreUsuario}`,
-          valoresNuevos: this.usuarioAuditoria(creado),
-          metadata: { tipo: 'empleado' },
-        });
-      }
-
-      return creado;
-    });
-
-    return this.formatearUsuario(creado);
+    return this.crearUsuarioTbl(dto, rolCodigo, administrador);
   }
 
   private async crearUsuarioTbl(
@@ -2479,9 +1763,6 @@ export class AuthService {
     return scope.org_id;
   }
 
-  private crearSesion(usuario: UsuarioConRoles): AuthSessionResponse {
-    return this.crearSesionParaUsuario(this.formatearUsuario(usuario));
-  }
 
   private crearSesionParaUsuario(
     usuarioResponse: AuthUserResponse,
@@ -2836,31 +2117,6 @@ export class AuthService {
     return /^[1-9]\d{0,18}$/.test(value) || /^[0-9a-fA-F-]{36}$/.test(value);
   }
 
-  private async usarEsquemaTbl() {
-    try {
-      const rows = await this.prisma.$queryRaw<Array<{ disponible: boolean }>>`
-        SELECT COUNT(*) = 3 AS disponible
-        FROM information_schema.tables
-        WHERE table_schema = 'public'
-          AND table_name IN (
-            'tbl_usuarios',
-            'tbl_roles',
-            'tbl_usuarios_organizaciones'
-          )
-      `;
-
-      return rows[0]?.disponible ?? false;
-    } catch {
-      return false;
-    }
-  }
-
-  private esErrorEsquemaAuthFaltante(error: unknown) {
-    return (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      ['P2010', 'P2021', 'P2022'].includes(error.code)
-    );
-  }
 
   private separarNombre(nombreCompleto: string) {
     const partes = nombreCompleto.trim().split(/\s+/);
@@ -2875,59 +2131,6 @@ export class AuthService {
     };
   }
 
-  private async asegurarRolesPermisos(tx: Prisma.TransactionClient) {
-    const rolesPermiso: Array<{ rolId: number; codigo: string }> = [];
-    const rolAdministrador = await tx.rol.findUnique({
-      where: { codigo: 'ADMINISTRADOR' },
-    });
-
-    for (const codigo of permisosEmpleadoCodigos) {
-      const permiso = permisosEmpleadoPorCodigo.get(codigo);
-
-      if (!permiso) {
-        continue;
-      }
-
-      const [rol, recurso] = await Promise.all([
-        tx.rol.upsert({
-          where: { codigo },
-          create: { codigo, nombre: permiso.rolNombre },
-          update: { nombre: permiso.rolNombre },
-        }),
-        tx.$queryRaw<Array<{ recurso_id: number }>>(Prisma.sql`
-          INSERT INTO public.recurso (codigo, nombre)
-          VALUES (${codigo}, ${permiso.nombre})
-          ON CONFLICT (codigo) DO UPDATE
-          SET nombre = EXCLUDED.nombre,
-              actualizado_en = now()
-          RETURNING recurso_id
-        `),
-      ]);
-      const recursoId = recurso[0]?.recurso_id;
-
-      if (!recursoId) {
-        throw new ConflictException(`No existe el recurso ${codigo}`);
-      }
-
-      await tx.$executeRaw(Prisma.sql`
-        INSERT INTO public.rol_recurso (rol_id, recurso_id)
-        VALUES (${rol.rolId}, ${recursoId})
-        ON CONFLICT DO NOTHING
-      `);
-
-      if (rolAdministrador) {
-        await tx.$executeRaw(Prisma.sql`
-          INSERT INTO public.rol_recurso (rol_id, recurso_id)
-          VALUES (${rolAdministrador.rolId}, ${recursoId})
-          ON CONFLICT DO NOTHING
-        `);
-      }
-
-      rolesPermiso.push({ rolId: rol.rolId, codigo: rol.codigo });
-    }
-
-    return rolesPermiso;
-  }
 
   private validarPermisos(permisos: string[]) {
     const unicos = [...new Set(permisos.map((permiso) => permiso.trim()))];
@@ -2942,54 +2145,6 @@ export class AuthService {
     return unicos;
   }
 
-  private async obtenerEmpleadosObjetivo(dto: ActualizarPermisosUsuariosDto) {
-    const where: Prisma.UsuarioWhereInput = {
-      roles: {
-        some: { rol: { codigo: 'COBRADOR' } },
-      },
-    };
-
-    if (!dto.todos) {
-      const usuarioIds = dto.usuarioIds?.filter((id) => id.trim()) ?? [];
-
-      if (usuarioIds.length === 0) {
-        throw new BadRequestException('Selecciona al menos un empleado');
-      }
-
-      where.usuarioId = { in: usuarioIds };
-    }
-
-    return this.prisma.usuario.findMany({
-      where,
-      select: { usuarioId: true },
-    });
-  }
-
-  private formatearUsuario(usuario: UsuarioConRoles): AuthUserResponse {
-    const roles = usuario.roles.map((rol) => rol.rol.codigo);
-    const esAdministrador = roles.includes('ADMINISTRADOR');
-    const esSuperAdmin = roles.includes('SUPER_ADMIN');
-    const permisos = permisosEmpleadoCodigos.filter((codigo) =>
-      roles.includes(codigo),
-    );
-
-    return {
-      id: usuario.usuarioId,
-      usuario: usuario.nombreUsuario,
-      nombreCompleto: `${usuario.nombres} ${usuario.apellidos}`.trim(),
-      correo: usuario.correo,
-      roles,
-      organizacionId: null,
-      esAdministrador,
-      esSuperAdmin,
-      activo: usuario.estadoUsuario.codigo === 'ACTIVO',
-      estado: {
-        codigo: usuario.estadoUsuario.codigo,
-        nombre: usuario.estadoUsuario.nombre,
-      },
-      permisos: esAdministrador ? permisosEmpleadoCodigos : permisos,
-    };
-  }
 
   private formatearUsuarioTbl(usuario: UsuarioTblAuth): AuthUserResponse {
     const roles = usuario.roles.filter((rol) => !esPermisoEmpleado(rol));
@@ -3139,22 +2294,6 @@ export class AuthService {
     return value;
   }
 
-  private permisosUsuario(usuario: UsuarioConRoles): string[] {
-    const roles = usuario.roles.map((rol) => rol.rol.codigo);
-    return permisosEmpleadoCodigos.filter((codigo) => roles.includes(codigo));
-  }
-
-  private usuarioAuditoria(usuario: UsuarioConRoles) {
-    return {
-      usuarioId: usuario.usuarioId,
-      usuario: usuario.nombreUsuario,
-      nombreCompleto: `${usuario.nombres} ${usuario.apellidos}`.trim(),
-      correo: usuario.correo,
-      estado: usuario.estadoUsuario.codigo,
-      roles: usuario.roles.map((rol) => rol.rol.codigo),
-      permisos: this.permisosUsuario(usuario),
-    };
-  }
 
   private normalizarRutasActividad(value: unknown): RutaActividadEmpleado[] {
     if (!Array.isArray(value)) {
@@ -3217,52 +2356,5 @@ export class AuthService {
 
     return 0;
   }
-
-  private async registrarAuditoria(
-    tx: Prisma.TransactionClient,
-    input: {
-      usuarioId?: string | null;
-      tabla: string;
-      registroId?: string | null;
-      accion: string;
-      descripcion: string;
-      valoresAnteriores?: unknown;
-      valoresNuevos?: unknown;
-      metadata?: unknown;
-    },
-  ) {
-    const valoresAnteriores =
-      input.valoresAnteriores === undefined
-        ? null
-        : JSON.stringify(input.valoresAnteriores);
-    const valoresNuevos =
-      input.valoresNuevos === undefined
-        ? null
-        : JSON.stringify(input.valoresNuevos);
-    const metadata =
-      input.metadata === undefined ? null : JSON.stringify(input.metadata);
-
-    await tx.$executeRaw(Prisma.sql`
-      INSERT INTO public.auditoria (
-        usuario_id,
-        tabla,
-        registro_id,
-        accion,
-        descripcion,
-        valores_anteriores,
-        valores_nuevos,
-        metadata
-      )
-      VALUES (
-        ${input.usuarioId ?? null}::uuid,
-        ${input.tabla},
-        ${input.registroId ?? null},
-        ${input.accion},
-        ${input.descripcion},
-        ${valoresAnteriores}::jsonb,
-        ${valoresNuevos}::jsonb,
-        ${metadata}::jsonb
-      )
-    `);
-  }
 }
+

@@ -113,31 +113,6 @@ describe('PresupuestoService', () => {
     expect(sqlText).toContain('public.tbl_sesiones_cajas sc_acl');
   });
 
-  it('calculates budget in prisma schema correctly', async () => {
-    const queryRaw = jest.fn<Promise<unknown[]>, [unknown]>().mockResolvedValueOnce([
-      {
-        caja_menor_id: 'caj-p1',
-        caja_menor_nombre: 'Caja Prisma',
-        responsable_usuario_id: '7',
-        moneda_codigo: 'COP',
-        caja_menor: new Prisma.Decimal('200000'),
-        recaudado: new Prisma.Decimal('100000'),
-        gastos: new Prisma.Decimal('50000'),
-        creditos: new Prisma.Decimal('150000'),
-        presupuesto: new Prisma.Decimal('250000'),
-      },
-    ]);
-
-    const service = createService(queryRaw, false);
-    const result = await service.obtenerPresupuesto(
-      { search: 'Prisma', fechaDesde: '2026-09-01', fechaHasta: '2026-09-08' },
-      usuario('7'),
-    );
-
-    expect(result.items).toHaveLength(1);
-    expect(result.items[0].presupuesto).toBe(250000);
-    expect(result.totales.presupuesto).toBe(250000);
-  });
 
   it('throws validation error on invalid date', async () => {
     const queryRaw = jest.fn<Promise<unknown[]>, [unknown]>();

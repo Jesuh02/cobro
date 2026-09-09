@@ -392,4 +392,124 @@ describe('CajaMenorService', () => {
       : (updateSqlObj?.sql ?? '');
     expect(updateRawSql).toContain('sca_total_cobrado');
   });
+
+  it('rejects updating movement if user lacks MODIFICAR_MOVIMIENTOS permission', async () => {
+    const queryRaw = jest.fn<Promise<unknown[]>, [unknown]>();
+    const service = createService(queryRaw);
+    const user = usuario('7', ['COBRADOR'], []);
+
+    await expect(
+      service.actualizarMovimientoCaja(
+        'b0a2cfeb-d3fb-464a-85d0-d88ce74d2847',
+        {
+          cajaMenorId: 'caj-1',
+          tipoMovimientoCodigo: 'GASTO',
+          fechaMovimiento: '2026-09-01T00:00:00.000Z',
+          monto: 50,
+          motivo: 'Papeleria',
+        },
+        user,
+      ),
+    ).rejects.toThrow('No tienes permiso para modificar movimientos');
+  });
+
+  it('updates a movement and adjusts session totals in tbl mode', async () => {
+    const queryRaw = jest
+      .fn<Promise<unknown[]>, [unknown]>()
+      .mockResolvedValueOnce([
+        {
+          id: 'b0a2cfeb-d3fb-464a-85d0-d88ce74d2847',
+          tipo: 'GASTO',
+          monto: '50.00',
+          referencia_id: null,
+          referencia_tipo: null,
+          sesion_id: 'ses-1',
+          org_id: '10',
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          caja_menor_id: 'caj-1',
+          caja_menor: 'Caja Principal',
+          activa: true,
+          org_id: '10',
+          sesion_id: 'ses-1',
+          fecha_cierre: null,
+          usuario_id: '7',
+          usuario: 'test_user',
+          nombres: 'Test',
+          apellidos: 'User',
+          correo: 'test@example.com',
+          telefono: '1234567',
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: 'mov-b0a2cfeb-d3fb-464a-85d0-d88ce74d2847',
+          caja_menor_id: 'caj-1',
+          caja_menor: 'Caja Principal',
+          cliente: null,
+          cliente_identificacion: null,
+          tipo_codigo: 'GASTO',
+          tipo_nombre: 'Gasto',
+          naturaleza: 'S',
+          usuario_id: '7',
+          usuario: 'test_user',
+          nombres: 'Test',
+          apellidos: 'User',
+          correo: 'test@example.com',
+          telefono: '1234567',
+          fecha_movimiento: new Date('2026-09-01T00:00:00.000Z'),
+          monto: '60.00',
+          motivo: 'Papeleria modificada',
+          referencia_tabla: null,
+          referencia_id: null,
+          creado_en: new Date('2026-09-01T00:00:00.000Z'),
+        },
+      ]);
+    const executeRaw = jest.fn().mockResolvedValue(1);
+    const service = createService(queryRaw, executeRaw);
+
+    const result = await service.actualizarMovimientoCaja(
+      'b0a2cfeb-d3fb-464a-85d0-d88ce74d2847',
+      {
+        cajaMenorId: 'caj-1',
+        tipoMovimientoCodigo: 'GASTO',
+        fechaMovimiento: '2026-09-01T00:00:00.000Z',
+        monto: 60,
+        motivo: 'Papeleria modificada',
+      },
+      usuario('7', ['ADMINISTRADOR']),
+    );
+
+    expect(result.id).toBe('mov-b0a2cfeb-d3fb-464a-85d0-d88ce74d2847');
+    expect(result.monto).toBe(60);
+    expect(executeRaw).toHaveBeenCalled();
+  });
+
+  it('deletes a movement and reverts session totals in tbl mode', async () => {
+    const queryRaw = jest
+      .fn<Promise<unknown[]>, [unknown]>()
+      .mockResolvedValueOnce([
+        {
+          id: 'b0a2cfeb-d3fb-464a-85d0-d88ce74d2847',
+          tipo: 'GASTO',
+          monto: '50.00',
+          referencia_id: null,
+          referencia_tipo: null,
+          sesion_id: 'ses-1',
+          org_id: '10',
+        },
+      ]);
+    const executeRaw = jest.fn().mockResolvedValue(1);
+    const service = createService(queryRaw, executeRaw);
+
+    const result = await service.eliminarMovimientoCaja(
+      'b0a2cfeb-d3fb-464a-85d0-d88ce74d2847',
+      usuario('7', ['ADMINISTRADOR']),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(executeRaw).toHaveBeenCalled();
+  });
 });

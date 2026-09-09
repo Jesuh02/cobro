@@ -4,9 +4,7 @@ describe('CatalogosService', () => {
   it('returns catalogos formatted for tbl schema', async () => {
     const queryRaw = jest
       .fn()
-      // 1. usarEsquemaTbl
-      .mockResolvedValueOnce([{ disponible: true }])
-      // 2. obtenerMonedasTbl
+      // 1. obtenerMonedasTbl
       .mockResolvedValueOnce([
         {
           codigo: 'COP',
@@ -15,7 +13,7 @@ describe('CatalogosService', () => {
           decimales: 0,
         },
       ])
-      // 3. catalogos (frecuencia_pago, medio_pago, etc.)
+      // 2. catalogos (frecuencia_pago, medio_pago, etc.)
       .mockResolvedValueOnce([
         {
           tipo: 'frecuencia_pago',
@@ -50,11 +48,11 @@ describe('CatalogosService', () => {
           activo: true,
         },
       ])
-      // 4. listarRutasTbl
+      // 3. listarRutasTbl
       .mockResolvedValueOnce([])
-      // 5. cajasMenores
+      // 4. cajasMenores
       .mockResolvedValueOnce([])
-      // 6. usuarios
+      // 5. usuarios
       .mockResolvedValueOnce([
         {
           id: 'u-1',
@@ -95,7 +93,7 @@ describe('CatalogosService', () => {
     expect(result.usuarios[0].usuario).toBe('testuser');
 
     // Verify raw SQL avoids non-existent columns (pcr_activo, med_codigo, frecuencia_pago_enum)
-    const sqlObj = queryRaw.mock.calls[2][0];
+    const sqlObj = queryRaw.mock.calls[1][0];
     const rawSql = Array.isArray(sqlObj.strings)
       ? sqlObj.strings.join('')
       : (sqlObj.sql ?? '');
@@ -108,7 +106,6 @@ describe('CatalogosService', () => {
   it('provides default COP currency fallback when tbl_monedas is empty', async () => {
     const queryRaw = jest
       .fn()
-      .mockResolvedValueOnce([{ disponible: true }])
       .mockResolvedValueOnce([]) // empty monedas
       .mockResolvedValueOnce([]) // catalogos
       .mockResolvedValueOnce([]) // rutas

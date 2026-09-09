@@ -6,9 +6,7 @@ describe('RutasService', () => {
   it('lists routes formatted for tbl schema', async () => {
     const queryRaw = jest
       .fn()
-      // 1. usarEsquemaTbl
-      .mockResolvedValueOnce([{ disponible: true }])
-      // 2. listarRutasTbl
+      // listarRutasTbl
       .mockResolvedValueOnce([
         {
           id: 'rut-1',
@@ -60,9 +58,7 @@ describe('RutasService', () => {
   it('lists cobros ruta for tbl schema', async () => {
     const queryRaw = jest
       .fn()
-      // 1. usarEsquemaTbl
-      .mockResolvedValueOnce([{ disponible: true }])
-      // 2. listarCobrosRutaTbl
+      // listarCobrosRutaTbl
       .mockResolvedValueOnce([
         {
           credito_id: 'cre-1',
@@ -130,9 +126,7 @@ describe('RutasService', () => {
   it('exportarCobrosRuta generates excel export from cobros ruta', async () => {
     const queryRaw = jest
       .fn()
-      // 1. usarEsquemaTbl
-      .mockResolvedValueOnce([{ disponible: true }])
-      // 2. listarCobrosRutaTbl
+      // listarCobrosRutaTbl
       .mockResolvedValueOnce([
         {
           credito_id: 'cre-1',

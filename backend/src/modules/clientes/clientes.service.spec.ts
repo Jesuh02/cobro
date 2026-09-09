@@ -6,9 +6,7 @@ describe('ClientesService', () => {
   it('lists clients formatted for tbl schema', async () => {
     const queryRaw = jest
       .fn()
-      // 1. usarEsquemaTbl
-      .mockResolvedValueOnce([{ disponible: true }])
-      // 2. listarClientesTbl
+      // 1. listarClientesTbl
       .mockResolvedValueOnce([
         {
           id: 'cli-1',
@@ -91,17 +89,13 @@ describe('ClientesService', () => {
   it('creates client in tbl schema and links route', async () => {
     const queryRaw = jest
       .fn()
-      // 1. usarEsquemaTbl
-      .mockResolvedValueOnce([{ disponible: true }])
-      // 2. select duplicates
+      // 1. select duplicates
       .mockResolvedValueOnce([{ existe: false }])
-      // 3. insert persona
+      // 2. insert persona
       .mockResolvedValueOnce([{ id: 'per-1' }])
-      // 4. insert cliente
+      // 3. insert cliente
       .mockResolvedValueOnce([{ id: 'cli-1' }])
-      // 5. check auditoria table
-      .mockResolvedValueOnce([{ nombre: 'public.auditoria' }])
-      // 6. select creados
+      // 4. select creados
       .mockResolvedValueOnce([
         {
           id: 'cli-1',

@@ -581,18 +581,23 @@ describe('PagosService', () => {
   });
 
   it('rejects registrarPago if cuota is anulada', async () => {
-    mockPrisma.creditoCuota.findUnique.mockResolvedValue({
-      creditoCuotaId: 'cuota-1',
-      estadoCuota: { codigo: 'ANULADA' },
-      planPago: {
-        credito: {
-          ruta: {
-            responsableUsuarioId: '11111111-1111-4111-8111-111111111111',
-          },
-          cliente: { nombreCompleto: 'Juan Perez' },
+    mockPrisma.$queryRaw
+      .mockResolvedValueOnce([{ id_cuo: 'cuota-1' }])
+      .mockResolvedValueOnce([
+        {
+          cuota_id: 'cuota-1',
+          cuota_estado: 'ANULADA',
+          credito_id: 'credito-1',
+          credito_estado: 'ACTIVO',
+          cliente_id: 'cliente-1',
+          cliente: 'Juan Perez',
+          org_id: '22222222-2222-4222-8222-222222222222',
+          usuario_id: '11111111-1111-4111-8111-111111111111',
+          usuario: 'admin_test',
+          moneda_id: 'moneda-1',
+          moneda_codigo: 'COP',
         },
-      },
-    });
+      ]);
 
     await expect(
       pagosService.registrarPago(

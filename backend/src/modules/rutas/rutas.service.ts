@@ -35,35 +35,6 @@ type RutaTblRow = {
   creditos: number;
 };
 
-type CobroRutaRow = {
-  credito_id: string;
-  cliente_id: string;
-  cliente: string;
-  cedula: string | null;
-  negocio: string | null;
-  direccion: string | null;
-  latitud: Prisma.Decimal | null;
-  longitud: Prisma.Decimal | null;
-  ruta_id: string;
-  ruta: string;
-  moneda_codigo: string;
-  valor_principal: Prisma.Decimal;
-  valor_total: Prisma.Decimal;
-  valor_cuota: Prisma.Decimal;
-  total_abonado: Prisma.Decimal;
-  saldo: Prisma.Decimal;
-  numero_cuotas: number;
-  cuotas_restantes: number;
-  fecha_inicio: Date;
-  fecha_maxima: Date;
-  proxima_cuota_id: string | null;
-  proxima_numero_cuota: number | null;
-  proxima_fecha_pago: Date | null;
-  proximo_valor_cuota: Prisma.Decimal | null;
-  proximo_saldo_cuota: Prisma.Decimal | null;
-  estado_cobro: string;
-};
-
 type CobroRutaTblRow = {
   credito_id: string;
   cliente_id: string;
@@ -104,7 +75,6 @@ type UsuarioTblRow = {
 
 @Injectable()
 export class RutasService {
-  private esquemaTblDisponible?: boolean;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -113,35 +83,7 @@ export class RutasService {
   ) {}
 
   async listarRutas(usuario: AuthenticatedUser) {
-    if (await this.usarEsquemaTbl()) {
-      return this.listarRutasTbl(usuario);
-    }
-
-    const rutas = await this.prisma.ruta.findMany({
-      where: this.tenantScope.puedeVerDatosOrganizacion(usuario)
-        ? undefined
-        : { responsableUsuarioId: usuario.usuarioId },
-      include: {
-        estadoRuta: true,
-        responsable: true,
-        _count: { select: { clientes: true, creditos: true } },
-      },
-      orderBy: [{ esPrincipal: 'desc' }, { nombre: 'asc' }],
-    });
-
-    return rutas.map((ruta) => ({
-      id: ruta.rutaId,
-      nombre: ruta.nombre,
-      descripcion: ruta.descripcion,
-      esPrincipal: ruta.esPrincipal,
-      estado: {
-        codigo: ruta.estadoRuta.codigo,
-        nombre: ruta.estadoRuta.nombre,
-      },
-      responsable: this.formatearUsuarioLegacy(ruta.responsable),
-      clientes: ruta._count.clientes,
-      creditos: ruta._count.creditos,
-    }));
+    return this.listarRutasTbl(usuario);
   }
 
   async listarRutasTbl(usuario: AuthenticatedUser) {
@@ -307,201 +249,7 @@ export class RutasService {
     usuario: AuthenticatedUser,
     limit?: number,
   ) {
-    if (await this.usarEsquemaTbl()) {
-      return this.listarCobrosRutaTbl(query, usuario, limit);
-    }
-
-    const conditions: Prisma.Sql[] = [Prisma.sql`ecr.codigo <> 'ANULADO'`];
-    const search = this.normalizarTextoOpcional(query.search);
-
-    if (!this.tenantScope.puedeVerDatosOrganizacion(usuario)) {
-      conditions.push(
-        Prisma.sql`c.creado_por_usuario_id = ${usuario.usuarioId}::uuid`,
-      );
-    }
-
-    if (query.rutaId) {
-      conditions.push(Prisma.sql`c.ruta_id = ${query.rutaId}::uuid`);
-    }
-
-    if (query.estadoCobro === 'PAGADO') {
-      conditions.push(Prisma.sql`(
-        ecr.codigo = 'PAGADO'
-        OR COALESCE(rp.cuotas_restantes, 0) <= 0
-        OR (cpp.valor_total - COALESCE(rp.total_abonado, 0)) <= 0
-      )`);
-    } else if (query.estadoCobro === 'ATRASADO') {
-      conditions.push(Prisma.sql`
-        ecr.codigo <> 'PAGADO'
-        AND
-        COALESCE(rp.cuotas_restantes, 0) > 0
-        AND
-        (cpp.valor_total - COALESCE(rp.total_abonado, 0)) > 0
-        AND prox.fecha_vencimiento < CURRENT_DATE
-      `);
-    } else if (query.estadoCobro === 'PENDIENTE') {
-      conditions.push(Prisma.sql`
-        ecr.codigo <> 'PAGADO'
-        AND
-        COALESCE(rp.cuotas_restantes, 0) > 0
-        AND
-        (cpp.valor_total - COALESCE(rp.total_abonado, 0)) > 0
-        AND prox.fecha_vencimiento = CURRENT_DATE
-      `);
-    } else if (query.estadoCobro === 'AL_DIA') {
-      conditions.push(Prisma.sql`
-        ecr.codigo <> 'PAGADO'
-        AND
-        COALESCE(rp.cuotas_restantes, 0) > 0
-        AND
-        (cpp.valor_total - COALESCE(rp.total_abonado, 0)) > 0
-        AND prox.fecha_vencimiento > CURRENT_DATE
-      `);
-    }
-
-    if (search) {
-      const pattern = `%${search}%`;
-      conditions.push(
-        Prisma.sql`(
-          cl.nombre_completo ILIKE ${pattern}
-          OR cl.nombre_comercial ILIKE ${pattern}
-          OR r.nombre ILIKE ${pattern}
-          OR EXISTS (
-            SELECT 1
-            FROM public.cliente_direccion cd_busqueda
-            WHERE cd_busqueda.cliente_id = cl.cliente_id
-              AND cd_busqueda.direccion ILIKE ${pattern}
-          )
-          OR EXISTS (
-            SELECT 1
-            FROM public.cliente_documento cd_busqueda
-            WHERE cd_busqueda.cliente_id = cl.cliente_id
-              AND cd_busqueda.numero_documento ILIKE ${pattern}
-          )
-        )`,
-      );
-    }
-
-    const rows = await this.prisma.$queryRaw<CobroRutaRow[]>(Prisma.sql`
-      WITH abonos_cuota AS (
-        SELECT
-          cc.credito_cuota_id,
-          COALESCE(
-            SUM(
-              pa.monto_capital
-              + pa.monto_interes
-              + pa.monto_mora
-              - pa.monto_descuento
-            ),
-            0
-          ) AS abonado
-        FROM public.credito_cuota cc
-        LEFT JOIN public.pago_aplicacion pa
-          ON pa.credito_cuota_id = cc.credito_cuota_id
-        GROUP BY cc.credito_cuota_id
-      ),
-      resumen_plan AS (
-        SELECT
-          cc.credito_plan_pago_id,
-          COALESCE(SUM(ac.abonado), 0) AS total_abonado,
-          COUNT(*) FILTER (
-            WHERE ecu.codigo NOT IN ('PAGADA', 'ANULADA')
-              AND (cc.valor_total - COALESCE(ac.abonado, 0)) > 0
-          )::int AS cuotas_restantes
-        FROM public.credito_cuota cc
-        JOIN public.estado_cuota ecu
-          ON ecu.estado_cuota_id = cc.estado_cuota_id
-        LEFT JOIN abonos_cuota ac
-          ON ac.credito_cuota_id = cc.credito_cuota_id
-        GROUP BY cc.credito_plan_pago_id
-      )
-      SELECT
-        c.credito_id,
-        cl.cliente_id,
-        cl.nombre_completo AS cliente,
-        doc_cc.numero_documento AS cedula,
-        cl.nombre_comercial AS negocio,
-        dir_principal.direccion,
-        dir_principal.latitud,
-        dir_principal.longitud,
-        r.ruta_id,
-        r.nombre AS ruta,
-        c.moneda_codigo,
-        c.valor_principal,
-        cpp.valor_total,
-        cpp.valor_cuota,
-        COALESCE(rp.total_abonado, 0) AS total_abonado,
-        GREATEST(cpp.valor_total - COALESCE(rp.total_abonado, 0), 0) AS saldo,
-        cpp.numero_cuotas,
-        COALESCE(rp.cuotas_restantes, 0) AS cuotas_restantes,
-        c.fecha_inicio,
-        cpp.fecha_maxima,
-        prox.credito_cuota_id AS proxima_cuota_id,
-        prox.numero_cuota AS proxima_numero_cuota,
-        prox.fecha_vencimiento AS proxima_fecha_pago,
-        prox.valor_total AS proximo_valor_cuota,
-        prox.saldo_cuota AS proximo_saldo_cuota,
-        CASE
-          WHEN ecr.codigo = 'PAGADO'
-            OR COALESCE(rp.cuotas_restantes, 0) <= 0
-            OR (cpp.valor_total - COALESCE(rp.total_abonado, 0)) <= 0
-            THEN 'PAGADO'
-          WHEN prox.fecha_vencimiento < CURRENT_DATE THEN 'ATRASADO'
-          WHEN prox.fecha_vencimiento = CURRENT_DATE THEN 'PENDIENTE'
-          ELSE 'AL_DIA'
-        END AS estado_cobro
-      FROM public.credito c
-      JOIN public.cliente cl
-        ON cl.cliente_id = c.cliente_id
-      JOIN public.ruta r
-        ON r.ruta_id = c.ruta_id
-      JOIN public.estado_credito ecr
-        ON ecr.estado_credito_id = c.estado_credito_id
-      JOIN public.credito_plan_pago cpp
-        ON cpp.credito_id = c.credito_id
-      LEFT JOIN LATERAL (
-        SELECT cd.numero_documento
-        FROM public.cliente_documento cd
-        JOIN public.tipo_documento td
-          ON td.tipo_documento_id = cd.tipo_documento_id
-        WHERE cd.cliente_id = cl.cliente_id
-          AND td.codigo = 'CC'
-        ORDER BY cd.numero_documento ASC
-        LIMIT 1
-      ) doc_cc ON TRUE
-      LEFT JOIN LATERAL (
-        SELECT cd.direccion, cd.latitud, cd.longitud
-        FROM public.cliente_direccion cd
-        WHERE cd.cliente_id = cl.cliente_id
-        ORDER BY cd.es_principal DESC, cd.direccion ASC
-        LIMIT 1
-      ) dir_principal ON TRUE
-      LEFT JOIN resumen_plan rp
-        ON rp.credito_plan_pago_id = cpp.credito_plan_pago_id
-      LEFT JOIN LATERAL (
-        SELECT
-          cc.credito_cuota_id,
-          cc.numero_cuota,
-          cc.fecha_vencimiento,
-          cc.valor_total,
-          GREATEST(cc.valor_total - COALESCE(ac.abonado, 0), 0) AS saldo_cuota
-        FROM public.credito_cuota cc
-        JOIN public.estado_cuota ecu
-          ON ecu.estado_cuota_id = cc.estado_cuota_id
-        LEFT JOIN abonos_cuota ac
-          ON ac.credito_cuota_id = cc.credito_cuota_id
-        WHERE cc.credito_plan_pago_id = cpp.credito_plan_pago_id
-          AND ecu.codigo NOT IN ('PAGADA', 'ANULADA')
-          AND (cc.valor_total - COALESCE(ac.abonado, 0)) > 0
-        ORDER BY cc.fecha_vencimiento ASC, cc.numero_cuota ASC
-        LIMIT 1
-      ) prox ON TRUE
-      WHERE ${Prisma.join(conditions, ' AND ')}
-      ORDER BY r.nombre ASC, prox.fecha_vencimiento ASC NULLS LAST, cl.nombre_completo ASC
-      ${limit ? Prisma.sql`LIMIT ${limit}` : Prisma.empty}
-    `);
-
-    return rows.map((row) => this.formatearCobroRutaLegacy(row));
+    return this.listarCobrosRutaTbl(query, usuario, limit);
   }
 
   async listarCobrosRutaTbl(
@@ -731,112 +479,6 @@ export class RutasService {
     return creada.id;
   }
 
-  async obtenerOCrearRutaCredito(
-    tx: Prisma.TransactionClient,
-    dto: { rutaId?: string },
-    usuario: AuthenticatedUser,
-  ) {
-    if (dto.rutaId) {
-      const ruta = await tx.ruta.findUnique({
-        where: { rutaId: dto.rutaId },
-        include: { estadoRuta: true },
-      });
-
-      if (!ruta) {
-        throw DomainError.notFound('Ruta no encontrada', 'RUTA_NO_ENCONTRADA');
-      }
-
-      this.asegurarResponsableRuta(ruta.responsableUsuarioId, usuario);
-
-      if (ruta.estadoRuta.codigo !== 'ABIERTA') {
-        throw DomainError.conflict(
-          'La ruta no esta abierta para nuevos creditos',
-          'RUTA_NO_ABIERTA',
-        );
-      }
-
-      return ruta;
-    }
-
-    const estadoAbierta = await tx.estadoRuta.findUnique({
-      where: { codigo: 'ABIERTA' },
-    });
-
-    if (!estadoAbierta) {
-      throw DomainError.notFound(
-        'No existe el estado de ruta ABIERTA en los catalogos',
-        'ESTADO_RUTA_ABIERTA_NO_EXISTE',
-      );
-    }
-
-    const rutaAbierta = await tx.ruta.findFirst({
-      where: {
-        responsableUsuarioId: usuario.usuarioId,
-        estadoRutaId: estadoAbierta.estadoRutaId,
-      },
-      include: { estadoRuta: true },
-      orderBy: [{ esPrincipal: 'desc' }, { creadoEn: 'asc' }],
-    });
-
-    if (rutaAbierta) {
-      return rutaAbierta;
-    }
-
-    const rutasResponsable = await tx.ruta.findMany({
-      where: { responsableUsuarioId: usuario.usuarioId },
-      select: { nombre: true },
-    });
-    const nombresExistentes = new Set(
-      rutasResponsable.map((ruta) => ruta.nombre),
-    );
-    let nombre = 'Ruta principal';
-    let indice = 1;
-
-    while (nombresExistentes.has(nombre)) {
-      indice += 1;
-      nombre = `Ruta principal ${indice}`;
-    }
-
-    return tx.ruta.create({
-      data: {
-        responsableUsuarioId: usuario.usuarioId,
-        estadoRutaId: estadoAbierta.estadoRutaId,
-        nombre,
-        descripcion: 'Creada automaticamente al registrar un credito',
-        esPrincipal: rutasResponsable.length === 0,
-      },
-      include: { estadoRuta: true },
-    });
-  }
-
-  async asegurarClienteEnRuta(
-    tx: Prisma.TransactionClient,
-    rutaId: string,
-    clienteId: string,
-  ): Promise<void> {
-    const existente = await tx.rutaCliente.findUnique({
-      where: { rutaId_clienteId: { rutaId, clienteId } },
-    });
-
-    if (existente) {
-      return;
-    }
-
-    const ultimoOrden = await tx.rutaCliente.aggregate({
-      where: { rutaId },
-      _max: { ordenVisita: true },
-    });
-
-    await tx.rutaCliente.create({
-      data: {
-        rutaId,
-        clienteId,
-        ordenVisita: (ultimoOrden._max.ordenVisita ?? 0) + 1,
-        activo: true,
-      },
-    });
-  }
-
   asegurarResponsableRuta(
     responsableUsuarioId: string,
     usuario: AuthenticatedUser,
@@ -848,30 +490,6 @@ export class RutasService {
     if (responsableUsuarioId !== usuario.usuarioId) {
       throw new ForbiddenException('No tienes acceso a esta ruta');
     }
-  }
-
-  private async usarEsquemaTbl(): Promise<boolean> {
-    if (this.esquemaTblDisponible !== undefined) {
-      return this.esquemaTblDisponible;
-    }
-
-    try {
-      const rows = await this.prisma.$queryRaw<Array<{ disponible: boolean }>>`
-        SELECT COUNT(*) = 3 AS disponible
-        FROM information_schema.tables
-        WHERE table_schema = 'public'
-          AND table_name IN (
-            'tbl_usuarios',
-            'tbl_organizaciones',
-            'tbl_clientes'
-          )
-      `;
-      this.esquemaTblDisponible = rows[0]?.disponible ?? false;
-    } catch {
-      this.esquemaTblDisponible = false;
-    }
-
-    return this.esquemaTblDisponible;
   }
 
   private formatearCobroRutaTbl(row: CobroRutaTblRow) {
@@ -913,66 +531,10 @@ export class RutasService {
     };
   }
 
-  private formatearCobroRutaLegacy(row: CobroRutaRow) {
-    return {
-      id: row.credito_id,
-      creditoId: row.credito_id,
-      clienteId: row.cliente_id,
-      cliente: row.cliente,
-      cedula: row.cedula,
-      negocio: row.negocio,
-      direccion: row.direccion,
-      latitud: row.latitud === null ? null : this.decimalANumero(row.latitud),
-      longitud:
-        row.longitud === null ? null : this.decimalANumero(row.longitud),
-      rutaId: row.ruta_id,
-      ruta: row.ruta,
-      monedaCodigo: row.moneda_codigo,
-      valorPrincipal: this.decimalANumero(row.valor_principal),
-      valorTotal: this.decimalANumero(row.valor_total),
-      valorCuota: this.decimalANumero(row.valor_cuota),
-      totalAbonado: this.decimalANumero(row.total_abonado),
-      saldo: this.decimalANumero(row.saldo),
-      numeroCuotas: row.numero_cuotas,
-      cuotasRestantes: row.cuotas_restantes,
-      fechaInicio: this.fechaIso(row.fecha_inicio),
-      fechaMaxima: this.fechaIso(row.fecha_maxima),
-      proximaCuotaId: row.proxima_cuota_id,
-      proximaNumeroCuota: row.proxima_numero_cuota,
-      proximaFechaPago: row.proxima_fecha_pago
-        ? this.fechaIso(row.proxima_fecha_pago)
-        : null,
-      proximoValorCuota: this.decimalANumero(row.proximo_valor_cuota),
-      proximoSaldoCuota: this.decimalANumero(row.proximo_saldo_cuota),
-      estadoCobro: row.estado_cobro,
-    };
-  }
-
   private formatearUsuarioTbl(usuario: UsuarioTblRow) {
     return {
       id: usuario.id,
       usuario: usuario.usuario,
-      nombres: usuario.nombres,
-      apellidos: usuario.apellidos,
-      nombreCompleto: `${usuario.nombres} ${usuario.apellidos}`.trim(),
-      correo: usuario.correo,
-      telefono: usuario.telefono,
-    };
-  }
-
-  private formatearUsuarioLegacy(usuario: {
-    usuarioId: string;
-    nombreUsuario?: string;
-    usuario?: string;
-    nombres: string;
-    apellidos: string;
-    correo: string;
-    telefono: string | null;
-  }) {
-    const usuarioNombre = usuario.nombreUsuario ?? usuario.usuario ?? '';
-    return {
-      id: usuario.usuarioId,
-      usuario: usuarioNombre,
       nombres: usuario.nombres,
       apellidos: usuario.apellidos,
       nombreCompleto: `${usuario.nombres} ${usuario.apellidos}`.trim(),

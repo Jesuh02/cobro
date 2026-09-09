@@ -112,7 +112,6 @@ const codigosMovimientoCajaTblBase = tiposMovimientoCajaTblBase.map(
 
 @Injectable()
 export class CatalogosService {
-  private esquemaTblDisponible?: boolean;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -120,34 +119,7 @@ export class CatalogosService {
   ) {}
 
   async obtenerCatalogos(usuario: AuthenticatedUser) {
-    if (await this.usarEsquemaTbl()) {
-      return this.obtenerCatalogosTbl(usuario);
-    }
-    return this.obtenerCatalogosLegacy(usuario);
-  }
-
-  private async usarEsquemaTbl(): Promise<boolean> {
-    if (this.esquemaTblDisponible !== undefined) {
-      return this.esquemaTblDisponible;
-    }
-
-    try {
-      const rows = await this.prisma.$queryRaw<Array<{ disponible: boolean }>>`
-        SELECT COUNT(*) = 3 AS disponible
-        FROM information_schema.tables
-        WHERE table_schema = 'public'
-          AND table_name IN (
-            'tbl_usuarios',
-            'tbl_organizaciones',
-            'tbl_clientes'
-          )
-      `;
-      this.esquemaTblDisponible = rows[0]?.disponible ?? false;
-    } catch {
-      this.esquemaTblDisponible = false;
-    }
-
-    return this.esquemaTblDisponible;
+    return this.obtenerCatalogosTbl(usuario);
   }
 
   private async obtenerCatalogosTbl(usuario: AuthenticatedUser) {
@@ -502,108 +474,6 @@ export class CatalogosService {
     }));
   }
 
-  private async obtenerCatalogosLegacy(usuario: AuthenticatedUser) {
-    const puedeVerTodo = this.tenantScope.puedeVerDatosOrganizacion(usuario);
-    const [
-      monedas,
-      frecuenciasPago,
-      mediosPago,
-      tiposMovimientoCaja,
-      categoriasGasto,
-      rutas,
-      cajasMenores,
-      usuarios,
-    ] = await Promise.all([
-      this.prisma.moneda.findMany({ orderBy: { codigoMoneda: 'asc' } }),
-      this.prisma.frecuenciaPago.findMany({
-        orderBy: { diasIntervalo: 'asc' },
-      }),
-      this.prisma.medioPago.findMany({ orderBy: { medioPagoId: 'asc' } }),
-      this.prisma.tipoMovimientoCaja.findMany({
-        orderBy: { tipoMovimientoCajaId: 'asc' },
-      }),
-      this.prisma.categoriaGasto.findMany({ orderBy: { nombre: 'asc' } }),
-      this.prisma.ruta.findMany({
-        where: puedeVerTodo
-          ? undefined
-          : { responsableUsuarioId: usuario.usuarioId },
-        include: {
-          estadoRuta: true,
-          responsable: true,
-          _count: { select: { clientes: true, creditos: true } },
-        },
-        orderBy: [{ esPrincipal: 'desc' }, { nombre: 'asc' }],
-      }),
-      this.prisma.cajaMenor.findMany({
-        where: puedeVerTodo
-          ? undefined
-          : { responsableUsuarioId: usuario.usuarioId },
-        include: { responsable: true, moneda: true },
-        orderBy: [{ activa: 'desc' }, { nombre: 'asc' }],
-      }),
-      this.prisma.usuario.findMany({
-        where: puedeVerTodo ? undefined : { usuarioId: usuario.usuarioId },
-        orderBy: [{ nombres: 'asc' }],
-      }),
-    ]);
-
-    return {
-      monedas: monedas.map((moneda) => ({
-        codigo: moneda.codigoMoneda,
-        nombre: moneda.nombre,
-        simbolo: moneda.simbolo,
-        decimales: moneda.decimales,
-      })),
-      frecuenciasPago: frecuenciasPago.map((frecuencia) => ({
-        id: frecuencia.frecuenciaPagoId,
-        codigo: frecuencia.codigo,
-        nombre: frecuencia.nombre,
-        diasIntervalo: frecuencia.diasIntervalo,
-      })),
-      mediosPago: mediosPago.map((medio) => ({
-        id: medio.medioPagoId,
-        codigo: medio.codigo,
-        nombre: medio.nombre,
-      })),
-      tiposMovimientoCaja: tiposMovimientoCaja.map((tipo) => ({
-        id: tipo.tipoMovimientoCajaId,
-        codigo: tipo.codigo,
-        nombre: tipo.nombre,
-        naturaleza: 'E',
-      })),
-      categoriasGasto: categoriasGasto.map((categoria) => ({
-        id: categoria.categoriaGastoId,
-        codigo: categoria.codigo,
-        nombre: categoria.nombre,
-        activa: categoria.activa,
-      })),
-      rutas: rutas.map((ruta) => ({
-        id: ruta.rutaId,
-        nombre: ruta.nombre,
-        descripcion: ruta.descripcion,
-        esPrincipal: ruta.esPrincipal,
-        estado: {
-          codigo: ruta.estadoRuta.codigo,
-          nombre: ruta.estadoRuta.nombre,
-        },
-        responsable: this.formatearUsuarioLegacy(ruta.responsable),
-        clientes: ruta._count.clientes,
-        creditos: ruta._count.creditos,
-      })),
-      cajasMenores: cajasMenores.map((caja) => ({
-        id: caja.cajaMenorId,
-        nombre: caja.nombre,
-        activa:
-          caja.activa && (!caja.fechaCierre || caja.fechaCierre > new Date()),
-        monedaCodigo: caja.monedaCodigo,
-        fechaApertura: caja.fechaApertura.toISOString(),
-        fechaCierre: caja.fechaCierre?.toISOString() ?? null,
-        responsable: this.formatearUsuarioLegacy(caja.responsable),
-      })),
-      usuarios: usuarios.map((user) => this.formatearUsuarioLegacy(user)),
-    };
-  }
-
   private formatearUsuarioTbl(usuario: UsuarioTblRow) {
     return {
       id: usuario.id,
@@ -625,25 +495,6 @@ export class CatalogosService {
       nombreCompleto: usuario.usuario,
       correo: '',
       telefono: null,
-    };
-  }
-
-  private formatearUsuarioLegacy(usuario: {
-    usuarioId: string;
-    nombreUsuario: string;
-    nombres: string;
-    apellidos: string;
-    correo?: string | null;
-    telefono?: string | null;
-  }) {
-    return {
-      id: usuario.usuarioId,
-      usuario: usuario.nombreUsuario,
-      nombres: usuario.nombres,
-      apellidos: usuario.apellidos,
-      nombreCompleto: `${usuario.nombres} ${usuario.apellidos}`.trim(),
-      correo: usuario.correo ?? '',
-      telefono: usuario.telefono ?? null,
     };
   }
 }

@@ -2,6 +2,8 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
+  OnModuleInit,
   Optional,
   forwardRef,
 } from '@nestjs/common';
@@ -228,8 +230,21 @@ export const codigosMovimientoCajaTblBase = tiposMovimientoCajaTblBase.map(
 );
 
 @Injectable()
-export class CajaMenorService {
+export class CajaMenorService implements OnModuleInit {
+  private readonly logger = new Logger(CajaMenorService.name);
   private readonly tablaExisteCache = new Map<string, boolean>();
+
+  async onModuleInit() {
+    try {
+      if (await this.usarEsquemaTbl()) {
+        await this.sincronizarMovimientosRecaudoTbl();
+      }
+    } catch (error) {
+      this.logger.warn(
+        `No se pudo sincronizar recaudos iniciales en tbl: ${(error as Error)?.message}`,
+      );
+    }
+  }
 
   constructor(
     private readonly prisma: PrismaService,
@@ -1026,8 +1041,8 @@ export class CajaMenorService {
         CONCAT('mov-', m.id_mca::text) AS id,
         c.id_caj::text AS caja_menor_id,
         COALESCE(c.caj_nombre, o.org_nombre) AS caja_menor,
-        NULL::text AS cliente,
-        NULL::text AS cliente_identificacion,
+        COALESCE(pago_cli.cliente, cre_cli.cliente) AS cliente,
+        COALESCE(pago_cli.documento, cre_cli.documento) AS cliente_identificacion,
         UPPER(m.mca_tipo::text) AS tipo_codigo,
         INITCAP(REPLACE(m.mca_tipo::text, '_', ' ')) AS tipo_nombre,
         CASE
@@ -1043,7 +1058,13 @@ export class CajaMenorService {
         p.per_num_celular AS telefono,
         m.mca_creacion AS fecha_movimiento,
         m.mca_monto AS monto,
-        ${motivo} AS motivo,
+        COALESCE(${motivo}, CASE
+          WHEN UPPER(m.mca_tipo::text) = 'RECAUDO' AND pago_cli.cliente IS NOT NULL
+            THEN CONCAT('Pago del usuario ', pago_cli.cliente)
+          WHEN UPPER(m.mca_tipo::text) = 'DESEMBOLSO_CREDITO'
+            THEN 'Desembolso Credito'
+          ELSE COALESCE(m.mca_referencia_tipo::text, INITCAP(REPLACE(m.mca_tipo::text, '_', ' ')))
+        END) AS motivo,
         m.mca_referencia_tipo::text AS referencia_tabla,
         m.mca_referencia_id::text AS referencia_id,
         m.mca_creacion AS creado_en
@@ -1053,6 +1074,28 @@ export class CajaMenorService {
       JOIN public.tbl_personas p ON p.id_per = tu.persona_id
       LEFT JOIN public.tbl_sesiones_cajas sc ON sc.id_sca = m.sca_id
       LEFT JOIN public.tbl_cajas c ON c.id_caj = sc.caj_id
+      LEFT JOIN LATERAL (
+        SELECT
+          TRIM(CONCAT_WS(' ', per.per_primer_nombre, per.per_apellido)) AS cliente,
+          per.per_documento AS documento
+        FROM public.tbl_cuotas_pagos cp
+        JOIN public.tbl_cuotas cu ON cu.id_cuo = cp.cuo_id
+        JOIN public.tbl_creditos cr ON cr.id_cre = cu.cre_id
+        JOIN public.tbl_clientes cl ON cl.id_cli = cr.cli_id
+        JOIN public.tbl_personas per ON per.id_per = cl.cli_persona
+        WHERE cp.pagos_id = m.mca_referencia_id
+        LIMIT 1
+      ) pago_cli ON m.mca_referencia_tipo::text = 'PAGO'
+      LEFT JOIN LATERAL (
+        SELECT
+          TRIM(CONCAT_WS(' ', per.per_primer_nombre, per.per_apellido)) AS cliente,
+          per.per_documento AS documento
+        FROM public.tbl_creditos cr
+        JOIN public.tbl_clientes cl ON cl.id_cli = cr.cli_id
+        JOIN public.tbl_personas per ON per.id_per = cl.cli_persona
+        WHERE cr.id_cre = m.mca_referencia_id
+        LIMIT 1
+      ) cre_cli ON m.mca_referencia_tipo::text = 'CREDITO'
       WHERE m.id_mca = ${idLimpio}::uuid
       LIMIT 1
     `);
@@ -1957,8 +2000,8 @@ export class CajaMenorService {
           m.org_id::text AS org_id,
           c.id_caj::text AS caja_menor_id,
           COALESCE(c.caj_nombre, o.org_nombre) AS caja_menor,
-          NULL::text AS cliente,
-          NULL::text AS cliente_identificacion,
+          COALESCE(pago_cli.cliente, cre_cli.cliente) AS cliente,
+          COALESCE(pago_cli.documento, cre_cli.documento) AS cliente_identificacion,
           UPPER(m.mca_tipo::text) AS tipo_codigo,
           INITCAP(REPLACE(m.mca_tipo::text, '_', ' ')) AS tipo_nombre,
           CASE
@@ -1974,7 +2017,13 @@ export class CajaMenorService {
           p.per_num_celular AS telefono,
           m.mca_creacion AS fecha_movimiento,
           m.mca_monto AS monto,
-          COALESCE(m.mca_referencia_tipo::text, INITCAP(REPLACE(m.mca_tipo::text, '_', ' '))) AS motivo,
+          CASE
+            WHEN UPPER(m.mca_tipo::text) = 'RECAUDO' AND pago_cli.cliente IS NOT NULL
+              THEN CONCAT('Pago del usuario ', pago_cli.cliente)
+            WHEN UPPER(m.mca_tipo::text) = 'DESEMBOLSO_CREDITO'
+              THEN 'Desembolso Credito'
+            ELSE COALESCE(m.mca_referencia_tipo::text, INITCAP(REPLACE(m.mca_tipo::text, '_', ' ')))
+          END AS motivo,
           m.mca_referencia_tipo::text AS referencia_tabla,
           m.mca_referencia_id::text AS referencia_id,
           m.mca_creacion AS creado_en
@@ -1984,6 +2033,28 @@ export class CajaMenorService {
         JOIN public.tbl_personas p ON p.id_per = tu.persona_id
         LEFT JOIN public.tbl_sesiones_cajas sc ON sc.id_sca = m.sca_id
         LEFT JOIN public.tbl_cajas c ON c.id_caj = sc.caj_id
+        LEFT JOIN LATERAL (
+          SELECT
+            TRIM(CONCAT_WS(' ', per.per_primer_nombre, per.per_apellido)) AS cliente,
+            per.per_documento AS documento
+          FROM public.tbl_cuotas_pagos cp
+          JOIN public.tbl_cuotas cu ON cu.id_cuo = cp.cuo_id
+          JOIN public.tbl_creditos cr ON cr.id_cre = cu.cre_id
+          JOIN public.tbl_clientes cl ON cl.id_cli = cr.cli_id
+          JOIN public.tbl_personas per ON per.id_per = cl.cli_persona
+          WHERE cp.pagos_id = m.mca_referencia_id
+          LIMIT 1
+        ) pago_cli ON m.mca_referencia_tipo::text = 'PAGO'
+        LEFT JOIN LATERAL (
+          SELECT
+            TRIM(CONCAT_WS(' ', per.per_primer_nombre, per.per_apellido)) AS cliente,
+            per.per_documento AS documento
+          FROM public.tbl_creditos cr
+          JOIN public.tbl_clientes cl ON cl.id_cli = cr.cli_id
+          JOIN public.tbl_personas per ON per.id_per = cl.cli_persona
+          WHERE cr.id_cre = m.mca_referencia_id
+          LIMIT 1
+        ) cre_cli ON m.mca_referencia_tipo::text = 'CREDITO'
         UNION ALL
         SELECT
           CONCAT('pago-', pa.id_pag::text),
@@ -2016,6 +2087,12 @@ export class CajaMenorService {
           FROM public.tbl_pagos pa
           JOIN public.tbl_cuotas_pagos cp ON cp.pagos_id = pa.id_pag
           JOIN public.tbl_cuotas cu ON cu.id_cuo = cp.cuo_id
+          WHERE NOT EXISTS (
+            SELECT 1
+            FROM public.tbl_movimientos_cajas mc
+            WHERE mc.mca_referencia_tipo::text = 'PAGO'
+              AND mc.mca_referencia_id = pa.id_pag
+          )
           ORDER BY pa.id_pag, cu.cre_id
         ) pa
         JOIN public.tbl_creditos cr ON cr.id_cre = pa.credito_id
@@ -2709,5 +2786,193 @@ export class CajaMenorService {
       SET sca_total_gasto = sca_total_gasto + ${this.decimal(input.monto)}
       WHERE id_sca = ${input.sesionId}::uuid
     `);
+  }
+
+  async registrarMovimientoRecaudoTbl(
+    tx: PrismaExecutor,
+    input: {
+      monto: number;
+      pagoId: string;
+      fecha?: Date;
+      organizacionId: string;
+      usuarioId: string;
+      cobradorId?: string;
+    },
+  ) {
+    const fechaRecaudo = input.fecha ?? new Date();
+
+    const sesiones = await tx.$queryRaw<
+      Array<{
+        sesion_id: string;
+        caja_id: string;
+        usuario_id: string;
+      }>
+    >(Prisma.sql`
+      SELECT
+        sca.id_sca::text AS sesion_id,
+        sca.caj_id::text AS caja_id,
+        sca.usu_id::text AS usuario_id
+      FROM public.tbl_sesiones_cajas sca
+      JOIN public.tbl_cajas c ON c.id_caj = sca.caj_id
+      WHERE c.org_id = ${input.organizacionId}::uuid
+        AND c.caj_tipo::text = 'MENOR'
+        AND c.caj_activa
+        AND sca.sca_estado::text = 'ABIERTA'
+        AND (sca.sca_fecha_cierre IS NULL OR sca.sca_fecha_cierre > now())
+      ORDER BY
+        CASE
+          WHEN sca.usu_id = ${input.usuarioId}::uuid THEN 0
+          WHEN ${input.cobradorId ? Prisma.sql`sca.usu_id = ${input.cobradorId}::uuid` : Prisma.sql`FALSE`} THEN 1
+          ELSE 2
+        END,
+        sca.sca_fecha_apertura DESC,
+        sca.id_sca DESC
+      LIMIT 1
+    `);
+
+    const sesion = sesiones[0];
+    const usuarioMovimiento = sesion?.usuario_id ?? input.usuarioId;
+    const sesionSql = sesion?.sesion_id
+      ? Prisma.sql`${sesion.sesion_id}::uuid`
+      : Prisma.sql`NULL`;
+
+    await tx.$executeRaw(Prisma.sql`
+      INSERT INTO public.tbl_movimientos_cajas (
+        mca_tipo,
+        mca_monto,
+        mca_referencia_id,
+        mca_referencia_tipo,
+        mca_creacion,
+        org_id,
+        usu_id,
+        sca_id
+      )
+      VALUES (
+        'RECAUDO'::public.movimiento_caja_tipo_enum,
+        ${this.decimal(input.monto)},
+        ${input.pagoId}::uuid,
+        'PAGO'::public.movimiento_referencia_tipo_enum,
+        ${fechaRecaudo},
+        ${input.organizacionId}::uuid,
+        ${usuarioMovimiento}::uuid,
+        ${sesionSql}
+      )
+    `);
+
+    if (sesion?.sesion_id) {
+      await tx.$executeRaw(Prisma.sql`
+        UPDATE public.tbl_sesiones_cajas
+        SET sca_total_cobrado = sca_total_cobrado + ${this.decimal(input.monto)}
+        WHERE id_sca = ${sesion.sesion_id}::uuid
+      `);
+    }
+  }
+
+  async sincronizarMovimientosRecaudoTbl(
+    executor: PrismaExecutor = this.prisma,
+  ): Promise<number> {
+    try {
+      const pagosSinMovimiento = await executor.$queryRaw<
+        Array<{
+          pago_id: string;
+          monto: Prisma.Decimal;
+          fecha: Date;
+          org_id: string;
+          usuario_id: string;
+          sesion_id: string | null;
+        }>
+      >(Prisma.sql`
+        SELECT
+          pa.id_pag::text AS pago_id,
+          pa.pag_monto AS monto,
+          pa.pag_fecha AS fecha,
+          cl.org_id::text AS org_id,
+          tu.id_usu::text AS usuario_id,
+          sc.id_sca::text AS sesion_id
+        FROM (
+          SELECT DISTINCT ON (pa.id_pag)
+            pa.id_pag,
+            pa.pag_fecha,
+            pa.pag_monto,
+            cu.cre_id AS credito_id
+          FROM public.tbl_pagos pa
+          JOIN public.tbl_cuotas_pagos cp ON cp.pagos_id = pa.id_pag
+          JOIN public.tbl_cuotas cu ON cu.id_cuo = cp.cuo_id
+          WHERE NOT EXISTS (
+            SELECT 1
+            FROM public.tbl_movimientos_cajas mc
+            WHERE mc.mca_referencia_tipo::text = 'PAGO'
+              AND mc.mca_referencia_id = pa.id_pag
+          )
+          ORDER BY pa.id_pag, cu.cre_id
+        ) pa
+        JOIN public.tbl_creditos cr ON cr.id_cre = pa.credito_id
+        JOIN public.tbl_usuarios tu ON tu.id_usu = cr.usu_id
+        JOIN public.tbl_clientes cl ON cl.id_cli = cr.cli_id
+        LEFT JOIN LATERAL (
+          SELECT sca.id_sca
+          FROM public.tbl_sesiones_cajas sca
+          JOIN public.tbl_cajas c ON c.id_caj = sca.caj_id
+          WHERE c.org_id = cl.org_id
+            AND c.caj_tipo::text = 'MENOR'
+            AND c.caj_activa
+          ORDER BY
+            (sca.usu_id = tu.id_usu) DESC,
+            (sca.sca_estado::text = 'ABIERTA') DESC,
+            sca.sca_fecha_apertura DESC,
+            sca.id_sca DESC
+          LIMIT 1
+        ) sc ON TRUE
+      `);
+
+      if (!pagosSinMovimiento.length) {
+        return 0;
+      }
+
+      for (const pago of pagosSinMovimiento) {
+        const sesionSql = pago.sesion_id
+          ? Prisma.sql`${pago.sesion_id}::uuid`
+          : Prisma.sql`NULL`;
+
+        await executor.$executeRaw(Prisma.sql`
+          INSERT INTO public.tbl_movimientos_cajas (
+            mca_tipo,
+            mca_monto,
+            mca_referencia_id,
+            mca_referencia_tipo,
+            mca_creacion,
+            org_id,
+            usu_id,
+            sca_id
+          )
+          VALUES (
+            'RECAUDO'::public.movimiento_caja_tipo_enum,
+            ${this.decimal(this.decimalANumero(pago.monto))},
+            ${pago.pago_id}::uuid,
+            'PAGO'::public.movimiento_referencia_tipo_enum,
+            ${pago.fecha},
+            ${pago.org_id}::uuid,
+            ${pago.usuario_id}::uuid,
+            ${sesionSql}
+          )
+        `);
+
+        if (pago.sesion_id) {
+          await executor.$executeRaw(Prisma.sql`
+            UPDATE public.tbl_sesiones_cajas
+            SET sca_total_cobrado = sca_total_cobrado + ${this.decimal(this.decimalANumero(pago.monto))}
+            WHERE id_sca = ${pago.sesion_id}::uuid
+          `);
+        }
+      }
+
+      this.invalidarCacheLecturas();
+      return pagosSinMovimiento.length;
+    } catch (error) {
+      this.logger.warn(
+        `Error en sincronizarMovimientosRecaudoTbl: ${(error as Error)?.message}`,
+      );
+      return 0;
+    }
   }
 }

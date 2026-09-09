@@ -349,4 +349,47 @@ describe('CajaMenorService', () => {
     expect(rawSql).not.toContain('::bigint');
     expect(rawSql).toContain('::uuid');
   });
+
+  it('registers collection movement in tbl_movimientos_cajas and updates session total', async () => {
+    const queryRaw = jest
+      .fn<Promise<unknown[]>, [unknown]>()
+      .mockResolvedValueOnce([
+        {
+          sesion_id: 'ses-1',
+          caja_id: 'caj-1',
+          usuario_id: '7',
+        },
+      ]);
+    const executeRaw = jest.fn().mockResolvedValue(1);
+    const service = createService(queryRaw, executeRaw);
+
+    const tx = {
+      $queryRaw: queryRaw,
+      $executeRaw: executeRaw,
+    };
+
+    await service.registrarMovimientoRecaudoTbl(tx as never, {
+      monto: 80,
+      pagoId: 'pago-1',
+      organizacionId: '10',
+      usuarioId: '7',
+      cobradorId: '7',
+    });
+
+    expect(queryRaw).toHaveBeenCalled();
+    expect(executeRaw).toHaveBeenCalledTimes(2);
+
+    const insertSqlObj = executeRaw.mock.calls[0][0] as any;
+    const insertRawSql = Array.isArray(insertSqlObj?.strings)
+      ? insertSqlObj.strings.join('')
+      : (insertSqlObj?.sql ?? '');
+    expect(insertRawSql).toContain('RECAUDO');
+    expect(insertRawSql).toContain('PAGO');
+
+    const updateSqlObj = executeRaw.mock.calls[1][0] as any;
+    const updateRawSql = Array.isArray(updateSqlObj?.strings)
+      ? updateSqlObj.strings.join('')
+      : (updateSqlObj?.sql ?? '');
+    expect(updateRawSql).toContain('sca_total_cobrado');
+  });
 });

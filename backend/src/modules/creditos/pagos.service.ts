@@ -1,4 +1,10 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Inject,
+  Injectable,
+  Optional,
+  forwardRef,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { InMemoryCacheService } from '../../common/cache/in-memory-cache.service';
@@ -6,6 +12,7 @@ import { DomainError } from '../../common/domain/domain-error';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TenantScopeService } from '../../common/tenancy/tenant-scope.service';
 import { AuthenticatedUser } from '../auth/auth.types';
+import { CajaMenorService } from '../caja-menor/caja-menor.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { RegistrarPagoDto } from './dto';
 import { PagoTblRow, SumaAplicaciones } from './creditos.types';
@@ -46,6 +53,9 @@ export class PagosService {
     private readonly tenantScope: TenantScopeService,
     private readonly cache: InMemoryCacheService,
     private readonly notifications: NotificationsService,
+    @Optional()
+    @Inject(forwardRef(() => CajaMenorService))
+    private readonly cajaMenorService?: CajaMenorService,
   ) {}
 
   esIdTbl(id: string): boolean {
@@ -555,6 +565,78 @@ export class PagosService {
           )
           RETURNING id_pag::text AS id
         `);
+
+        if (this.cajaMenorService) {
+          await this.cajaMenorService.registrarMovimientoRecaudoTbl(tx, {
+            monto: montoPagado,
+            pagoId: pago.id,
+            fecha: new Date(),
+            organizacionId: cuota.org_id,
+            usuarioId: scope.usuarioId,
+            cobradorId: cuota.usuario_id,
+          });
+        } else {
+          const sesiones = await tx.$queryRaw<
+            Array<{ sesion_id: string; usuario_id: string }>
+          >(Prisma.sql`
+            SELECT
+              sca.id_sca::text AS sesion_id,
+              sca.usu_id::text AS usuario_id
+            FROM public.tbl_sesiones_cajas sca
+            JOIN public.tbl_cajas c ON c.id_caj = sca.caj_id
+            WHERE c.org_id = ${cuota.org_id}::uuid
+              AND c.caj_tipo::text = 'MENOR'
+              AND c.caj_activa
+              AND sca.sca_estado::text = 'ABIERTA'
+              AND (sca.sca_fecha_cierre IS NULL OR sca.sca_fecha_cierre > now())
+            ORDER BY
+              CASE
+                WHEN sca.usu_id = ${scope.usuarioId}::uuid THEN 0
+                WHEN sca.usu_id = ${cuota.usuario_id}::uuid THEN 1
+                ELSE 2
+              END,
+              sca.sca_fecha_apertura DESC,
+              sca.id_sca DESC
+            LIMIT 1
+          `);
+
+          const sesion = sesiones[0];
+          const usuarioMov = sesion?.usuario_id ?? scope.usuarioId;
+          const sesionIdSql = sesion?.sesion_id
+            ? Prisma.sql`${sesion.sesion_id}::uuid`
+            : Prisma.sql`NULL`;
+
+          await tx.$executeRaw(Prisma.sql`
+            INSERT INTO public.tbl_movimientos_cajas (
+              mca_tipo,
+              mca_monto,
+              mca_referencia_id,
+              mca_referencia_tipo,
+              mca_creacion,
+              org_id,
+              usu_id,
+              sca_id
+            )
+            VALUES (
+              'RECAUDO'::public.movimiento_caja_tipo_enum,
+              ${this.decimal(montoPagado)},
+              ${pago.id}::uuid,
+              'PAGO'::public.movimiento_referencia_tipo_enum,
+              now(),
+              ${cuota.org_id}::uuid,
+              ${usuarioMov}::uuid,
+              ${sesionIdSql}
+            )
+          `);
+
+          if (sesion?.sesion_id) {
+            await tx.$executeRaw(Prisma.sql`
+              UPDATE public.tbl_sesiones_cajas
+              SET sca_total_cobrado = sca_total_cobrado + ${this.decimal(montoPagado)}
+              WHERE id_sca = ${sesion.sesion_id}::uuid
+            `);
+          }
+        }
 
         const cuotasAfectadas: string[] = [];
         let restante = montoPagado;

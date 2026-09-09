@@ -1454,7 +1454,7 @@ class _HomePageState extends State<HomePage> {
       onRefresh: _cargar,
       onNearEnd: _cargarMasMovimientosCajaSiHaceFalta,
       acciones: <Widget>[
-        if (hayCajaMenor && _puedeRegistrarFlujoCaja)
+        if (hayCajaMenor && _puedeCrearCajaMenor)
           OutlinedButton.icon(
             onPressed: _guardando ? null : _confirmarCerrarCajaMenorSeleccionada,
             icon: const Icon(Icons.lock_clock_rounded),
@@ -7180,6 +7180,11 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _confirmarCerrarCajaMenorSeleccionada() async {
+    if (!_puedeCrearCajaMenor) {
+      _mostrarMensaje('No tienes permiso para cerrar la caja menor');
+      return;
+    }
+
     final List<CajaMenorCatalogo> cajasActivas =
         _catalogos?.cajasMenoresActivas ?? <CajaMenorCatalogo>[];
     if (cajasActivas.isEmpty) {
@@ -7432,7 +7437,17 @@ class _HomePageState extends State<HomePage> {
                           );
 
                           if (selected != null) {
-                            setDialogState(() => fechaMovimiento = selected);
+                            final DateTime now = DateTime.now();
+                            setDialogState(
+                              () => fechaMovimiento = DateTime(
+                                selected.year,
+                                selected.month,
+                                selected.day,
+                                now.hour,
+                                now.minute,
+                                now.second,
+                              ),
+                            );
                           }
                         },
                         icon: const Icon(Icons.calendar_month_rounded),
@@ -7501,7 +7516,7 @@ class _HomePageState extends State<HomePage> {
                           <String, dynamic>{
                             'cajaMenorId': cajaMenorId,
                             'tipoMovimientoCodigo': tipoMovimientoCodigo,
-                            'fechaMovimiento': _fechaValor(fechaMovimiento),
+                            'fechaMovimiento': _fechaHoraValor(fechaMovimiento),
                             'monto': monto,
                             'motivo': motivoController.text.trim(),
                           },
@@ -7640,7 +7655,17 @@ class _HomePageState extends State<HomePage> {
                           );
 
                           if (selected != null) {
-                            setDialogState(() => fechaMovimiento = selected);
+                            final DateTime now = DateTime.now();
+                            setDialogState(
+                              () => fechaMovimiento = DateTime(
+                                selected.year,
+                                selected.month,
+                                selected.day,
+                                now.hour,
+                                now.minute,
+                                now.second,
+                              ),
+                            );
                           }
                         },
                         icon: const Icon(Icons.calendar_month_rounded),
@@ -7691,7 +7716,7 @@ class _HomePageState extends State<HomePage> {
 
                     final CajaMenorCatalogo caja =
                         catalogos.cajasMenores.firstWhere(
-                      (CajaMenorCatalogo item) => item.id == cajaMenorId,
+                       (CajaMenorCatalogo item) => item.id == cajaMenorId,
                     );
                     final TipoMovimientoCaja tipo =
                         catalogos.tiposMovimientoCaja.firstWhere(
@@ -7702,7 +7727,7 @@ class _HomePageState extends State<HomePage> {
                     final Map<String, dynamic> payload = <String, dynamic>{
                       'cajaMenorId': cajaMenorId,
                       'tipoMovimientoCodigo': tipoMovimientoCodigo,
-                      'fechaMovimiento': _fechaValor(fechaMovimiento),
+                      'fechaMovimiento': _fechaHoraValor(fechaMovimiento),
                       'monto': monto,
                       'motivo': motivo,
                     };
@@ -11718,10 +11743,17 @@ class _CalculoCredito {
     final int plazoDias = math.max(1, (_parseNumero(plazo) ?? 1).round());
     final int intervalo = math.max(1, diasIntervalo);
     final int numeroCuotas = math.max(1, (plazoDias / intervalo).ceil());
-    final double valorTotal =
-        valorPrincipal + valorPrincipal * (porcentajeInteres / 100);
-    final double valorInteres = valorTotal - valorPrincipal;
-    final double valorCuota = valorTotal / numeroCuotas;
+    final double valorTotal = _redondearDinero(
+      valorPrincipal + valorPrincipal * (porcentajeInteres / 100),
+      2,
+    );
+    final double valorInteres = _redondearDinero(
+      valorTotal - valorPrincipal,
+      2,
+    );
+    final double valorCuota = numeroCuotas > 0
+        ? _redondearDinero(valorTotal / numeroCuotas, 2)
+        : 0.0;
     DateTime cursor = DateTime(
       fechaInicio.year,
       fechaInicio.month,
@@ -17298,9 +17330,15 @@ String _textoCreditos(int value) {
   return value == 1 ? '1 credito' : '$value creditos';
 }
 
+double _redondearDinero(double value, [int decimales = 2]) {
+  final num factor = math.pow(10, decimales);
+  return (value * factor).round() / factor;
+}
+
 String _dinero(double value) {
   final bool negativo = value < 0;
-  final String raw = _decimalPreciso(value.abs());
+  final double valorRedondeado = _redondearDinero(value.abs(), 2);
+  final String raw = _decimalPreciso(valorRedondeado);
   final List<String> partes = raw.split('.');
   final String entero = partes.first;
   final StringBuffer buffer = StringBuffer();

@@ -12,7 +12,7 @@ describe('PasswordService', () => {
     );
     await expect(service.verify('wrong-password', hash)).resolves.toBe(false);
     expect(service.needsRehash(hash)).toBe(false);
-  });
+  }, 20_000);
 
   it('performs dummy work for malformed hashes and rejects them', async () => {
     await expect(

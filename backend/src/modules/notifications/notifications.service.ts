@@ -182,11 +182,9 @@ export class NotificationsService {
     }
 
     try {
-      const rows = /^\d+$/.test(collectorId)
+      const rows = this.isUuid(collectorId)
         ? await this.overdueCollectionsTbl(collectorId)
-        : this.isUuid(collectorId)
-          ? await this.overdueCollections(collectorId)
-          : [];
+        : [];
 
       if (rows.length === 0) {
         return;
@@ -384,61 +382,8 @@ export class NotificationsService {
     );
   }
 
-  private overdueCollections(collectorId: string) {
-    return this.prisma.$queryRaw<CollectorOverdueRow[]>(Prisma.sql`
-      WITH abonos_cuota AS (
-        SELECT
-          pa.credito_cuota_id,
-          COALESCE(
-            SUM(
-              pa.monto_capital
-              + pa.monto_interes
-              + pa.monto_mora
-              - pa.monto_descuento
-            ),
-            0
-          ) AS abonado
-        FROM public.pago_aplicacion pa
-        GROUP BY pa.credito_cuota_id
-      )
-      SELECT
-        u.usuario_id::text AS cobrador_id,
-        TRIM(CONCAT_WS(' ', u.nombres, u.apellidos)) AS cobrador_nombre,
-        u.correo AS cobrador_correo,
-        u.telefono AS cobrador_telefono,
-        cl.nombre_completo AS cliente,
-        r.nombre AS ruta,
-        c.moneda_codigo,
-        prox.fecha_vencimiento,
-        prox.saldo_cuota
-      FROM public.credito c
-      JOIN public.ruta r ON r.ruta_id = c.ruta_id
-      JOIN public.usuario u ON u.usuario_id = r.responsable_usuario_id
-      JOIN public.estado_credito ecr ON ecr.estado_credito_id = c.estado_credito_id
-      JOIN public.cliente cl ON cl.cliente_id = c.cliente_id
-      JOIN public.credito_plan_pago cpp ON cpp.credito_id = c.credito_id
-      JOIN LATERAL (
-        SELECT
-          cc.fecha_vencimiento,
-          GREATEST(cc.valor_total - COALESCE(ac.abonado, 0), 0) AS saldo_cuota
-        FROM public.credito_cuota cc
-        JOIN public.estado_cuota ecu ON ecu.estado_cuota_id = cc.estado_cuota_id
-        LEFT JOIN abonos_cuota ac ON ac.credito_cuota_id = cc.credito_cuota_id
-        WHERE cc.credito_plan_pago_id = cpp.credito_plan_pago_id
-          AND ecu.codigo NOT IN ('PAGADA', 'ANULADA')
-          AND (cc.valor_total - COALESCE(ac.abonado, 0)) > 0
-        ORDER BY cc.fecha_vencimiento ASC, cc.numero_cuota ASC
-        LIMIT 1
-      ) prox ON TRUE
-      WHERE u.usuario_id = ${collectorId}::uuid
-        AND ecr.codigo NOT IN ('ANULADO', 'PAGADO')
-        AND prox.fecha_vencimiento < CURRENT_DATE
-      ORDER BY prox.fecha_vencimiento ASC, cl.nombre_completo ASC
-    `);
-  }
-
   private overdueCollectionsTbl(collectorId: string) {
-    if (!/^\d+$/.test(collectorId)) {
+    if (!this.isUuid(collectorId)) {
       return Promise.resolve([]);
     }
 

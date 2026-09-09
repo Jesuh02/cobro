@@ -416,6 +416,65 @@ describe('CreditosService', () => {
     expect(mockTx.$executeRaw).toHaveBeenCalled();
   });
 
+  it('rejects refinanciarCredito if saldo de caja menor is insufficient for the increment', async () => {
+    const mockTx = {
+      $queryRaw: jest
+        .fn()
+        // 1: credito
+        .mockResolvedValueOnce([
+          {
+            id: '11111111-1111-4111-8111-111111111111',
+            cliente_id: '22222222-2222-4222-8222-222222222222',
+            mon_id: '33333333-3333-4333-8333-333333333333',
+            org_id: '22222222-2222-4222-8222-222222222222',
+            valor_principal: new Prisma.Decimal('1000'),
+            tasa_interes: new Prisma.Decimal('20'),
+            total_pagar: new Prisma.Decimal('1200'),
+            estado: 'ACTIVO',
+            ruta_id: null,
+            cliente_nombre: 'Juan Perez',
+            decimales: 2,
+            moneda_codigo: 'COP',
+          },
+        ])
+        // 2: producto
+        .mockResolvedValueOnce([
+          {
+            id: '44444444-4444-4444-8444-444444444444',
+            dias_intervalo: 1,
+          },
+        ])
+        // 3: caja
+        .mockResolvedValueOnce([
+          {
+            id: '88888888-8888-4888-8888-888888888888',
+            nombre: 'Caja 1',
+            sesion_id: '99999999-9999-4999-8999-999999999999',
+          },
+        ])
+        // 4: saldo disponible en caja (4000)
+        .mockResolvedValueOnce([{ saldo_disponible: new Prisma.Decimal('4000') }]),
+      $executeRaw: jest.fn().mockResolvedValue(1),
+    };
+
+    mockPrisma.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => cb(mockTx));
+
+    await expect(
+      service.refinanciarCredito(
+        '11111111-1111-4111-8111-111111111111',
+        {
+          frecuenciaPagoId: 1,
+          fechaInicio: '2026-09-08',
+          valorPrincipal: 6000,
+          porcentajeInteres: 20,
+          plazoDias: 30,
+          cajaMenorId: '88888888-8888-4888-8888-888888888888',
+        },
+        usuarioTest(['COBRADOR'], ['REFINANCIAR_CREDITOS']),
+      ),
+    ).rejects.toThrow('No se puede refinanciar credito sin saldo suficiente en caja menor');
+  });
+
   it('permite obtenerCredito y listarCuotasCredito a empleados autorizados sin requerir VER_CREDITOS', async () => {
     jest
       .spyOn(service as unknown as { obtenerCreditoTbl: () => Promise<unknown> }, 'obtenerCreditoTbl')

@@ -218,20 +218,12 @@ export class CreditosService {
           );
         }
 
-        const [presupuesto] = await tx.$queryRaw<
-          Array<{ presupuesto: Prisma.Decimal }>
-        >(
-          Prisma.sql`
-            SELECT presupuesto
-            FROM public.vista_presupuesto_actual
-            WHERE caja_menor_id::text = ${caja.id}
-            LIMIT 1
-          `,
+        const saldoDisponible = await this.obtenerSaldoDisponibleCajaTbl(
+          tx,
+          caja.id,
         );
 
-        if (
-          this.decimalANumero(presupuesto?.presupuesto ?? null) < valorPrincipal
-        ) {
+        if (saldoDisponible < valorPrincipal) {
           throw DomainError.conflict(
             'No se puede hacer credito sin caja suficiente',
             'CAJA_MENOR_SALDO_INSUFICIENTE',
@@ -1211,20 +1203,12 @@ export class CreditosService {
           );
         }
 
-        const [presupuesto] = await tx.$queryRaw<
-          Array<{ presupuesto: Prisma.Decimal }>
-        >(
-          Prisma.sql`
-            SELECT presupuesto
-            FROM public.vista_presupuesto_actual
-            WHERE caja_menor_id::text = ${caja.id}
-            LIMIT 1
-          `,
+        const saldoDisponible = await this.obtenerSaldoDisponibleCajaTbl(
+          tx,
+          caja.id,
         );
 
-        if (
-          this.decimalANumero(presupuesto?.presupuesto ?? null) < incremento
-        ) {
+        if (saldoDisponible < incremento) {
           throw DomainError.conflict(
             'No se puede refinanciar credito sin saldo suficiente en caja menor',
             'CAJA_MENOR_SALDO_INSUFICIENTE',
@@ -2050,6 +2034,51 @@ export class CreditosService {
 
   private fechaIso(fecha: Date): string {
     return fecha.toISOString();
+  }
+
+  private async obtenerSaldoDisponibleCajaTbl(
+    tx: PrismaExecutor,
+    cajaId: string,
+  ): Promise<number> {
+    const [presupuesto] = await tx.$queryRaw<
+      Array<{
+        saldo_disponible?: Prisma.Decimal | null;
+        presupuesto?: Prisma.Decimal | null;
+      }>
+    >(
+      Prisma.sql`
+        WITH movimientos AS (
+          SELECT mc.mca_tipo, mc.mca_monto
+          FROM public.tbl_movimientos_cajas mc
+          JOIN public.tbl_sesiones_cajas sc ON sc.id_sca = mc.sca_id
+          WHERE sc.caj_id = ${cajaId}::uuid
+        ),
+        sesiones AS (
+          SELECT COALESCE(SUM(sc.sca_monto_inicial), 0) AS inicial
+          FROM public.tbl_sesiones_cajas sc
+          WHERE sc.caj_id = ${cajaId}::uuid
+        )
+        SELECT
+          (
+            (SELECT inicial FROM sesiones)
+            + COALESCE(
+                SUM(
+                  CASE
+                    WHEN UPPER(m.mca_tipo::text) IN ('APERTURA', 'RECAUDO', 'AJUSTE_ENTRADA') THEN m.mca_monto
+                    WHEN UPPER(m.mca_tipo::text) IN ('GASTO', 'DESEMBOLSO_CREDITO', 'AJUSTE_SALIDA') THEN -m.mca_monto
+                    ELSE 0
+                  END
+                ),
+                0
+              )
+          ) AS saldo_disponible
+        FROM movimientos m
+      `,
+    );
+
+    return this.decimalANumero(
+      presupuesto?.saldo_disponible ?? presupuesto?.presupuesto ?? null,
+    );
   }
 
   private normalizarTextoOpcional(texto?: string | null): string | null {

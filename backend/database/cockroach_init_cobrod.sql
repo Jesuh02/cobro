@@ -636,10 +636,7 @@ SELECT
   COALESCE(gpc.gastos, 0) + COALESCE(mpc.gastos_movimientos, 0) AS gastos,
   COALESCE(mpc.creditos, 0) AS creditos,
   v.saldo_caja_menor
-    + COALESCE(mpc.recaudado, 0)
-    - COALESCE(gpc.gastos, 0)
-    - COALESCE(mpc.gastos_movimientos, 0)
-    - COALESCE(mpc.creditos, 0) AS presupuesto
+    - COALESCE(gpc.gastos, 0) AS presupuesto
 FROM vista_saldo_caja_menor v
 LEFT JOIN movimientos_por_caja mpc
   ON mpc.id_caj = v.caja_menor_id

@@ -11743,10 +11743,17 @@ class _CalculoCredito {
     final int plazoDias = math.max(1, (_parseNumero(plazo) ?? 1).round());
     final int intervalo = math.max(1, diasIntervalo);
     final int numeroCuotas = math.max(1, (plazoDias / intervalo).ceil());
-    final double valorTotal =
-        valorPrincipal + valorPrincipal * (porcentajeInteres / 100);
-    final double valorInteres = valorTotal - valorPrincipal;
-    final double valorCuota = valorTotal / numeroCuotas;
+    final double valorTotal = _redondearDinero(
+      valorPrincipal + valorPrincipal * (porcentajeInteres / 100),
+      2,
+    );
+    final double valorInteres = _redondearDinero(
+      valorTotal - valorPrincipal,
+      2,
+    );
+    final double valorCuota = numeroCuotas > 0
+        ? _redondearDinero(valorTotal / numeroCuotas, 2)
+        : 0.0;
     DateTime cursor = DateTime(
       fechaInicio.year,
       fechaInicio.month,
@@ -17323,9 +17330,15 @@ String _textoCreditos(int value) {
   return value == 1 ? '1 credito' : '$value creditos';
 }
 
+double _redondearDinero(double value, [int decimales = 2]) {
+  final num factor = math.pow(10, decimales);
+  return (value * factor).round() / factor;
+}
+
 String _dinero(double value) {
   final bool negativo = value < 0;
-  final String raw = _decimalPreciso(value.abs());
+  final double valorRedondeado = _redondearDinero(value.abs(), 2);
+  final String raw = _decimalPreciso(valorRedondeado);
   final List<String> partes = raw.split('.');
   final String entero = partes.first;
   final StringBuffer buffer = StringBuffer();

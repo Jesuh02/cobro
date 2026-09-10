@@ -1121,7 +1121,6 @@ class _HomePageState extends State<HomePage> {
       return DesktopCollectionRoute(
         header: const _Encabezado(
           titulo: 'Ruta activa',
-          subtitulo: 'Cobros geolocalizados y recorrido más rápido',
           acciones: <Widget>[],
         ),
         filters: filtros,
@@ -1252,7 +1251,6 @@ class _HomePageState extends State<HomePage> {
 
     return _Pagina(
       titulo: 'Credito',
-      subtitulo: 'Creacion, refinanciacion e historial',
       error: _error,
       onRefresh: _cargar,
       onNearEnd: _cargarMasCreditosSiHaceFalta,
@@ -1437,7 +1435,6 @@ class _HomePageState extends State<HomePage> {
     final bool mostrandoCargaMovimientosCaja = _cargandoMovimientosCaja;
     return _Pagina(
       titulo: 'Caja menor',
-      subtitulo: 'Movimientos y pagos registrados  ',
       error: _error,
       onRefresh: _cargar,
       onNearEnd: _cargarMasMovimientosCajaSiHaceFalta,
@@ -2123,7 +2120,6 @@ class _HomePageState extends State<HomePage> {
 
     return _Pagina(
       titulo: 'Clientes',
-      subtitulo: 'Datos maestros y contactos del esquema cobros',
       error: _error,
       onRefresh: _cargar,
       acciones: <Widget>[

@@ -803,7 +803,7 @@ class _HomePageState extends State<HomePage> {
           key: const ValueKey<String>('ruta'),
           child: _construirRutaActiva(context),
         );
-      case 2:
+      case _indiceCredito:
         return KeyedSubtree(
           key: const ValueKey<String>('credito'),
           child: _construirNuevoCredito(context),
@@ -832,18 +832,6 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _seleccionarSeccion(int index) {
-    if (index == _indiceCredito) {
-      if (_seccionActual != index) {
-        setState(() => _seccionActual = index);
-      }
-      if (_puedeCrearCreditos) {
-        _abrirCrearCreditoModal();
-      } else {
-        _mostrarMensaje('No tienes permiso para crear creditos');
-      }
-      return;
-    }
-
     if (index == _indiceGestionEmpleados && !_puedeVerEmpleados) {
       _mostrarMensaje('No tienes permiso para ver empleados');
       return;
@@ -2093,7 +2081,7 @@ class _HomePageState extends State<HomePage> {
     }
 
     setState(() {
-      _seccionActual = 2;
+      _seccionActual = _indiceCredito;
       _filtroCredito = filtro;
       _fechaCreditoDesde = _fechaInicioDesde;
       _fechaCreditoHasta = _fechaInicioHasta;

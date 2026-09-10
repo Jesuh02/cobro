@@ -111,6 +111,11 @@ void main() {
       await tester.pump(const Duration(milliseconds: 500));
       tester.takeException();
 
+      expect(find.byType(AlertDialog), findsNothing);
+      await tester.tap(find.widgetWithText(FilledButton, 'Crear credito').first);
+      await tester.pump(const Duration(milliseconds: 500));
+      tester.takeException();
+
       expect(find.text('Nuevo crédito'), findsOneWidget);
 
       final Finder dialogo = find.byType(AlertDialog);
@@ -191,6 +196,11 @@ void main() {
       tester.takeException();
 
       await tester.tap(find.text('Credito'));
+      await tester.pump(const Duration(milliseconds: 500));
+      tester.takeException();
+
+      expect(find.byType(AlertDialog), findsNothing);
+      await tester.tap(find.widgetWithText(FilledButton, 'Crear credito').first);
       await tester.pump(const Duration(milliseconds: 500));
       tester.takeException();
 
@@ -640,6 +650,11 @@ void main() {
       tester.takeException();
 
       await tester.tap(find.text('Credito'));
+      await tester.pump(const Duration(milliseconds: 500));
+      tester.takeException();
+
+      expect(find.byType(AlertDialog), findsNothing);
+      await tester.tap(find.widgetWithText(FilledButton, 'Crear credito').first);
       await tester.pump(const Duration(milliseconds: 500));
       tester.takeException();
 

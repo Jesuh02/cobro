@@ -122,7 +122,16 @@ describe('NotificationsService', () => {
       },
     ]);
 
-    prismaMock.$queryRaw.mockResolvedValueOnce([]);
+    prismaMock.$queryRaw.mockResolvedValueOnce([
+      {
+        id_cuo: '55555555-5555-5555-5555-555555555555',
+        cuo_numero: 2,
+        cuo_valor: '50000',
+        cuo_total_pagado: '0',
+        cuo_fecha_vencimiento: new Date('2026-09-15T00:00:00.000Z'),
+        saldo_pendiente: '50000',
+      },
+    ]);
 
     whatsappMock.send.mockRejectedValueOnce(
       new Error('Open-WA connection timeout'),

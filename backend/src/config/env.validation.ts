@@ -32,7 +32,11 @@ type ValidatedConfig = {
   R2_BUCKET_NAME?: string;
   R2_SIGNED_URL_TTL_SECONDS: number;
   R2_SECRET_ACCESS_KEY?: string;
-  WHATSAPP_PROVIDER: 'openwa' | 'ycloud';
+  WHATSAPP_PROVIDER: 'evolution' | 'openwa' | 'ycloud';
+  EVOLUTION_ENABLED: boolean;
+  EVOLUTION_BASE_URL: string;
+  EVOLUTION_API_KEY?: string;
+  EVOLUTION_INSTANCE_NAME: string;
   OPENWA_ENABLED: boolean;
   OPENWA_BASE_URL: string;
   OPENWA_API_KEY?: string;
@@ -128,16 +132,30 @@ export function validateEnv(config: RawConfig): ValidatedConfig {
     false,
   );
   const whatsappProvider = (
-    config.WHATSAPP_PROVIDER?.trim().toLowerCase() || 'openwa'
-  ) as 'openwa' | 'ycloud';
-  if (!['openwa', 'ycloud'].includes(whatsappProvider)) {
-    throw new Error('WHATSAPP_PROVIDER must be either "openwa" or "ycloud"');
+    config.WHATSAPP_PROVIDER?.trim().toLowerCase() || 'evolution'
+  ) as 'evolution' | 'openwa' | 'ycloud';
+  if (!['evolution', 'openwa', 'ycloud'].includes(whatsappProvider)) {
+    throw new Error(
+      'WHATSAPP_PROVIDER must be "evolution", "openwa" or "ycloud"',
+    );
   }
+
+  const evolutionEnabled = readBoolean(
+    config.EVOLUTION_ENABLED,
+    'EVOLUTION_ENABLED',
+    true,
+  );
+  const evolutionBaseUrl =
+    config.EVOLUTION_BASE_URL?.trim() || 'http://127.0.0.1:8080';
+  assertHttpUrl(evolutionBaseUrl, 'EVOLUTION_BASE_URL', nodeEnv);
+  const evolutionApiKey = optional(config.EVOLUTION_API_KEY);
+  const evolutionInstanceName =
+    config.EVOLUTION_INSTANCE_NAME?.trim() || 'cobrod';
 
   const openwaEnabled = readBoolean(
     config.OPENWA_ENABLED,
     'OPENWA_ENABLED',
-    true,
+    false,
   );
   const openwaBaseUrl =
     config.OPENWA_BASE_URL?.trim() || 'http://127.0.0.1:8080';
@@ -274,6 +292,10 @@ export function validateEnv(config: RawConfig): ValidatedConfig {
     ),
     R2_SECRET_ACCESS_KEY: optional(config.R2_SECRET_ACCESS_KEY),
     WHATSAPP_PROVIDER: whatsappProvider,
+    EVOLUTION_ENABLED: evolutionEnabled,
+    EVOLUTION_BASE_URL: evolutionBaseUrl,
+    EVOLUTION_API_KEY: evolutionApiKey,
+    EVOLUTION_INSTANCE_NAME: evolutionInstanceName,
     OPENWA_ENABLED: openwaEnabled,
     OPENWA_BASE_URL: openwaBaseUrl,
     OPENWA_API_KEY: optional(config.OPENWA_API_KEY),

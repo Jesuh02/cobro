@@ -343,7 +343,11 @@ export class NotificationsService {
 
   private whatsappEnabled(): boolean {
     const provider =
-      this.config.get<string>('WHATSAPP_PROVIDER')?.toLowerCase() ?? 'openwa';
+      this.config.get<string>('WHATSAPP_PROVIDER')?.toLowerCase() ??
+      'evolution';
+    if (provider === 'evolution') {
+      return this.config.get<boolean>('EVOLUTION_ENABLED') ?? true;
+    }
     if (provider === 'openwa') {
       return this.config.get<boolean>('OPENWA_ENABLED') ?? true;
     }

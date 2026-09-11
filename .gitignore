@@ -22,5 +22,7 @@ build/
 .idea/
 .vscode/
 *.iml
+.openwa-session/
+**/.openwa-session/
 ESTRUCTURA_PROYECTO.md
 REGISTRO_CAMBIOS_CHAT.md

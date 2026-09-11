@@ -185,4 +185,99 @@ describe('WhatsappNotificationService', () => {
     ).resolves.toBeUndefined();
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  describe('Open-WA provider', () => {
+    it('sends text message via Open-WA and formats recipient as @c.us', async () => {
+      const fetchMock = jest.fn().mockResolvedValue(
+        new Response(JSON.stringify({ success: true }), { status: 200 }),
+      );
+      global.fetch = fetchMock;
+      const service = new WhatsappNotificationService(
+        new ConfigService({
+          WHATSAPP_PROVIDER: 'openwa',
+          OPENWA_BASE_URL: 'http://localhost:8080',
+          OPENWA_API_KEY: 'test-openwa-key',
+          WHATSAPP_DEFAULT_COUNTRY_CODE: '57',
+        }),
+      );
+
+      await service.send({
+        to: '304 427 1932',
+        kind: 'pago_recibido',
+        text: '✅ *Pago recibido* de $50.000',
+        templateParameters: [],
+        externalId: 'pago-100',
+      });
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [url, request] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(url).toBe('http://localhost:8080/api/sendText');
+      expect((request.headers as Record<string, string>)['api_key']).toBe(
+        'test-openwa-key',
+      );
+      expect((request.headers as Record<string, string>)['X-API-Key']).toBe(
+        'test-openwa-key',
+      );
+
+      const body = JSON.parse(request.body as string) as {
+        to: string;
+        content: string;
+        args: { to: string; content: string };
+      };
+      expect(body.to).toBe('573044271932@c.us');
+      expect(body.args.to).toBe('573044271932@c.us');
+      expect(body.content).toContain('Pago recibido');
+    });
+
+    it('falls back to /sendText when /api/sendText returns 404', async () => {
+      const fetchMock = jest
+        .fn()
+        .mockResolvedValueOnce(new Response('Not Found', { status: 404 }))
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ success: true }), { status: 200 }),
+        );
+      global.fetch = fetchMock;
+      const service = new WhatsappNotificationService(
+        new ConfigService({
+          WHATSAPP_PROVIDER: 'openwa',
+          OPENWA_BASE_URL: 'http://localhost:8080',
+        }),
+      );
+
+      await service.send({
+        to: '+573044271932',
+        kind: 'pago_recibido',
+        text: 'Pago recibido',
+        templateParameters: [],
+        externalId: 'pago-101',
+      });
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(fetchMock.mock.calls[0][0]).toBe(
+        'http://localhost:8080/api/sendText',
+      );
+      expect(fetchMock.mock.calls[1][0]).toBe('http://localhost:8080/sendText');
+    });
+
+    it('does not send if phone number cannot be converted to chat ID', async () => {
+      const fetchMock = jest.fn();
+      global.fetch = fetchMock;
+      const service = new WhatsappNotificationService(
+        new ConfigService({
+          WHATSAPP_PROVIDER: 'openwa',
+          OPENWA_BASE_URL: 'http://localhost:8080',
+        }),
+      );
+
+      await service.send({
+        to: '123',
+        kind: 'pago_recibido',
+        text: 'Pago recibido',
+        templateParameters: [],
+        externalId: 'pago-102',
+      });
+
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+  });
 });

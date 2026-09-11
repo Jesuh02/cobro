@@ -1,0 +1,60 @@
+services:
+  evolution-db:
+    image: postgres:15-alpine
+    container_name: cobrod-evolution-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-evolution}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-evolution_secret_password}
+      POSTGRES_DB: ${POSTGRES_DB:-evolution}
+    volumes:
+      - evolution_db_data:/var/lib/postgresql/data
+    networks:
+      - evolution-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-evolution} -d ${POSTGRES_DB:-evolution}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  evolution-redis:
+    image: redis:7-alpine
+    container_name: cobrod-redis
+    restart: unless-stopped
+    networks:
+      - evolution-net
+
+  evolution-api:
+    image: evoapicloud/evolution-api:v2.3.2
+    container_name: cobrod-evolution-api
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8080}:8080"
+    environment:
+      - SERVER_URL=${SERVER_URL:-http://localhost:8080}
+      - AUTHENTICATION_API_KEY=${AUTHENTICATION_API_KEY:-cobrod-secure-evolution-key}
+      - DATABASE_PROVIDER=postgresql
+      - DATABASE_CONNECTION_URI=${DATABASE_CONNECTION_URI:-postgresql://evolution:evolution_secret_password@evolution-db:5432/evolution?schema=public}
+      - DATABASE_SAVE_DATA_INSTANCE=${DATABASE_SAVE_DATA_INSTANCE:-true}
+      - DATABASE_SAVE_DATA_NEW_MESSAGE=${DATABASE_SAVE_DATA_NEW_MESSAGE:-false}
+      - DATABASE_SAVE_MESSAGE_HISTORIC=${DATABASE_SAVE_MESSAGE_HISTORIC:-false}
+      - DATABASE_SAVE_DATA_CHATS=${DATABASE_SAVE_DATA_CHATS:-false}
+      - DATABASE_SAVE_DATA_CONTACTS=${DATABASE_SAVE_DATA_CONTACTS:-false}
+      - CACHE_REDIS_ENABLED=true
+      - CACHE_REDIS_URI=redis://evolution-redis:6379/1
+      - QRCODE_LIMIT=${QRCODE_LIMIT:-30}
+      - DEL_INSTANCE=false
+    depends_on:
+      evolution-db:
+        condition: service_healthy
+    networks:
+      - evolution-net
+
+volumes:
+  evolution_db_data:
+    name: cobrod_evolution_db_data
+
+networks:
+  evolution-net:
+    name: cobrod_evolution_net
+    driver: bridge

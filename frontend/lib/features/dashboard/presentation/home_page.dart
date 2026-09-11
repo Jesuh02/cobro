@@ -9615,7 +9615,7 @@ class _DatoPresupuesto {
 class _Pagina extends StatelessWidget {
   const _Pagina({
     required this.titulo,
-    required this.subtitulo,
+    this.subtitulo,
     required this.children,
     required this.onRefresh,
     this.error,
@@ -9624,7 +9624,7 @@ class _Pagina extends StatelessWidget {
   });
 
   final String titulo;
-  final String subtitulo;
+  final String? subtitulo;
   final List<Widget> children;
   final Future<void> Function() onRefresh;
   final String? error;
@@ -9687,12 +9687,12 @@ class _Pagina extends StatelessWidget {
 class _Encabezado extends StatelessWidget {
   const _Encabezado({
     required this.titulo,
-    required this.subtitulo,
+    this.subtitulo,
     required this.acciones,
   });
 
   final String titulo;
-  final String subtitulo;
+  final String? subtitulo;
   final List<Widget> acciones;
 
   @override
@@ -9710,16 +9710,18 @@ class _Encabezado extends StatelessWidget {
                 color: clay.text,
               ),
         ),
-        const SizedBox(height: 4),
-        Text(
-          subtitulo,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: clay.subtleText,
-                fontWeight: FontWeight.w600,
-              ),
-        ),
+        if (subtitulo != null && subtitulo!.trim().isNotEmpty) ...<Widget>[
+          const SizedBox(height: 4),
+          Text(
+            subtitulo!,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: clay.subtleText,
+                  fontWeight: FontWeight.w600,
+                ),
+          ),
+        ],
       ],
     );
 

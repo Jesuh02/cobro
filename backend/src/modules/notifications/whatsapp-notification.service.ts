@@ -16,6 +16,164 @@ export class WhatsappNotificationService {
     templateParameters: string[];
     externalId: string;
   }) {
+    const explicitProvider =
+      this.config.get<string>('WHATSAPP_PROVIDER')?.toLowerCase();
+    const provider =
+      explicitProvider ??
+      (this.config.get<string>('EVOLUTION_BASE_URL')
+        ? 'evolution'
+        : this.config.get<string>('OPENWA_BASE_URL')
+          ? 'openwa'
+          : 'ycloud');
+
+    if (provider === 'evolution') {
+      return this.sendEvolution(input);
+    }
+
+    if (provider === 'openwa') {
+      return this.sendOpenWa(input);
+    }
+
+    return this.sendYcloud(input);
+  }
+
+  private async sendEvolution(input: {
+    to: string;
+    kind: NotificationKind;
+    text: string;
+    externalId: string;
+  }) {
+    const number = this.toEvolutionNumber(input.to);
+    if (!number) {
+      this.logger.warn(
+        `No se envio ${input.kind} por Evolution API: numero invalido (${this.maskPhone(input.to)})`,
+      );
+      return;
+    }
+
+    const baseUrl = (
+      this.config.get<string>('EVOLUTION_BASE_URL') ?? 'http://127.0.0.1:8080'
+    ).replace(/\/$/, '');
+    const apiKey = this.config.get<string>('EVOLUTION_API_KEY');
+    const instanceName =
+      this.config.get<string>('EVOLUTION_INSTANCE_NAME') ?? 'cobrod';
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (apiKey) {
+      headers['apikey'] = apiKey;
+    }
+
+    const payload = {
+      number,
+      text: input.text,
+    };
+
+    let response: Response;
+    try {
+      response = await fetch(`${baseUrl}/message/sendText/${instanceName}`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(15_000),
+      });
+    } catch (networkError) {
+      throw new Error(
+        `No se pudo conectar con Evolution API en ${baseUrl}: ${networkError instanceof Error ? networkError.message : String(networkError)}`,
+      );
+    }
+
+    if (!response.ok) {
+      const responseBody = await this.safeResponse(response);
+      throw new Error(
+        `Evolution API respondio ${response.status}: ${responseBody}`,
+      );
+    }
+
+    this.logger.log(
+      `Mensaje ${input.kind} enviado via Evolution API a ${this.maskPhone(number)} (id=${input.externalId})`,
+    );
+  }
+
+  private async sendOpenWa(input: {
+    to: string;
+    kind: NotificationKind;
+    text: string;
+    externalId: string;
+  }) {
+    const chatId = this.toOpenWaChatId(input.to);
+    if (!chatId) {
+      this.logger.warn(
+        `No se envio ${input.kind} por Open-WA: numero invalido (${this.maskPhone(input.to)})`,
+      );
+      return;
+    }
+
+    const baseUrl = (
+      this.config.get<string>('OPENWA_BASE_URL') ?? 'http://127.0.0.1:8080'
+    ).replace(/\/$/, '');
+    const apiKey = this.config.get<string>('OPENWA_API_KEY');
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (apiKey) {
+      headers['api_key'] = apiKey;
+      headers['X-API-Key'] = apiKey;
+    }
+
+    const payload = {
+      args: {
+        to: chatId,
+        content: input.text,
+      },
+      to: chatId,
+      content: input.text,
+    };
+
+    let response: Response;
+    try {
+      response = await fetch(`${baseUrl}/api/sendText`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(15_000),
+      });
+
+      if (response.status === 404) {
+        response = await fetch(`${baseUrl}/sendText`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(15_000),
+        });
+      }
+    } catch (networkError) {
+      throw new Error(
+        `No se pudo conectar con Open-WA en ${baseUrl}: ${networkError instanceof Error ? networkError.message : String(networkError)}`,
+      );
+    }
+
+    if (!response.ok) {
+      const responseBody = await this.safeResponse(response);
+      throw new Error(
+        `Open-WA respondio ${response.status}: ${responseBody}`,
+      );
+    }
+
+    this.logger.log(
+      `Mensaje ${input.kind} enviado via Open-WA a ${this.maskPhone(chatId)} (id=${input.externalId})`,
+    );
+  }
+
+  private async sendYcloud(input: {
+    to: string;
+    kind: NotificationKind;
+    text: string;
+    templateParameters: string[];
+    externalId: string;
+  }) {
     const apiKey = this.config.getOrThrow<string>('YCLOUD_API_KEY');
     const from = this.normalizePhone(
       this.config.getOrThrow<string>('YCLOUD_WHATSAPP_NUMBER'),
@@ -173,6 +331,73 @@ export class WhatsappNotificationService {
       digits.length === defaultCountryCode.length + 10
     ) {
       return `+${digits}`;
+    }
+
+    return null;
+  }
+
+  private toEvolutionNumber(value: string): string | null {
+    const trimmed = value.trim();
+    const withoutSuffix = trimmed.replace(/@(c\.us|s\.whatsapp\.net)$/, '');
+    const digits = withoutSuffix.replace(/\D/g, '');
+    const defaultCountryCode =
+      this.config.get<string>('WHATSAPP_DEFAULT_COUNTRY_CODE') ?? '57';
+
+    if (!digits) {
+      return null;
+    }
+
+    // Si tiene 10 dígitos (ej: celular Colombia: 3044271932)
+    if (digits.length === 10) {
+      return `${defaultCountryCode}${digits}`;
+    }
+
+    // Si ya empieza con el código de país y tiene longitud esperada
+    if (
+      digits.startsWith(defaultCountryCode) &&
+      digits.length === defaultCountryCode.length + 10
+    ) {
+      return digits;
+    }
+
+    // Teléfonos internacionales entre 10 y 15 dígitos
+    if (digits.length >= 10 && digits.length <= 15) {
+      return digits;
+    }
+
+    return null;
+  }
+
+  private toOpenWaChatId(value: string): string | null {
+    const trimmed = value.trim();
+    if (trimmed.endsWith('@c.us')) {
+      return trimmed;
+    }
+
+    const digits = trimmed.replace(/\D/g, '');
+    const defaultCountryCode =
+      this.config.get<string>('WHATSAPP_DEFAULT_COUNTRY_CODE') ?? '57';
+
+    if (!digits) {
+      return null;
+    }
+
+    // Si tiene 10 dígitos (ej: número celular en Colombia: 3044271932)
+    if (digits.length === 10) {
+      return `${defaultCountryCode}${digits}@c.us`;
+    }
+
+    // Si ya empieza con el código de país y tiene 12 dígitos
+    if (
+      digits.startsWith(defaultCountryCode) &&
+      digits.length === defaultCountryCode.length + 10
+    ) {
+      return `${digits}@c.us`;
+    }
+
+    // Teléfonos internacionales entre 10 y 15 dígitos
+    if (digits.length >= 10 && digits.length <= 15) {
+      return `${digits}@c.us`;
     }
 
     return null;

@@ -32,6 +32,14 @@ type ValidatedConfig = {
   R2_BUCKET_NAME?: string;
   R2_SIGNED_URL_TTL_SECONDS: number;
   R2_SECRET_ACCESS_KEY?: string;
+  WHATSAPP_PROVIDER: 'evolution' | 'openwa' | 'ycloud';
+  EVOLUTION_ENABLED: boolean;
+  EVOLUTION_BASE_URL: string;
+  EVOLUTION_API_KEY?: string;
+  EVOLUTION_INSTANCE_NAME: string;
+  OPENWA_ENABLED: boolean;
+  OPENWA_BASE_URL: string;
+  OPENWA_API_KEY?: string;
   YCLOUD_API_KEY?: string;
   YCLOUD_BASE_URL: string;
   YCLOUD_ENABLED: boolean;
@@ -123,6 +131,36 @@ export function validateEnv(config: RawConfig): ValidatedConfig {
     'NOTIFICATIONS_ENABLED',
     false,
   );
+  const whatsappProvider = (
+    config.WHATSAPP_PROVIDER?.trim().toLowerCase() || 'evolution'
+  ) as 'evolution' | 'openwa' | 'ycloud';
+  if (!['evolution', 'openwa', 'ycloud'].includes(whatsappProvider)) {
+    throw new Error(
+      'WHATSAPP_PROVIDER must be "evolution", "openwa" or "ycloud"',
+    );
+  }
+
+  const evolutionEnabled = readBoolean(
+    config.EVOLUTION_ENABLED,
+    'EVOLUTION_ENABLED',
+    true,
+  );
+  const evolutionBaseUrl =
+    config.EVOLUTION_BASE_URL?.trim() || 'http://127.0.0.1:8080';
+  assertHttpUrl(evolutionBaseUrl, 'EVOLUTION_BASE_URL', nodeEnv);
+  const evolutionApiKey = optional(config.EVOLUTION_API_KEY);
+  const evolutionInstanceName =
+    config.EVOLUTION_INSTANCE_NAME?.trim() || 'cobrod';
+
+  const openwaEnabled = readBoolean(
+    config.OPENWA_ENABLED,
+    'OPENWA_ENABLED',
+    false,
+  );
+  const openwaBaseUrl =
+    config.OPENWA_BASE_URL?.trim() || 'http://127.0.0.1:8080';
+  assertHttpUrl(openwaBaseUrl, 'OPENWA_BASE_URL', nodeEnv);
+
   const ycloudEnabled = readBoolean(
     config.YCLOUD_ENABLED,
     'YCLOUD_ENABLED',
@@ -135,11 +173,12 @@ export function validateEnv(config: RawConfig): ValidatedConfig {
   );
 
   if (
+    whatsappProvider === 'ycloud' &&
     ycloudEnabled &&
     (!config.YCLOUD_API_KEY || !config.YCLOUD_WHATSAPP_NUMBER)
   ) {
     throw new Error(
-      'YCLOUD_API_KEY and YCLOUD_WHATSAPP_NUMBER are required when YCLOUD_ENABLED is true',
+      'YCLOUD_API_KEY and YCLOUD_WHATSAPP_NUMBER are required when YCLOUD_ENABLED is true and WHATSAPP_PROVIDER is ycloud',
     );
   }
 
@@ -252,6 +291,14 @@ export function validateEnv(config: RawConfig): ValidatedConfig {
       900,
     ),
     R2_SECRET_ACCESS_KEY: optional(config.R2_SECRET_ACCESS_KEY),
+    WHATSAPP_PROVIDER: whatsappProvider,
+    EVOLUTION_ENABLED: evolutionEnabled,
+    EVOLUTION_BASE_URL: evolutionBaseUrl,
+    EVOLUTION_API_KEY: evolutionApiKey,
+    EVOLUTION_INSTANCE_NAME: evolutionInstanceName,
+    OPENWA_ENABLED: openwaEnabled,
+    OPENWA_BASE_URL: openwaBaseUrl,
+    OPENWA_API_KEY: optional(config.OPENWA_API_KEY),
     YCLOUD_API_KEY: optional(config.YCLOUD_API_KEY),
     YCLOUD_BASE_URL: ycloudBaseUrl,
     YCLOUD_ENABLED: ycloudEnabled,
@@ -321,7 +368,14 @@ function assertHttpUrl(value: string, name: string, nodeEnv: string) {
     throw new Error(`${name} must use HTTP or HTTPS`);
   }
 
-  if (nodeEnv === 'production' && parsed.protocol !== 'https:') {
+  const isInternalHost = [
+    '127.0.0.1',
+    'localhost',
+    'openwa',
+    'host.docker.internal',
+  ].includes(parsed.hostname.toLowerCase());
+
+  if (nodeEnv === 'production' && parsed.protocol !== 'https:' && !isInternalHost) {
     throw new Error(`${name} must use HTTPS in production`);
   }
 

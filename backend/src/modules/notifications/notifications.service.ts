@@ -120,7 +120,7 @@ export class NotificationsService {
           cuo.cuo_fecha_vencimiento,
           (cuo.cuo_valor - cuo.cuo_total_pagado) AS saldo_pendiente
         FROM tbl_cuotas cuo
-        WHERE cuo.cre_id = ${payment.id_cre}
+        WHERE cuo.cre_id = ${payment.id_cre}::uuid
           AND cuo.cuo_estado != 'ANULADA'
         ORDER BY cuo.cuo_numero ASC
       `;
@@ -215,11 +215,17 @@ export class NotificationsService {
 
   private async deliver(notification: CustomerNotification) {
     const rendered = this.templates.render(notification);
-    const jobs: Array<Promise<void>> = [];
+    const deliveryJobs: Array<{
+      canal: 'CORREO' | 'WHATSAPP';
+      destinatario: string;
+      promise: Promise<void>;
+    }> = [];
 
     if (notification.contact.correo) {
-      jobs.push(
-        this.email.send({
+      deliveryJobs.push({
+        canal: 'CORREO',
+        destinatario: notification.contact.correo,
+        promise: this.email.send({
           to: notification.contact.correo,
           recipientName: notification.contact.nombre,
           subject: rendered.subject,
@@ -227,77 +233,76 @@ export class NotificationsService {
           text: rendered.emailText,
           idempotencyKey: `${notification.kind}-${notification.eventId}`,
         }),
-      );
+      });
     } else {
       this.logger.warn(
         `No se envio ${notification.kind} por correo: el destinatario no tiene correo`,
       );
     }
 
-    if (
-      notification.contact.whatsapp &&
-      (this.config.get<boolean>('YCLOUD_ENABLED') ?? false)
-    ) {
-      jobs.push(
-        this.whatsapp.send({
+    if (notification.contact.whatsapp && this.whatsappEnabled()) {
+      deliveryJobs.push({
+        canal: 'WHATSAPP',
+        destinatario: notification.contact.whatsapp,
+        promise: this.whatsapp.send({
           to: notification.contact.whatsapp,
           kind: notification.kind,
           text: rendered.whatsappText,
           templateParameters: rendered.whatsappTemplateParameters,
           externalId: `${notification.kind}-${notification.eventId}`,
         }),
-      );
+      });
     } else if (!notification.contact.whatsapp) {
       this.logger.warn(
         `No se envio ${notification.kind} por WhatsApp: el destinatario no tiene numero`,
       );
     }
 
-    const results = await Promise.allSettled(jobs);
+    const results = await Promise.allSettled(
+      deliveryJobs.map((job) => job.promise),
+    );
 
     if (this.isPersistableNotification(notification)) {
-      // Guardar el registro en la base de datos
-      for (const result of results) {
-        const canal =
-          notification.contact.correo && result === results[0]
-            ? 'CORREO'
-            : 'WHATSAPP';
+      for (let i = 0; i < deliveryJobs.length; i++) {
+        const job = deliveryJobs[i];
+        const result = results[i];
         const estado = result.status === 'fulfilled' ? 'ENVIADA' : 'FALLIDA';
         const errorMsg =
           result.status === 'rejected'
             ? this.errorMessage(result.reason)
             : null;
-        const destinatario =
-          canal === 'CORREO'
-            ? notification.contact.correo
-            : notification.contact.whatsapp;
         const pagId =
           notification.kind === 'pago_recibido' ? notification.eventId : null;
         const creId = notification.creId;
 
-        if (destinatario) {
-          try {
-            await this.prisma.$executeRaw`
-              INSERT INTO tbl_notificaciones (
-                org_id, cli_id, cre_id, pag_id, not_tipo, not_canal, not_estado, not_destinatario, not_error, not_envio
-              ) VALUES (
-                ${notification.orgId}::uuid,
-                ${notification.cliId}::uuid,
-                ${creId ? creId : null}::uuid,
-                ${pagId ? pagId : null}::uuid,
-                ${notification.kind.toUpperCase()}::notificacion_tipo_enum,
-                ${canal}::notificacion_canal_enum,
-                ${estado}::notificacion_estado_enum,
-                ${destinatario},
-                ${errorMsg},
-                ${estado === 'ENVIADA' ? new Date() : null}
-              )
-            `;
-          } catch (dbError) {
-            this.logger.error(
-              `No se pudo guardar el log de notificacion: ${this.errorMessage(dbError)}`,
-            );
-          }
+        const creIdSql = creId
+          ? Prisma.sql`${creId}::uuid`
+          : Prisma.sql`NULL`;
+        const pagIdSql = pagId
+          ? Prisma.sql`${pagId}::uuid`
+          : Prisma.sql`NULL`;
+
+        try {
+          await this.prisma.$executeRaw`
+            INSERT INTO tbl_notificaciones (
+              org_id, cli_id, cre_id, pag_id, not_tipo, not_canal, not_estado, not_destinatario, not_error, not_envio
+            ) VALUES (
+              ${notification.orgId}::uuid,
+              ${notification.cliId}::uuid,
+              ${creIdSql},
+              ${pagIdSql},
+              ${notification.kind.toUpperCase()}::notificacion_tipo_enum,
+              ${job.canal}::notificacion_canal_enum,
+              ${estado}::notificacion_estado_enum,
+              ${job.destinatario},
+              ${errorMsg},
+              ${estado === 'ENVIADA' ? new Date() : null}
+            )
+          `;
+        } catch (dbError) {
+          this.logger.error(
+            `No se pudo guardar el log de notificacion: ${this.errorMessage(dbError)}`,
+          );
         }
       }
     }
@@ -334,6 +339,19 @@ export class NotificationsService {
 
   private enabled() {
     return this.config.get<boolean>('NOTIFICATIONS_ENABLED') ?? false;
+  }
+
+  private whatsappEnabled(): boolean {
+    const provider =
+      this.config.get<string>('WHATSAPP_PROVIDER')?.toLowerCase() ??
+      'evolution';
+    if (provider === 'evolution') {
+      return this.config.get<boolean>('EVOLUTION_ENABLED') ?? true;
+    }
+    if (provider === 'openwa') {
+      return this.config.get<boolean>('OPENWA_ENABLED') ?? true;
+    }
+    return this.config.get<boolean>('YCLOUD_ENABLED') ?? false;
   }
 
   private number(

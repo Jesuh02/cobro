@@ -6,11 +6,9 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:mapcn_flutter/mapcn_flutter.dart';
 
 import '../../../app/app_theme.dart';
 import '../../../app/session_cache.dart';
-import '../../../core/map/map_tiles.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/network/api_exception.dart';
 import '../../../core/network/offline_mutation.dart';
@@ -6482,7 +6480,6 @@ class _HomePageState extends State<HomePage> {
         DateTime fechaInicio = DateTime.now();
         bool omitirDomingos = _omitirDomingos;
         LatLng? ubicacionCliente;
-        bool obteniendoUbicacion = false;
 
         return StatefulBuilder(
           builder: (BuildContext context, StateSetter setDialogState) {
@@ -6524,57 +6521,6 @@ class _HomePageState extends State<HomePage> {
                         labelText: 'Direccion',
                         hintText: _direccionCasaHint,
                         prefixIcon: Icon(Icons.location_on_rounded),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: OutlinedButton.icon(
-                        onPressed: guardandoDialogo || obteniendoUbicacion
-                            ? null
-                            : () async {
-                                setDialogState(
-                                  () => obteniendoUbicacion = true,
-                                );
-                                try {
-                                  final LatLng position =
-                                      await const DeviceRouteLocationService()
-                                          .currentPosition();
-                                  if (dialogContext.mounted) {
-                                    setDialogState(
-                                      () {
-                                        ubicacionCliente = position;
-                                      },
-                                    );
-                                    _mostrarMensaje(_mensajeUbicacionCasa);
-                                  }
-                                } on RouteLocationException catch (error) {
-                                  _mostrarMensaje(error.message);
-                                } finally {
-                                  if (dialogContext.mounted) {
-                                    setDialogState(
-                                      () => obteniendoUbicacion = false,
-                                    );
-                                  }
-                                }
-                              },
-                        icon: obteniendoUbicacion
-                            ? const SizedBox.square(
-                                dimension: 17,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : Icon(
-                                ubicacionCliente == null
-                                    ? Icons.my_location_rounded
-                                    : Icons.check_circle_rounded,
-                              ),
-                        label: Text(
-                          ubicacionCliente == null
-                              ? 'Guardar ubicación del cliente'
-                              : 'Ubicación lista para el mapa',
-                        ),
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -12863,51 +12809,8 @@ class _ClienteUbicacionPicker extends StatefulWidget {
       _ClienteUbicacionPickerState();
 }
 
-class _ClienteUbicacionPickerState extends State<_ClienteUbicacionPicker>
-    with SingleTickerProviderStateMixin {
-  static const LatLng _riohacha = LatLng(11.5449, -72.9072);
-
-  late final MapcnController _controller;
-  LatLng? _value;
-  bool _mapReady = false;
+class _ClienteUbicacionPickerState extends State<_ClienteUbicacionPicker> {
   bool _locating = false;
-  bool _usingDeviceLocation = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = MapcnController(vsync: this);
-    _value = widget.value;
-  }
-
-  @override
-  void didUpdateWidget(_ClienteUbicacionPicker oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    final LatLng? value = widget.value;
-    if (value == null && oldWidget.value != null) {
-      _value = null;
-      _usingDeviceLocation = false;
-      return;
-    }
-    if (value != null &&
-        (oldWidget.value == null ||
-            oldWidget.value!.latitude != value.latitude ||
-            oldWidget.value!.longitude != value.longitude)) {
-      _controller.flyTo(
-        value,
-        zoom: 16,
-        duration: const Duration(milliseconds: 520),
-        curve: Curves.easeOutCubic,
-      );
-      _value = value;
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
 
   Future<void> _useCurrentLocation() async {
     if (!widget.enabled || _locating) {
@@ -12918,13 +12821,7 @@ class _ClienteUbicacionPickerState extends State<_ClienteUbicacionPicker>
     try {
       final LatLng position =
           await const DeviceRouteLocationService().currentPosition();
-      _setValue(position, fromDevice: true);
-      _controller.flyTo(
-        position,
-        zoom: 17,
-        duration: const Duration(milliseconds: 650),
-        curve: Curves.easeOutCubic,
-      );
+      widget.onChanged(position);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -12945,64 +12842,82 @@ class _ClienteUbicacionPickerState extends State<_ClienteUbicacionPicker>
     }
   }
 
-  void _markCenter(LatLng center, bool hasGesture) {
-    if (!hasGesture || !widget.enabled) {
-      return;
-    }
-    _setValue(center);
-  }
-
-  void _setValue(LatLng? value, {bool fromDevice = false}) {
-    setState(() {
-      _value = value;
-      _usingDeviceLocation = value != null && fromDevice;
-    });
-    widget.onChanged(value);
-  }
-
-  String _statusText() {
-    final LatLng? value = _value;
-    if (value == null) {
-      return 'Opcional: usa el localizador o mueve el mapa bajo el pin.';
-    }
-
-    final String coordinates =
-        '${value.latitude.toStringAsFixed(6)}, ${value.longitude.toStringAsFixed(6)}';
-    return _usingDeviceLocation
-        ? 'Ubicación actual marcada: $coordinates'
-        : coordinates;
-  }
-
   @override
   Widget build(BuildContext context) {
     final ClayTokens clay = context.clay;
-    final LatLng center = _value ?? _riohacha;
+    final LatLng? value = widget.value;
 
     return DecoratedBox(
       decoration: BoxDecoration(
         color: clay.surfaceHigh,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: clay.border),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: value != null
+              ? CobroAppTheme.primary.withValues(alpha: 0.35)
+              : clay.border,
+        ),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Row(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+            final bool compacto = constraints.maxWidth < 420;
+
+            final Widget iconoYTexto = Row(
               children: <Widget>[
-                Expanded(
-                  child: Text(
-                    'Ubicacion en mapa',
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleSmall
-                        ?.copyWith(fontWeight: FontWeight.w900),
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: value != null
+                        ? CobroAppTheme.primary.withValues(alpha: 0.12)
+                        : clay.surface,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: Icon(
+                      value != null
+                          ? Icons.location_on_rounded
+                          : Icons.location_off_outlined,
+                      color: value != null
+                          ? CobroAppTheme.primary
+                          : clay.subtleText,
+                      size: 20,
+                    ),
                   ),
                 ),
-                Tooltip(
-                  message: _statusText(),
-                  child: OutlinedButton.icon(
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Text(
+                        value != null
+                            ? 'Ubicación GPS registrada'
+                            : 'Ubicación del cliente',
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodyMedium
+                            ?.copyWith(fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        value != null
+                            ? '${value.latitude.toStringAsFixed(6)}, ${value.longitude.toStringAsFixed(6)}'
+                            : 'Opcional: guarda la posición GPS para la ruta de cobro.',
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(color: clay.subtleText),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            );
+
+            final Widget acciones = value == null
+                ? OutlinedButton.icon(
                     onPressed: widget.enabled && !_locating
                         ? _useCurrentLocation
                         : null,
@@ -13012,110 +12927,57 @@ class _ClienteUbicacionPickerState extends State<_ClienteUbicacionPicker>
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : const Icon(Icons.my_location_rounded, size: 18),
-                    label: Text(_locating ? 'Ubicando' : 'Localizador'),
+                    label: Text(_locating ? 'Ubicando...' : 'Guardar ubicación'),
+                  )
+                : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      IconButton(
+                        tooltip: 'Actualizar posición GPS',
+                        onPressed: widget.enabled && !_locating
+                            ? _useCurrentLocation
+                            : null,
+                        icon: _locating
+                            ? const SizedBox.square(
+                                dimension: 16,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.refresh_rounded, size: 20),
+                      ),
+                      IconButton(
+                        tooltip: 'Quitar ubicación',
+                        onPressed: widget.enabled
+                            ? () => widget.onChanged(null)
+                            : null,
+                        icon: const Icon(Icons.close_rounded, size: 20),
+                      ),
+                    ],
+                  );
+
+            if (compacto) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  iconoYTexto,
+                  const SizedBox(height: 10),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: acciones,
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: SizedBox(
-                height: MediaQuery.sizeOf(context).width < 520 ? 220 : 260,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: <Widget>[
-                    AbsorbPointer(
-                      absorbing: !widget.enabled,
-                      child: Mapcn(
-                        controller: _controller,
-                        initialCenter: center,
-                        initialZoom: _value == null ? 13.5 : 16,
-                        style: MapcnStyle.dark,
-                        tileUrlTemplate: CobroMapTiles.routeLightUrlTemplate,
-                        attributionText: CobroMapTiles.attribution,
-                        points: _value == null
-                            ? const <LatLng>[]
-                            : <LatLng>[_value!],
-                        markerConfig: MarkerConfig.minimal,
-                        showTooltip: false,
-                        showAttribution: true,
-                        minZoom: 3,
-                        maxZoom: 18,
-                        enableTileCaching: true,
-                        maxTileCache: 80,
-                        onCameraMove: (camera, hasGesture) {
-                          _markCenter(camera.center, hasGesture);
-                        },
-                        onMapReady: () {
-                          if (mounted) {
-                            setState(() => _mapReady = true);
-                          }
-                        },
-                      ),
-                    ),
-                    Center(
-                      child: Transform.translate(
-                        offset: const Offset(0, -18),
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: CobroAppTheme.primary,
-                            shape: BoxShape.circle,
-                            boxShadow: <BoxShadow>[
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.28),
-                                blurRadius: 14,
-                                offset: const Offset(0, 8),
-                              ),
-                            ],
-                          ),
-                          child: const Padding(
-                            padding: EdgeInsets.all(9),
-                            child: Icon(
-                              Icons.location_on_rounded,
-                              color: Colors.white,
-                              size: 24,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    if (!_mapReady)
-                      ColoredBox(
-                        color: clay.surface.withValues(alpha: 0.72),
-                        child: const Center(
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Row(
+                ],
+              );
+            }
+
+            return Row(
               children: <Widget>[
-                Expanded(
-                  child: Text(
-                    _value == null
-                        ? 'Opcional: usa el localizador o mueve el mapa bajo el pin.'
-                        : _usingDeviceLocation
-                            ? 'Ubicación actual marcada: ${_value!.latitude.toStringAsFixed(6)}, ${_value!.longitude.toStringAsFixed(6)}'
-                            : '${_value!.latitude.toStringAsFixed(6)}, ${_value!.longitude.toStringAsFixed(6)}',
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodySmall
-                        ?.copyWith(color: clay.subtleText),
-                  ),
-                ),
-                if (_value != null)
-                  TextButton.icon(
-                    onPressed: widget.enabled ? () => _setValue(null) : null,
-                    icon: const Icon(Icons.close_rounded, size: 18),
-                    label: const Text('Quitar'),
-                  ),
+                Expanded(child: iconoYTexto),
+                const SizedBox(width: 8),
+                acciones,
               ],
-            ),
-          ],
+            );
+          },
         ),
       ),
     );

@@ -38,10 +38,16 @@ class SesionUsuario {
   factory SesionUsuario.fromJson(Map<String, dynamic> json) {
     final Object? rawRoles = json['roles'];
     final Object? rawPermisos = json['permisos'];
-    final bool esAdministrador = json['esAdministrador'] as bool? ?? false;
+    final List<String> roles = rawRoles is List<dynamic>
+        ? rawRoles.whereType<String>().toList(growable: false)
+        : const <String>[];
+    final bool esSuperAdmin = (json['esSuperAdmin'] as bool? ?? false) ||
+        roles.contains('SUPER_ADMIN');
+    final bool esAdministrador = (json['esAdministrador'] as bool? ?? false) ||
+        roles.contains('ADMINISTRADOR');
     final List<String> permisos = rawPermisos is List<dynamic>
         ? rawPermisos.whereType<String>().toList(growable: false)
-        : esAdministrador
+        : (esAdministrador || esSuperAdmin)
             ? permisosEmpleadoCodigos
             : const <String>[];
 
@@ -50,11 +56,9 @@ class SesionUsuario {
       usuario: json['usuario'] as String,
       nombreCompleto: json['nombreCompleto'] as String,
       correo: json['correo'] as String,
-      roles: rawRoles is List<dynamic>
-          ? rawRoles.whereType<String>().toList(growable: false)
-          : const <String>[],
+      roles: roles,
       esAdministrador: esAdministrador,
-      esSuperAdmin: json['esSuperAdmin'] as bool? ?? false,
+      esSuperAdmin: esSuperAdmin,
       permisos: permisos,
       activo: json['activo'] as bool? ?? true,
     );

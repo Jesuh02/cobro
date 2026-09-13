@@ -2675,6 +2675,8 @@ class _HomePageState extends State<HomePage> {
       mostrarCuotasRegistradas: _mostrarCuotasRegistradas,
       recargarEnSegundoPlano: _recargarEnSegundoPlano,
       validarPresupuestoCaja: _validarPresupuestoCaja,
+      defaultCajaMenorId:
+          _obtenerCajaMenorAbiertaDeUsuario(_usuarioSesion?.id)?.id,
     );
   }
 

@@ -77,9 +77,15 @@ class _ResumenCreditoAnimadoState extends State<ResumenCreditoAnimado>
   }
 
   void _quitarListeners(ResumenCreditoAnimado resumen) {
-    resumen.valorController.removeListener(_actualizarCalculo);
-    resumen.interesController.removeListener(_actualizarCalculo);
-    resumen.plazoController.removeListener(_actualizarCalculo);
+    try {
+      resumen.valorController.removeListener(_actualizarCalculo);
+    } catch (_) {}
+    try {
+      resumen.interesController.removeListener(_actualizarCalculo);
+    } catch (_) {}
+    try {
+      resumen.plazoController.removeListener(_actualizarCalculo);
+    } catch (_) {}
   }
 
   void _actualizarCalculo() {

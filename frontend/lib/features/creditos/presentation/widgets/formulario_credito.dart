@@ -740,6 +740,7 @@ class FormularioCredito extends StatelessWidget {
         ] else
           DosColumnas(
             left: TextField(
+              key: const ValueKey<String>('campo_formulario_valor'),
               controller: valorController,
               enabled: !guardando,
               keyboardType:
@@ -750,6 +751,7 @@ class FormularioCredito extends StatelessWidget {
               ),
             ),
             right: TextField(
+              key: const ValueKey<String>('campo_formulario_interes'),
               controller: interesController,
               enabled: !guardando,
               readOnly: true,
@@ -763,6 +765,7 @@ class FormularioCredito extends StatelessWidget {
         const SizedBox(height: 12),
         DosColumnas(
           left: TextField(
+            key: const ValueKey<String>('campo_formulario_plazo'),
             controller: plazoController,
             enabled: !guardando,
             keyboardType: TextInputType.number,
@@ -811,6 +814,7 @@ class FormularioCredito extends StatelessWidget {
           const SizedBox(height: 12),
         ],
         TextField(
+          key: const ValueKey<String>('campo_formulario_observacion'),
           controller: observacionController,
           enabled: !guardando,
           maxLines: 2,

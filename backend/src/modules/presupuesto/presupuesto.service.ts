@@ -98,9 +98,6 @@ export class PresupuestoService {
       );
     }
 
-    const fechaSaldoMovimientosWhere = fechaDesde
-      ? Prisma.sql`AND m.mca_creacion < ${fechaDesdeColombia}`
-      : Prisma.empty;
     const usuarioMovimientosWhere = puedeVerTodo
       ? Prisma.empty
       : Prisma.sql`AND m.usu_id = ${scope.usuarioId}::uuid`;
@@ -157,29 +154,80 @@ export class PresupuestoService {
         ) responsable ON TRUE
         WHERE ${Prisma.join(condicionesCajas, ' AND ')}
       ),
+      sesiones_caja AS (
+        SELECT
+          sc.caj_id,
+          COALESCE(MAX(sc.sca_monto_inicial), 0) AS monto_inicial
+        FROM public.tbl_sesiones_cajas sc
+        GROUP BY sc.caj_id
+      ),
+      movimientos_caja AS (
+        SELECT
+          sc.caj_id,
+          COALESCE(
+            SUM(
+              CASE
+                WHEN UPPER(m.mca_tipo::text) IN ('APERTURA', 'RECAUDO', 'AJUSTE_ENTRADA') THEN m.mca_monto
+                WHEN UPPER(m.mca_tipo::text) IN ('GASTO', 'DESEMBOLSO_CREDITO', 'AJUSTE_SALIDA') THEN -m.mca_monto
+                ELSE 0
+              END
+            ) FILTER (WHERE ${fechaDesdeColombia ? Prisma.sql`m.mca_creacion < ${fechaDesdeColombia}` : Prisma.sql`FALSE`}),
+            0
+          ) AS saldo_anterior,
+          COALESCE(
+            SUM(m.mca_monto) FILTER (
+              WHERE UPPER(m.mca_tipo::text) IN ('APERTURA', 'AJUSTE_ENTRADA')
+                ${fechaDesdeColombia ? Prisma.sql`AND m.mca_creacion >= ${fechaDesdeColombia}` : Prisma.empty}
+                ${fechaHastaColombia ? Prisma.sql`AND m.mca_creacion <= ${fechaHastaColombia}` : Prisma.empty}
+            ),
+            0
+          ) AS aperturas_periodo,
+          COALESCE(
+            SUM(m.mca_monto) FILTER (
+              WHERE UPPER(m.mca_tipo::text) = 'DESEMBOLSO_CREDITO'
+                ${fechaDesdeColombia ? Prisma.sql`AND m.mca_creacion >= ${fechaDesdeColombia}` : Prisma.empty}
+                ${fechaHastaColombia ? Prisma.sql`AND m.mca_creacion <= ${fechaHastaColombia}` : Prisma.empty}
+            ),
+            0
+          ) AS desembolsos_periodo,
+          COALESCE(
+            SUM(m.mca_monto) FILTER (
+              WHERE UPPER(m.mca_tipo::text) IN ('GASTO', 'AJUSTE_SALIDA')
+                ${fechaDesdeColombia ? Prisma.sql`AND m.mca_creacion >= ${fechaDesdeColombia}` : Prisma.empty}
+                ${fechaHastaColombia ? Prisma.sql`AND m.mca_creacion <= ${fechaHastaColombia}` : Prisma.empty}
+            ),
+            0
+          ) AS gastos_periodo,
+          COALESCE(
+            SUM(m.mca_monto) FILTER (
+              WHERE UPPER(m.mca_tipo::text) = 'RECAUDO'
+                ${fechaDesdeColombia ? Prisma.sql`AND m.mca_creacion >= ${fechaDesdeColombia}` : Prisma.empty}
+                ${fechaHastaColombia ? Prisma.sql`AND m.mca_creacion <= ${fechaHastaColombia}` : Prisma.empty}
+            ),
+            0
+          ) AS recaudos_periodo
+        FROM public.tbl_sesiones_cajas sc
+        JOIN public.tbl_movimientos_cajas m ON m.sca_id = sc.id_sca
+        WHERE TRUE
+          ${usuarioMovimientosWhere}
+        GROUP BY sc.caj_id
+      ),
       resumen AS (
         SELECT
           c.id_caj::text AS caja_menor_id,
           c.caj_nombre AS caja_menor_nombre,
           c.responsable_id::text AS responsable_usuario_id,
           'COP' AS moneda_codigo,
-          COALESCE(MAX(sc.sca_monto_inicial), 0)
-            + COALESCE(SUM(
-              CASE
-                WHEN UPPER(m.mca_tipo::text) IN ('APERTURA', 'RECAUDO', 'AJUSTE_ENTRADA') THEN m.mca_monto
-                WHEN UPPER(m.mca_tipo::text) IN ('GASTO', 'DESEMBOLSO_CREDITO', 'AJUSTE_SALIDA') THEN -m.mca_monto
-                ELSE 0
-              END
-            ), 0) AS caja_menor,
-          COALESCE(pagos.recaudado, 0) AS recaudado,
-          COALESCE(gastos.gastos, 0) AS gastos,
-          COALESCE(creditos.creditos, 0) AS creditos
+          COALESCE(s.monto_inicial, 0)
+            + COALESCE(mc.saldo_anterior, 0)
+            + COALESCE(mc.aperturas_periodo, 0) AS caja_menor,
+          COALESCE(pagos.recaudado, 0) + COALESCE(mc.recaudos_periodo, 0) AS recaudado,
+          COALESCE(gastos.gastos, 0) + COALESCE(mc.gastos_periodo, 0) AS gastos,
+          COALESCE(creditos.creditos, 0) AS creditos,
+          COALESCE(mc.desembolsos_periodo, 0) AS desembolsos
         FROM cajas c
-        LEFT JOIN public.tbl_sesiones_cajas sc ON sc.caj_id = c.id_caj
-        LEFT JOIN public.tbl_movimientos_cajas m
-          ON m.sca_id = sc.id_sca
-          ${fechaSaldoMovimientosWhere}
-          ${usuarioMovimientosWhere}
+        LEFT JOIN sesiones_caja s ON s.caj_id = c.id_caj
+        LEFT JOIN movimientos_caja mc ON mc.caj_id = c.id_caj
         LEFT JOIN LATERAL (
           SELECT SUM(pa.pag_monto) AS recaudado
           FROM (
@@ -198,6 +246,11 @@ export class PresupuestoService {
           WHERE cl.org_id = c.org_id
             ${usuarioPagosWhere}
             ${fechaPagosWhere}
+            AND NOT EXISTS (
+              SELECT 1 FROM public.tbl_movimientos_cajas mc2
+              WHERE mc2.mca_referencia_id = pa.id_pag
+                AND mc2.mca_referencia_tipo::text = 'PAGO'
+            )
         ) pagos ON TRUE
         LEFT JOIN LATERAL (
           SELECT SUM(g.gas_monto) AS gastos
@@ -215,8 +268,6 @@ export class PresupuestoService {
             ${usuarioCreditosWhere}
             ${fechaCreditosWhere}
         ) creditos ON TRUE
-        WHERE TRUE
-        GROUP BY c.id_caj, c.caj_nombre, c.responsable_id, pagos.recaudado, gastos.gastos, creditos.creditos
       )
       SELECT
         caja_menor_id,
@@ -227,7 +278,7 @@ export class PresupuestoService {
         recaudado,
         gastos,
         creditos,
-        caja_menor + recaudado - gastos AS presupuesto
+        caja_menor + recaudado - gastos - desembolsos AS presupuesto
       FROM resumen
       ORDER BY moneda_codigo ASC, caja_menor_id ASC
     `);

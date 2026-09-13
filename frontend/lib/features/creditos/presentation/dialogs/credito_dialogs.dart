@@ -104,6 +104,299 @@ CreditoRegistro creditoOptimistaModificado({
   );
 }
 
+class _DialogoCrearCreditoContent extends StatefulWidget {
+  const _DialogoCrearCreditoContent({
+    required this.catalogos,
+    required this.clientes,
+    required this.creditos,
+    required this.apiClient,
+    required this.mostrarMensaje,
+    required this.mensajeError,
+    required this.ejecutarAccion,
+    required this.guardarCreditoLocal,
+    required this.marcarAccionOfflinePendiente,
+    this.mostrarCuotasRegistradas,
+    required this.recargarEnSegundoPlano,
+    this.validarPresupuestoCaja,
+    this.defaultCajaMenorId,
+  });
+
+  final Catalogos catalogos;
+  final List<Cliente> clientes;
+  final List<CreditoRegistro> creditos;
+  final ApiClient apiClient;
+  final void Function(String) mostrarMensaje;
+  final String Function(Object) mensajeError;
+  final Future<bool> Function(Future<void> Function()) ejecutarAccion;
+  final void Function(CreditoRegistro) guardarCreditoLocal;
+  final Future<void> Function(OfflineMutationQueuedException)
+      marcarAccionOfflinePendiente;
+  final VoidCallback? mostrarCuotasRegistradas;
+  final void Function({
+    bool catalogos,
+    bool presupuesto,
+    bool cobrosRuta,
+    bool creditos,
+    bool movimientosCaja,
+  }) recargarEnSegundoPlano;
+  final bool Function(String, double)? validarPresupuestoCaja;
+  final String? defaultCajaMenorId;
+
+  @override
+  State<_DialogoCrearCreditoContent> createState() =>
+      _DialogoCrearCreditoContentState();
+}
+
+class _DialogoCrearCreditoContentState
+    extends State<_DialogoCrearCreditoContent> {
+  late final TextEditingController _valorCreditoController;
+  late final TextEditingController _interesController;
+  late final TextEditingController _plazoController;
+  late final TextEditingController _observacionCreditoController;
+  final Map<String, TextEditingController> _valorClienteControllers =
+      <String, TextEditingController>{};
+
+  TextEditingController _valorClienteController(String id) {
+    return _valorClienteControllers.putIfAbsent(
+      id,
+      () => TextEditingController(text: _valorCreditoController.text),
+    );
+  }
+
+  late String? _clienteId;
+  late final Set<String> _clientesSeleccionadosIds;
+  late String? _rutaId;
+  late String? _monedaCodigo;
+  late int? _frecuenciaPagoId;
+  late String? _cajaMenorId;
+  late DateTime _fechaInicio;
+  late bool _omitirDomingos;
+  bool _guardandoDialogo = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _valorCreditoController = TextEditingController();
+    _interesController = TextEditingController(text: '20');
+    _plazoController = TextEditingController(text: '30');
+    _observacionCreditoController = TextEditingController();
+
+    _clienteId = widget.clientes.first.id;
+    _clientesSeleccionadosIds = <String>{widget.clientes.first.id};
+    _rutaId = widget.catalogos.rutasAbiertas.isNotEmpty
+        ? widget.catalogos.rutasAbiertas.first.id
+        : null;
+    _monedaCodigo = widget.catalogos.monedas.first.codigo;
+    _frecuenciaPagoId = widget.catalogos.frecuenciasPago.first.id;
+    _cajaMenorId = widget.defaultCajaMenorId != null &&
+            widget.catalogos.cajasMenoresActivas
+                .any((CajaMenorCatalogo c) => c.id == widget.defaultCajaMenorId)
+        ? widget.defaultCajaMenorId
+        : (widget.catalogos.cajasMenoresActivas.isNotEmpty
+            ? widget.catalogos.cajasMenoresActivas.first.id
+            : null);
+    _fechaInicio = DateTime.now();
+    _omitirDomingos = true;
+  }
+
+  @override
+  void dispose() {
+    _valorCreditoController.dispose();
+    _interesController.dispose();
+    _plazoController.dispose();
+    _observacionCreditoController.dispose();
+    for (final TextEditingController c in _valorClienteControllers.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Nuevo crédito'),
+      content: DialogContent(
+        maxWidth: 760,
+        child: FormularioCredito(
+          clientes: widget.clientes,
+          rutas: widget.catalogos.rutasAbiertas,
+          monedas: widget.catalogos.monedas,
+          frecuencias: widget.catalogos.frecuenciasPago,
+          cajasMenores: widget.catalogos.cajasMenoresActivas,
+          clienteId: _clienteId,
+          rutaId: _rutaId,
+          monedaCodigo: _monedaCodigo,
+          frecuenciaPagoId: _frecuenciaPagoId,
+          cajaMenorId: _cajaMenorId,
+          fechaInicio: _fechaInicio,
+          omitirDomingos: _omitirDomingos,
+          valorController: _valorCreditoController,
+          clientesSeleccionadosIds: _clientesSeleccionadosIds,
+          valorClienteController: _valorClienteController,
+          interesController: _interesController,
+          plazoController: _plazoController,
+          observacionController: _observacionCreditoController,
+          guardando: _guardandoDialogo,
+          onClienteChanged: (String? value) {
+            setState(() => _clienteId = value);
+          },
+          onRutaChanged: (String? value) {
+            setState(() => _rutaId = value);
+          },
+          onMonedaChanged: (String? value) {
+            setState(() => _monedaCodigo = value);
+          },
+          onFrecuenciaChanged: (int? value) {
+            setState(() => _frecuenciaPagoId = value);
+          },
+          onCajaMenorChanged: (String? value) {
+            setState(() => _cajaMenorId = value);
+          },
+          onFechaChanged: (DateTime value) {
+            setState(() => _fechaInicio = value);
+          },
+          onOmitirDomingosChanged: (bool value) {
+            setState(() => _omitirDomingos = value);
+          },
+          onCrear: () async {
+            if (_guardandoDialogo) return;
+
+            final List<String> clienteIds = <String>[
+              if (_clienteId != null) _clienteId!,
+            ];
+
+            if (clienteIds.isEmpty ||
+                _monedaCodigo == null ||
+                _frecuenciaPagoId == null) {
+              widget.mostrarMensaje(
+                  'Faltan datos reales para crear el credito');
+              return;
+            }
+
+            if (_cajaMenorId == null) {
+              widget.mostrarMensaje(
+                  'No se puede hacer credito sin caja menor');
+              return;
+            }
+
+            final double porcentajeInteres;
+            final int plazoDias;
+            final Map<String, double> valoresPorCliente =
+                <String, double>{};
+
+            try {
+              for (final String cId in clienteIds) {
+                final String montoTexto = clienteIds.length == 1
+                    ? _valorCreditoController.text
+                    : _valorClienteController(cId).text;
+                valoresPorCliente[cId] = parseMontoInput(montoTexto);
+              }
+              porcentajeInteres =
+                  parseNumero(_interesController.text) ?? 0.0;
+              plazoDias = int.parse(_plazoController.text.trim());
+            } catch (error) {
+              widget.mostrarMensaje(widget.mensajeError(error));
+              return;
+            }
+
+            final double valorPrincipalTotal =
+                valoresPorCliente.values.fold<double>(
+              0,
+              (double total, double valor) => total + valor,
+            );
+
+            if (widget.validarPresupuestoCaja != null &&
+                !widget.validarPresupuestoCaja!(
+                    _cajaMenorId!, valorPrincipalTotal)) {
+              return;
+            }
+
+            setState(() => _guardandoDialogo = true);
+            if (context.mounted) {
+              Navigator.of(context).pop(true);
+            }
+            widget.mostrarMensaje(
+              clienteIds.length == 1
+                  ? 'Creando credito...'
+                  : 'Creando creditos...',
+            );
+
+            await widget.ejecutarAccion(() async {
+              int creados = 0;
+              int pendientes = 0;
+              for (final String cId in clienteIds) {
+                try {
+                  final CreditoRegistro creditoCreado =
+                      CreditoRegistro.fromJson(
+                    await widget.apiClient.postObject(
+                      '/creditos',
+                      <String, dynamic>{
+                        'clienteId': cId,
+                        if (_rutaId != null) 'rutaId': _rutaId,
+                        'monedaCodigo': _monedaCodigo,
+                        'frecuenciaPagoId': _frecuenciaPagoId,
+                        'fechaInicio': formatDateValue(_fechaInicio),
+                        'valorPrincipal': valoresPorCliente[cId] ?? 0.0,
+                        'porcentajeInteres': porcentajeInteres,
+                        'plazoDias': plazoDias,
+                        'omitirDomingos': _omitirDomingos,
+                        'cajaMenorId': _cajaMenorId,
+                        if (_observacionCreditoController.text
+                            .trim()
+                            .isNotEmpty)
+                          'observacion':
+                              _observacionCreditoController.text.trim(),
+                      },
+                      queueOffline: true,
+                    ),
+                  );
+                  creados++;
+                  widget.guardarCreditoLocal(creditoCreado);
+                } on OfflineMutationQueuedException catch (error) {
+                  pendientes++;
+                  await widget.marcarAccionOfflinePendiente(error);
+                }
+              }
+
+              if (creados > 0 || pendientes > 0) {
+                widget.mostrarCuotasRegistradas?.call();
+              }
+
+              widget.recargarEnSegundoPlano(
+                catalogos: false,
+                presupuesto: true,
+                cobrosRuta: true,
+                creditos: true,
+                movimientosCaja: true,
+              );
+
+              if (creados > 0 && pendientes > 0) {
+                widget.mostrarMensaje(
+                  '$creados credito(s) creado(s). $pendientes guardado(s) offline.',
+                );
+              } else if (creados > 1) {
+                widget.mostrarMensaje(
+                    '$creados creditos creados exitosamente');
+              } else if (creados == 1) {
+                widget.mostrarMensaje('Credito creado exitosamente');
+              }
+            });
+          },
+          usarSuperficie: false,
+        ),
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: _guardandoDialogo
+              ? null
+              : () => Navigator.of(context).pop(false),
+          child: const Text('Cancelar'),
+        ),
+      ],
+    );
+  }
+}
+
 Future<void> mostrarDialogoCrearCredito({
   required BuildContext context,
   required ApiClient apiClient,
@@ -128,6 +421,7 @@ Future<void> mostrarDialogoCrearCredito({
     bool movimientosCaja,
   }) recargarEnSegundoPlano,
   bool Function(String, double)? validarPresupuestoCaja,
+  String? defaultCajaMenorId,
 }) async {
   if (!puedeCrearCreditos) {
     mostrarMensaje('No tienes permiso para crear creditos');
@@ -156,236 +450,26 @@ Future<void> mostrarDialogoCrearCredito({
     return;
   }
 
-  final TextEditingController valorCreditoController = TextEditingController();
-  final TextEditingController interesController =
-      TextEditingController(text: '20');
-  final TextEditingController plazoController =
-      TextEditingController(text: '30');
-  final TextEditingController observacionCreditoController =
-      TextEditingController();
-  final Map<String, TextEditingController> valorClienteControllers =
-      <String, TextEditingController>{};
-
-  TextEditingController valorClienteController(String id) {
-    return valorClienteControllers.putIfAbsent(
-      id,
-      () => TextEditingController(text: valorCreditoController.text),
-    );
-  }
-
-  String? clienteId = clientes.first.id;
-  final Set<String> clientesSeleccionadosIds = <String>{clientes.first.id};
-  String? rutaId = catalogos.rutasAbiertas.isNotEmpty
-      ? catalogos.rutasAbiertas.first.id
-      : null;
-  String? monedaCodigo = catalogos.monedas.first.codigo;
-  int? frecuenciaPagoId = catalogos.frecuenciasPago.first.id;
-  String? cajaMenorId = catalogos.cajasMenoresActivas.first.id;
-  DateTime fechaInicio = DateTime.now();
-  bool omitirDomingos = true;
-
-  try {
-    await showDialog<bool>(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        bool guardandoDialogo = false;
-
-        return StatefulBuilder(
-          builder: (BuildContext context, StateSetter setDialogState) {
-            return AlertDialog(
-              title: const Text('Nuevo crédito'),
-              content: DialogContent(
-                maxWidth: 760,
-                child: FormularioCredito(
-                  clientes: clientes,
-                  rutas: catalogos.rutasAbiertas,
-                  monedas: catalogos.monedas,
-                  frecuencias: catalogos.frecuenciasPago,
-                  cajasMenores: catalogos.cajasMenoresActivas,
-                  clienteId: clienteId,
-                  rutaId: rutaId,
-                  monedaCodigo: monedaCodigo,
-                  frecuenciaPagoId: frecuenciaPagoId,
-                  cajaMenorId: cajaMenorId,
-                  fechaInicio: fechaInicio,
-                  omitirDomingos: omitirDomingos,
-                  valorController: valorCreditoController,
-                  clientesSeleccionadosIds: clientesSeleccionadosIds,
-                  valorClienteController: valorClienteController,
-                  interesController: interesController,
-                  plazoController: plazoController,
-                  observacionController: observacionCreditoController,
-                  guardando: guardandoDialogo,
-                  onClienteChanged: (String? value) {
-                    setDialogState(() => clienteId = value);
-                  },
-                  onRutaChanged: (String? value) {
-                    setDialogState(() => rutaId = value);
-                  },
-                  onMonedaChanged: (String? value) {
-                    setDialogState(() => monedaCodigo = value);
-                  },
-                  onFrecuenciaChanged: (int? value) {
-                    setDialogState(() => frecuenciaPagoId = value);
-                  },
-                  onCajaMenorChanged: (String? value) {
-                    setDialogState(() => cajaMenorId = value);
-                  },
-                  onFechaChanged: (DateTime value) {
-                    setDialogState(() => fechaInicio = value);
-                  },
-                  onOmitirDomingosChanged: (bool value) {
-                    setDialogState(() => omitirDomingos = value);
-                  },
-                  onCrear: () async {
-                    if (guardandoDialogo) return;
-
-                    final List<String> clienteIds = <String>[
-                      if (clienteId != null) clienteId!,
-                    ];
-
-                    if (clienteIds.isEmpty ||
-                        monedaCodigo == null ||
-                        frecuenciaPagoId == null) {
-                      mostrarMensaje(
-                          'Faltan datos reales para crear el credito');
-                      return;
-                    }
-
-                    if (cajaMenorId == null) {
-                      mostrarMensaje(
-                          'No se puede hacer credito sin caja menor');
-                      return;
-                    }
-
-                    final double porcentajeInteres;
-                    final int plazoDias;
-                    final Map<String, double> valoresPorCliente =
-                        <String, double>{};
-
-                    try {
-                      for (final String cId in clienteIds) {
-                        final String montoTexto = clienteIds.length == 1
-                            ? valorCreditoController.text
-                            : valorClienteController(cId).text;
-                        valoresPorCliente[cId] = parseMontoInput(montoTexto);
-                      }
-                      porcentajeInteres =
-                          parseNumero(interesController.text) ?? 0.0;
-                      plazoDias = int.parse(plazoController.text.trim());
-                    } catch (error) {
-                      mostrarMensaje(mensajeError(error));
-                      return;
-                    }
-
-                    final double valorPrincipalTotal =
-                        valoresPorCliente.values.fold<double>(
-                      0,
-                      (double total, double valor) => total + valor,
-                    );
-
-                    if (validarPresupuestoCaja != null &&
-                        !validarPresupuestoCaja(
-                            cajaMenorId!, valorPrincipalTotal)) {
-                      return;
-                    }
-
-                    setDialogState(() => guardandoDialogo = true);
-                    if (dialogContext.mounted) {
-                      Navigator.of(dialogContext).pop(true);
-                    }
-                    mostrarMensaje(
-                      clienteIds.length == 1
-                          ? 'Creando credito...'
-                          : 'Creando creditos...',
-                    );
-
-                    await ejecutarAccion(() async {
-                      int creados = 0;
-                      int pendientes = 0;
-                      for (final String cId in clienteIds) {
-                        try {
-                          final CreditoRegistro creditoCreado =
-                              CreditoRegistro.fromJson(
-                            await apiClient.postObject(
-                              '/creditos',
-                              <String, dynamic>{
-                                'clienteId': cId,
-                                if (rutaId != null) 'rutaId': rutaId,
-                                'monedaCodigo': monedaCodigo,
-                                'frecuenciaPagoId': frecuenciaPagoId,
-                                'fechaInicio': formatDateValue(fechaInicio),
-                                'valorPrincipal': valoresPorCliente[cId] ?? 0.0,
-                                'porcentajeInteres': porcentajeInteres,
-                                'plazoDias': plazoDias,
-                                'omitirDomingos': omitirDomingos,
-                                'cajaMenorId': cajaMenorId,
-                                if (observacionCreditoController.text
-                                    .trim()
-                                    .isNotEmpty)
-                                  'observacion':
-                                      observacionCreditoController.text.trim(),
-                              },
-                              queueOffline: true,
-                            ),
-                          );
-                          creados++;
-                          guardarCreditoLocal(creditoCreado);
-                        } on OfflineMutationQueuedException catch (error) {
-                          pendientes++;
-                          await marcarAccionOfflinePendiente(error);
-                        }
-                      }
-
-                      if (creados > 0 || pendientes > 0) {
-                        mostrarCuotasRegistradas?.call();
-                      }
-
-                      recargarEnSegundoPlano(
-                        catalogos: false,
-                        presupuesto: true,
-                        cobrosRuta: true,
-                        creditos: true,
-                        movimientosCaja: true,
-                      );
-
-                      if (creados > 0 && pendientes > 0) {
-                        mostrarMensaje(
-                          '$creados credito(s) creado(s). $pendientes guardado(s) offline.',
-                        );
-                      } else if (creados > 1) {
-                        mostrarMensaje(
-                            '$creados creditos creados exitosamente');
-                      } else if (creados == 1) {
-                        mostrarMensaje('Credito creado exitosamente');
-                      }
-                    });
-                  },
-                  usarSuperficie: false,
-                ),
-              ),
-              actions: <Widget>[
-                TextButton(
-                  onPressed: guardandoDialogo
-                      ? null
-                      : () => Navigator.of(dialogContext).pop(false),
-                  child: const Text('Cancelar'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  } finally {
-    valorCreditoController.dispose();
-    interesController.dispose();
-    plazoController.dispose();
-    observacionCreditoController.dispose();
-    for (final TextEditingController c in valorClienteControllers.values) {
-      c.dispose();
-    }
-  }
+  await showDialog<bool>(
+    context: context,
+    builder: (BuildContext dialogContext) {
+      return _DialogoCrearCreditoContent(
+        catalogos: catalogos,
+        clientes: clientes,
+        creditos: creditos,
+        apiClient: apiClient,
+        mostrarMensaje: mostrarMensaje,
+        mensajeError: mensajeError,
+        ejecutarAccion: ejecutarAccion,
+        guardarCreditoLocal: guardarCreditoLocal,
+        marcarAccionOfflinePendiente: marcarAccionOfflinePendiente,
+        mostrarCuotasRegistradas: mostrarCuotasRegistradas,
+        recargarEnSegundoPlano: recargarEnSegundoPlano,
+        validarPresupuestoCaja: validarPresupuestoCaja,
+        defaultCajaMenorId: defaultCajaMenorId,
+      );
+    },
+  );
 }
 
 Future<void> mostrarDialogoSeleccionRefinanciacion({
@@ -454,6 +538,246 @@ Future<void> mostrarDialogoSeleccionRefinanciacion({
   }
 }
 
+class _DialogoRefinanciarCreditoContent extends StatefulWidget {
+  const _DialogoRefinanciarCreditoContent({
+    required this.credito,
+    required this.catalogos,
+    required this.cajasCompatibles,
+    required this.clientesFormulario,
+    required this.monedasFormulario,
+    required this.apiClient,
+    required this.mostrarMensaje,
+    required this.mensajeError,
+    required this.validarPresupuestoCaja,
+    required this.ejecutarAccion,
+    required this.onGuardarCreditoLocal,
+    required this.onRecargarEnSegundoPlano,
+  });
+
+  final CreditoRegistro credito;
+  final Catalogos catalogos;
+  final List<CajaMenorCatalogo> cajasCompatibles;
+  final List<Cliente> clientesFormulario;
+  final List<Moneda> monedasFormulario;
+  final ApiClient apiClient;
+  final void Function(String) mostrarMensaje;
+  final String Function(Object) mensajeError;
+  final bool Function(String, double) validarPresupuestoCaja;
+  final Future<bool> Function(Future<void> Function()) ejecutarAccion;
+  final void Function(CreditoRegistro) onGuardarCreditoLocal;
+  final void Function({
+    bool catalogos,
+    bool presupuesto,
+    bool cobrosRuta,
+    bool movimientosCaja,
+  }) onRecargarEnSegundoPlano;
+
+  @override
+  State<_DialogoRefinanciarCreditoContent> createState() =>
+      _DialogoRefinanciarCreditoContentState();
+}
+
+class _DialogoRefinanciarCreditoContentState
+    extends State<_DialogoRefinanciarCreditoContent> {
+  late final TextEditingController _valorController;
+  late final TextEditingController _interesController;
+  late final TextEditingController _plazoController;
+  late final TextEditingController _observacionController;
+
+  late String? _rutaId;
+  late String? _cajaMenorId;
+  late int? _frecuenciaPagoId;
+  late DateTime _fechaInicio;
+  late bool _omitirDomingos;
+  bool _guardandoDialogo = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _valorController = TextEditingController(
+      text: formatNumber(widget.credito.valorPrincipal),
+    );
+    _interesController = TextEditingController(
+      text: formatNumber(widget.credito.porcentajeInteres),
+    );
+    _plazoController = TextEditingController(
+      text: widget.credito.plazoDias.toString(),
+    );
+    _observacionController = TextEditingController(
+      text: widget.credito.observacion ?? '',
+    );
+
+    _rutaId = widget.catalogos.rutasAbiertas
+            .any((RutaCatalogo ruta) => ruta.id == widget.credito.rutaId)
+        ? widget.credito.rutaId
+        : null;
+    _cajaMenorId = widget.cajasCompatibles
+            .any((CajaMenorCatalogo caja) => caja.id == widget.credito.cajaMenorId)
+        ? widget.credito.cajaMenorId
+        : widget.cajasCompatibles.first.id;
+    _frecuenciaPagoId = widget.catalogos.frecuenciasPago.any(
+      (FrecuenciaPago frecuencia) =>
+          frecuencia.id == widget.credito.frecuenciaPago.id,
+    )
+        ? widget.credito.frecuenciaPago.id
+        : widget.catalogos.frecuenciasPago.first.id;
+    _fechaInicio = DateTime.now();
+    _omitirDomingos = widget.credito.omitirDomingos;
+  }
+
+  @override
+  void dispose() {
+    _valorController.dispose();
+    _interesController.dispose();
+    _plazoController.dispose();
+    _observacionController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('Refinanciar ${widget.credito.cliente}'),
+      content: DialogContent(
+        maxWidth: 600,
+        child: FormularioCredito(
+          clientes: widget.clientesFormulario,
+          rutas: widget.catalogos.rutasAbiertas,
+          monedas: widget.monedasFormulario,
+          frecuencias: widget.catalogos.frecuenciasPago,
+          cajasMenores: widget.cajasCompatibles,
+          clienteId: widget.credito.clienteId,
+          rutaId: _rutaId,
+          monedaCodigo: widget.credito.monedaCodigo,
+          frecuenciaPagoId: _frecuenciaPagoId,
+          cajaMenorId: _cajaMenorId,
+          fechaInicio: _fechaInicio,
+          omitirDomingos: _omitirDomingos,
+          valorController: _valorController,
+          interesController: _interesController,
+          plazoController: _plazoController,
+          observacionController: _observacionController,
+          guardando: _guardandoDialogo,
+          clienteBloqueado: true,
+          monedaBloqueada: true,
+          accionLabel: 'Refinanciar',
+          usarSuperficie: false,
+          onClienteChanged: (_) {},
+          onRutaChanged: (String? value) {
+            setState(() => _rutaId = value);
+          },
+          onMonedaChanged: (_) {},
+          onFrecuenciaChanged: (int? value) {
+            setState(() => _frecuenciaPagoId = value);
+          },
+          onCajaMenorChanged: (String? value) {
+            setState(() => _cajaMenorId = value);
+          },
+          onFechaChanged: (DateTime value) {
+            setState(() => _fechaInicio = value);
+          },
+          onOmitirDomingosChanged: (bool value) {
+            setState(() => _omitirDomingos = value);
+          },
+          onCrear: () async {
+            if (_guardandoDialogo) {
+              return;
+            }
+
+            final String? cajaId = _cajaMenorId;
+            final int? frecuenciaId = _frecuenciaPagoId;
+            if (cajaId == null || frecuenciaId == null) {
+              widget.mostrarMensaje('Faltan datos para refinanciar');
+              return;
+            }
+
+            final double valorNuevo;
+            final double porcentajeInteres;
+            final int plazoDias;
+            try {
+              valorNuevo = parseMontoInput(_valorController.text);
+              porcentajeInteres =
+                  parsePorcentajeInput(_interesController.text);
+              plazoDias =
+                  parseEnteroPositivoInput(_plazoController.text);
+            } catch (error) {
+              widget.mostrarMensaje(widget.mensajeError(error));
+              return;
+            }
+
+            if (valorNuevo <= widget.credito.valorPrincipal) {
+              widget.mostrarMensaje(
+                'El nuevo valor debe superar el valor actual',
+              );
+              return;
+            }
+
+            final double incremento =
+                valorNuevo - widget.credito.valorPrincipal;
+            if (!widget.validarPresupuestoCaja(cajaId, incremento)) {
+              return;
+            }
+
+            setState(() => _guardandoDialogo = true);
+            final bool refinanciado = await widget.ejecutarAccion(
+              () async {
+                final CreditoRegistro actualizado =
+                    CreditoRegistro.fromJson(
+                  await widget.apiClient.patchObject(
+                    '/creditos/${widget.credito.id}/refinanciar',
+                    <String, dynamic>{
+                      if (_rutaId != null) 'rutaId': _rutaId,
+                      'monedaCodigo': widget.credito.monedaCodigo,
+                      'frecuenciaPagoId': frecuenciaId,
+                      'fechaInicio': formatDateValue(_fechaInicio),
+                      'valorPrincipal': valorNuevo,
+                      'porcentajeInteres': porcentajeInteres,
+                      'plazoDias': plazoDias,
+                      'omitirDomingos': _omitirDomingos,
+                      'cajaMenorId': cajaId,
+                      if (_observacionController.text.trim().isNotEmpty)
+                        'observacion':
+                            _observacionController.text.trim(),
+                    },
+                    queueOffline: true,
+                  ),
+                );
+                widget.onGuardarCreditoLocal(actualizado);
+                widget.onRecargarEnSegundoPlano(
+                  catalogos: _rutaId == null,
+                  presupuesto: true,
+                  cobrosRuta: true,
+                  movimientosCaja: true,
+                );
+              },
+            );
+
+            if (!context.mounted) {
+              return;
+            }
+
+            if (refinanciado) {
+              Navigator.of(context).pop(true);
+              widget.mostrarMensaje('Credito refinanciado');
+              return;
+            }
+
+            setState(() => _guardandoDialogo = false);
+          },
+        ),
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: _guardandoDialogo
+              ? null
+              : () => Navigator.of(context).pop(false),
+          child: const Text('Cancelar'),
+        ),
+      ],
+    );
+  }
+}
+
 Future<void> mostrarDialogoRefinanciarCredito({
   required BuildContext context,
   required CreditoRegistro credito,
@@ -500,34 +824,6 @@ Future<void> mostrarDialogoRefinanciarCredito({
     return;
   }
 
-  final TextEditingController valorController = TextEditingController(
-    text: formatNumber(credito.valorPrincipal),
-  );
-  final TextEditingController interesController = TextEditingController(
-    text: formatNumber(credito.porcentajeInteres),
-  );
-  final TextEditingController plazoController = TextEditingController(
-    text: credito.plazoDias.toString(),
-  );
-  final TextEditingController observacionController = TextEditingController(
-    text: credito.observacion ?? '',
-  );
-
-  String? rutaId = catalogos.rutasAbiertas
-          .any((RutaCatalogo ruta) => ruta.id == credito.rutaId)
-      ? credito.rutaId
-      : null;
-  String? cajaMenorId = cajasCompatibles
-          .any((CajaMenorCatalogo caja) => caja.id == credito.cajaMenorId)
-      ? credito.cajaMenorId
-      : cajasCompatibles.first.id;
-  int? frecuenciaPagoId = catalogos.frecuenciasPago.any(
-    (FrecuenciaPago frecuencia) => frecuencia.id == credito.frecuenciaPago.id,
-  )
-      ? credito.frecuenciaPago.id
-      : catalogos.frecuenciasPago.first.id;
-  DateTime fechaInicio = DateTime.now();
-  bool omitirDomingos = credito.omitirDomingos;
   final List<Cliente> clientesFormulario =
       clientes.any((Cliente cliente) => cliente.id == credito.clienteId)
           ? clientes
@@ -554,162 +850,296 @@ Future<void> mostrarDialogoRefinanciarCredito({
           ),
         ];
 
-  try {
-    await showDialog<bool>(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        bool guardandoDialogo = false;
+  await showDialog<bool>(
+    context: context,
+    builder: (BuildContext dialogContext) {
+      return _DialogoRefinanciarCreditoContent(
+        credito: credito,
+        catalogos: catalogos,
+        cajasCompatibles: cajasCompatibles,
+        clientesFormulario: clientesFormulario,
+        monedasFormulario: monedasFormulario,
+        apiClient: apiClient,
+        mostrarMensaje: mostrarMensaje,
+        mensajeError: mensajeError,
+        validarPresupuestoCaja: validarPresupuestoCaja,
+        ejecutarAccion: ejecutarAccion,
+        onGuardarCreditoLocal: onGuardarCreditoLocal,
+        onRecargarEnSegundoPlano: onRecargarEnSegundoPlano,
+      );
+    },
+  );
+}
 
-        return StatefulBuilder(
-          builder: (BuildContext context, StateSetter setDialogState) {
-            return AlertDialog(
-              title: Text('Refinanciar ${credito.cliente}'),
-              content: DialogContent(
-                maxWidth: 600,
-                child: FormularioCredito(
-                  clientes: clientesFormulario,
-                  rutas: catalogos.rutasAbiertas,
-                  monedas: monedasFormulario,
-                  frecuencias: catalogos.frecuenciasPago,
-                  cajasMenores: cajasCompatibles,
-                  clienteId: credito.clienteId,
-                  rutaId: rutaId,
-                  monedaCodigo: credito.monedaCodigo,
-                  frecuenciaPagoId: frecuenciaPagoId,
-                  cajaMenorId: cajaMenorId,
-                  fechaInicio: fechaInicio,
-                  omitirDomingos: omitirDomingos,
-                  valorController: valorController,
-                  interesController: interesController,
-                  plazoController: plazoController,
-                  observacionController: observacionController,
-                  guardando: guardandoDialogo,
-                  clienteBloqueado: true,
-                  monedaBloqueada: true,
-                  accionLabel: 'Refinanciar',
-                  usarSuperficie: false,
-                  onClienteChanged: (_) {},
-                  onRutaChanged: (String? value) {
-                    setDialogState(() => rutaId = value);
-                  },
-                  onMonedaChanged: (_) {},
-                  onFrecuenciaChanged: (int? value) {
-                    setDialogState(() => frecuenciaPagoId = value);
-                  },
-                  onCajaMenorChanged: (String? value) {
-                    setDialogState(() => cajaMenorId = value);
-                  },
-                  onFechaChanged: (DateTime value) {
-                    setDialogState(() => fechaInicio = value);
-                  },
-                  onOmitirDomingosChanged: (bool value) {
-                    setDialogState(() => omitirDomingos = value);
-                  },
-                  onCrear: () async {
-                    if (guardandoDialogo) {
-                      return;
-                    }
+class _DialogoModificarCreditoContent extends StatefulWidget {
+  const _DialogoModificarCreditoContent({
+    required this.credito,
+    required this.catalogos,
+    required this.clientes,
+    required this.cajasCompatibles,
+    required this.clientesFormulario,
+    required this.monedasFormulario,
+    required this.apiClient,
+    required this.mostrarMensaje,
+    required this.mensajeError,
+    required this.setError,
+    required this.onGuardarCreditoLocal,
+    required this.onMarcarAccionOfflinePendiente,
+    required this.onRecargarEnSegundoPlano,
+  });
 
-                    final String? cajaId = cajaMenorId;
-                    final int? frecuenciaId = frecuenciaPagoId;
-                    if (cajaId == null || frecuenciaId == null) {
-                      mostrarMensaje('Faltan datos para refinanciar');
-                      return;
-                    }
+  final CreditoRegistro credito;
+  final Catalogos catalogos;
+  final List<Cliente> clientes;
+  final List<CajaMenorCatalogo> cajasCompatibles;
+  final List<Cliente> clientesFormulario;
+  final List<Moneda> monedasFormulario;
+  final ApiClient apiClient;
+  final void Function(String) mostrarMensaje;
+  final String Function(Object) mensajeError;
+  final void Function(String) setError;
+  final void Function(CreditoRegistro) onGuardarCreditoLocal;
+  final Future<void> Function(OfflineMutationQueuedException)
+      onMarcarAccionOfflinePendiente;
+  final void Function({
+    bool catalogos,
+    bool presupuesto,
+    bool cobrosRuta,
+    bool creditos,
+    bool movimientosCaja,
+  }) onRecargarEnSegundoPlano;
 
-                    final double valorNuevo;
-                    final double porcentajeInteres;
-                    final int plazoDias;
-                    try {
-                      valorNuevo = parseMontoInput(valorController.text);
-                      porcentajeInteres =
-                          parsePorcentajeInput(interesController.text);
-                      plazoDias =
-                          parseEnteroPositivoInput(plazoController.text);
-                    } catch (error) {
-                      mostrarMensaje(mensajeError(error));
-                      return;
-                    }
+  @override
+  State<_DialogoModificarCreditoContent> createState() =>
+      _DialogoModificarCreditoContentState();
+}
 
-                    if (valorNuevo <= credito.valorPrincipal) {
-                      mostrarMensaje(
-                        'El nuevo valor debe superar el valor actual',
-                      );
-                      return;
-                    }
+class _DialogoModificarCreditoContentState
+    extends State<_DialogoModificarCreditoContent> {
+  late final TextEditingController _valorController;
+  late final TextEditingController _interesController;
+  late final TextEditingController _plazoController;
+  late final TextEditingController _observacionController;
 
-                    final double incremento =
-                        valorNuevo - credito.valorPrincipal;
-                    if (!validarPresupuestoCaja(cajaId, incremento)) {
-                      return;
-                    }
+  late String? _clienteId;
+  late String? _rutaId;
+  late String? _cajaMenorId;
+  late int? _frecuenciaPagoId;
+  late DateTime _fechaInicio;
+  late bool _omitirDomingos;
+  bool _guardandoDialogo = false;
 
-                    setDialogState(() => guardandoDialogo = true);
-                    final bool refinanciado = await ejecutarAccion(
-                      () async {
-                        final CreditoRegistro actualizado =
-                            CreditoRegistro.fromJson(
-                          await apiClient.patchObject(
-                            '/creditos/${credito.id}/refinanciar',
-                            <String, dynamic>{
-                              if (rutaId != null) 'rutaId': rutaId,
-                              'monedaCodigo': credito.monedaCodigo,
-                              'frecuenciaPagoId': frecuenciaId,
-                              'fechaInicio': formatDateValue(fechaInicio),
-                              'valorPrincipal': valorNuevo,
-                              'porcentajeInteres': porcentajeInteres,
-                              'plazoDias': plazoDias,
-                              'omitirDomingos': omitirDomingos,
-                              'cajaMenorId': cajaId,
-                              if (observacionController.text.trim().isNotEmpty)
-                                'observacion':
-                                    observacionController.text.trim(),
-                            },
-                            queueOffline: true,
-                          ),
-                        );
-                        onGuardarCreditoLocal(actualizado);
-                        onRecargarEnSegundoPlano(
-                          catalogos: rutaId == null,
-                          presupuesto: true,
-                          cobrosRuta: true,
-                          movimientosCaja: true,
-                        );
-                      },
-                    );
-
-                    if (!dialogContext.mounted) {
-                      return;
-                    }
-
-                    if (refinanciado) {
-                      Navigator.of(dialogContext).pop(true);
-                      mostrarMensaje('Credito refinanciado');
-                      return;
-                    }
-
-                    setDialogState(() => guardandoDialogo = false);
-                  },
-                ),
-              ),
-              actions: <Widget>[
-                TextButton(
-                  onPressed: guardandoDialogo
-                      ? null
-                      : () => Navigator.of(dialogContext).pop(false),
-                  child: const Text('Cancelar'),
-                ),
-              ],
-            );
-          },
-        );
-      },
+  @override
+  void initState() {
+    super.initState();
+    _valorController = TextEditingController(
+      text: formatNumber(widget.credito.valorPrincipal),
     );
-  } finally {
-    valorController.dispose();
-    interesController.dispose();
-    plazoController.dispose();
-    observacionController.dispose();
+    _interesController = TextEditingController(
+      text: formatNumber(widget.credito.porcentajeInteres),
+    );
+    _plazoController = TextEditingController(
+      text: widget.credito.plazoDias.toString(),
+    );
+    _observacionController = TextEditingController(
+      text: widget.credito.observacion ?? '',
+    );
+
+    _clienteId = widget.credito.clienteId;
+    _rutaId = widget.catalogos.rutasAbiertas
+            .any((RutaCatalogo ruta) => ruta.id == widget.credito.rutaId)
+        ? widget.credito.rutaId
+        : null;
+    _cajaMenorId = widget.cajasCompatibles
+            .any((CajaMenorCatalogo caja) => caja.id == widget.credito.cajaMenorId)
+        ? widget.credito.cajaMenorId
+        : widget.cajasCompatibles.first.id;
+    _frecuenciaPagoId = widget.catalogos.frecuenciasPago.any(
+      (FrecuenciaPago frecuencia) =>
+          frecuencia.id == widget.credito.frecuenciaPago.id,
+    )
+        ? widget.credito.frecuenciaPago.id
+        : widget.catalogos.frecuenciasPago.first.id;
+    _fechaInicio = widget.credito.fechaInicio;
+    _omitirDomingos = widget.credito.omitirDomingos;
+  }
+
+  @override
+  void dispose() {
+    _valorController.dispose();
+    _interesController.dispose();
+    _plazoController.dispose();
+    _observacionController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('Modificar ${widget.credito.cliente}'),
+      content: DialogContent(
+        maxWidth: 600,
+        child: FormularioCredito(
+          clientes: widget.clientesFormulario,
+          rutas: widget.catalogos.rutasAbiertas,
+          monedas: widget.monedasFormulario,
+          frecuencias: widget.catalogos.frecuenciasPago,
+          cajasMenores: widget.cajasCompatibles,
+          clienteId: _clienteId,
+          rutaId: _rutaId,
+          monedaCodigo: widget.credito.monedaCodigo,
+          frecuenciaPagoId: _frecuenciaPagoId,
+          cajaMenorId: _cajaMenorId,
+          fechaInicio: _fechaInicio,
+          omitirDomingos: _omitirDomingos,
+          valorController: _valorController,
+          interesController: _interesController,
+          plazoController: _plazoController,
+          observacionController: _observacionController,
+          guardando: _guardandoDialogo,
+          monedaBloqueada: true,
+          accionLabel: 'Guardar',
+          usarSuperficie: false,
+          onClienteChanged: (String? value) {
+            setState(() => _clienteId = value);
+          },
+          onRutaChanged: (String? value) {
+            setState(() => _rutaId = value);
+          },
+          onMonedaChanged: (_) {},
+          onFrecuenciaChanged: (int? value) {
+            setState(() => _frecuenciaPagoId = value);
+          },
+          onCajaMenorChanged: (String? value) {
+            setState(() => _cajaMenorId = value);
+          },
+          onFechaChanged: (DateTime value) {
+            setState(() => _fechaInicio = value);
+          },
+          onOmitirDomingosChanged: (bool value) {
+            setState(() => _omitirDomingos = value);
+          },
+          onCrear: () async {
+            if (_guardandoDialogo) {
+              return;
+            }
+
+            final String? clienteSeleccionado = _clienteId;
+            final String? cajaId = _cajaMenorId;
+            final int? frecuenciaId = _frecuenciaPagoId;
+            if (clienteSeleccionado == null ||
+                cajaId == null ||
+                frecuenciaId == null) {
+              widget.mostrarMensaje('Faltan datos para modificar');
+              return;
+            }
+
+            final double valorPrincipal;
+            final double porcentajeInteres;
+            final int plazoDias;
+            try {
+              valorPrincipal = parseMontoInput(_valorController.text);
+              porcentajeInteres =
+                  parsePorcentajeInput(_interesController.text);
+              plazoDias =
+                  parseEnteroPositivoInput(_plazoController.text);
+            } catch (error) {
+              widget.mostrarMensaje(widget.mensajeError(error));
+              return;
+            }
+
+            final bool cambiaCondicionesFinancieras =
+                frecuenciaId != widget.credito.frecuenciaPago.id ||
+                    formatDateValue(_fechaInicio) !=
+                        formatDateValue(widget.credito.fechaInicio) ||
+                    valorPrincipal != widget.credito.valorPrincipal ||
+                    porcentajeInteres != widget.credito.porcentajeInteres ||
+                    plazoDias != widget.credito.plazoDias ||
+                    _omitirDomingos != widget.credito.omitirDomingos;
+            if (widget.credito.totalAbonado > 0.009 &&
+                cambiaCondicionesFinancieras) {
+              widget.mostrarMensaje(
+                'No se pueden modificar valor, interes, plazo, frecuencia, fecha u omitir domingos en un credito con pagos registrados',
+              );
+              return;
+            }
+
+            final String observacion =
+                _observacionController.text.trim();
+            final Map<String, dynamic> payload = <String, dynamic>{
+              'clienteId': clienteSeleccionado,
+              if (_rutaId != null) 'rutaId': _rutaId,
+              'monedaCodigo': widget.credito.monedaCodigo,
+              'frecuenciaPagoId': frecuenciaId,
+              'fechaInicio': formatDateValue(_fechaInicio),
+              'valorPrincipal': valorPrincipal,
+              'porcentajeInteres': porcentajeInteres,
+              'plazoDias': plazoDias,
+              'omitirDomingos': _omitirDomingos,
+              'cajaMenorId': cajaId,
+              if (observacion.isNotEmpty) 'observacion': observacion,
+            };
+            final CreditoRegistro optimista =
+                creditoOptimistaModificado(
+              credito: widget.credito,
+              catalogos: widget.catalogos,
+              clientes: widget.clientes,
+              clienteId: clienteSeleccionado,
+              rutaId: _rutaId,
+              cajaMenorId: cajaId,
+              frecuenciaPagoId: frecuenciaId,
+              fechaInicio: _fechaInicio,
+              valorPrincipal: valorPrincipal,
+              porcentajeInteres: porcentajeInteres,
+              plazoDias: plazoDias,
+              omitirDomingos: _omitirDomingos,
+              observacion: observacion.isEmpty ? null : observacion,
+            );
+            setState(() => _guardandoDialogo = true);
+            widget.onGuardarCreditoLocal(optimista);
+            if (context.mounted) {
+              Navigator.of(context).pop(true);
+              widget.mostrarMensaje('Credito modificado');
+            }
+
+            unawaited(() async {
+              try {
+                final CreditoRegistro respuesta =
+                    CreditoRegistro.fromJson(
+                  await widget.apiClient.patchObject(
+                    '/creditos/${widget.credito.id}',
+                    payload,
+                    queueOffline: true,
+                  ),
+                );
+                widget.onGuardarCreditoLocal(respuesta);
+                widget.onRecargarEnSegundoPlano(
+                  catalogos: _rutaId == null,
+                  presupuesto: true,
+                  cobrosRuta: true,
+                  creditos: true,
+                  movimientosCaja: true,
+                );
+              } on OfflineMutationQueuedException catch (error) {
+                await widget.onMarcarAccionOfflinePendiente(error);
+              } catch (error) {
+                widget.setError(widget.mensajeError(error));
+                widget.onGuardarCreditoLocal(widget.credito);
+                widget.mostrarMensaje(widget.mensajeError(error));
+              }
+            }());
+          },
+        ),
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: _guardandoDialogo
+              ? null
+              : () => Navigator.of(context).pop(false),
+          child: const Text('Cancelar'),
+        ),
+      ],
+    );
   }
 }
 
@@ -756,35 +1186,6 @@ Future<void> mostrarDialogoModificarCredito({
     return;
   }
 
-  final TextEditingController valorController = TextEditingController(
-    text: formatNumber(credito.valorPrincipal),
-  );
-  final TextEditingController interesController = TextEditingController(
-    text: formatNumber(credito.porcentajeInteres),
-  );
-  final TextEditingController plazoController = TextEditingController(
-    text: credito.plazoDias.toString(),
-  );
-  final TextEditingController observacionController = TextEditingController(
-    text: credito.observacion ?? '',
-  );
-
-  String? clienteId = credito.clienteId;
-  String? rutaId = catalogos.rutasAbiertas
-          .any((RutaCatalogo ruta) => ruta.id == credito.rutaId)
-      ? credito.rutaId
-      : null;
-  String? cajaMenorId = cajasCompatibles
-          .any((CajaMenorCatalogo caja) => caja.id == credito.cajaMenorId)
-      ? credito.cajaMenorId
-      : cajasCompatibles.first.id;
-  int? frecuenciaPagoId = catalogos.frecuenciasPago.any(
-    (FrecuenciaPago frecuencia) => frecuencia.id == credito.frecuenciaPago.id,
-  )
-      ? credito.frecuenciaPago.id
-      : catalogos.frecuenciasPago.first.id;
-  DateTime fechaInicio = credito.fechaInicio;
-  bool omitirDomingos = credito.omitirDomingos;
   final List<Cliente> clientesFormulario =
       clientes.any((Cliente cliente) => cliente.id == credito.clienteId)
           ? clientes
@@ -811,189 +1212,26 @@ Future<void> mostrarDialogoModificarCredito({
           ),
         ];
 
-  try {
-    await showDialog<bool>(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        bool guardandoDialogo = false;
-
-        return StatefulBuilder(
-          builder: (BuildContext context, StateSetter setDialogState) {
-            return AlertDialog(
-              title: Text('Modificar ${credito.cliente}'),
-              content: DialogContent(
-                maxWidth: 600,
-                child: FormularioCredito(
-                  clientes: clientesFormulario,
-                  rutas: catalogos.rutasAbiertas,
-                  monedas: monedasFormulario,
-                  frecuencias: catalogos.frecuenciasPago,
-                  cajasMenores: cajasCompatibles,
-                  clienteId: clienteId,
-                  rutaId: rutaId,
-                  monedaCodigo: credito.monedaCodigo,
-                  frecuenciaPagoId: frecuenciaPagoId,
-                  cajaMenorId: cajaMenorId,
-                  fechaInicio: fechaInicio,
-                  omitirDomingos: omitirDomingos,
-                  valorController: valorController,
-                  interesController: interesController,
-                  plazoController: plazoController,
-                  observacionController: observacionController,
-                  guardando: guardandoDialogo,
-                  monedaBloqueada: true,
-                  accionLabel: 'Guardar',
-                  usarSuperficie: false,
-                  onClienteChanged: (String? value) {
-                    setDialogState(() => clienteId = value);
-                  },
-                  onRutaChanged: (String? value) {
-                    setDialogState(() => rutaId = value);
-                  },
-                  onMonedaChanged: (_) {},
-                  onFrecuenciaChanged: (int? value) {
-                    setDialogState(() => frecuenciaPagoId = value);
-                  },
-                  onCajaMenorChanged: (String? value) {
-                    setDialogState(() => cajaMenorId = value);
-                  },
-                  onFechaChanged: (DateTime value) {
-                    setDialogState(() => fechaInicio = value);
-                  },
-                  onOmitirDomingosChanged: (bool value) {
-                    setDialogState(() => omitirDomingos = value);
-                  },
-                  onCrear: () async {
-                    if (guardandoDialogo) {
-                      return;
-                    }
-
-                    final String? clienteSeleccionado = clienteId;
-                    final String? cajaId = cajaMenorId;
-                    final int? frecuenciaId = frecuenciaPagoId;
-                    if (clienteSeleccionado == null ||
-                        cajaId == null ||
-                        frecuenciaId == null) {
-                      mostrarMensaje('Faltan datos para modificar');
-                      return;
-                    }
-
-                    final double valorPrincipal;
-                    final double porcentajeInteres;
-                    final int plazoDias;
-                    try {
-                      valorPrincipal = parseMontoInput(valorController.text);
-                      porcentajeInteres =
-                          parsePorcentajeInput(interesController.text);
-                      plazoDias =
-                          parseEnteroPositivoInput(plazoController.text);
-                    } catch (error) {
-                      mostrarMensaje(mensajeError(error));
-                      return;
-                    }
-
-                    final bool cambiaCondicionesFinancieras =
-                        frecuenciaId != credito.frecuenciaPago.id ||
-                            formatDateValue(fechaInicio) !=
-                                formatDateValue(credito.fechaInicio) ||
-                            valorPrincipal != credito.valorPrincipal ||
-                            porcentajeInteres != credito.porcentajeInteres ||
-                            plazoDias != credito.plazoDias ||
-                            omitirDomingos != credito.omitirDomingos;
-                    if (credito.totalAbonado > 0.009 &&
-                        cambiaCondicionesFinancieras) {
-                      mostrarMensaje(
-                        'No se pueden modificar valor, interes, plazo, frecuencia, fecha u omitir domingos en un credito con pagos registrados',
-                      );
-                      return;
-                    }
-
-                    final String observacion =
-                        observacionController.text.trim();
-                    final Map<String, dynamic> payload = <String, dynamic>{
-                      'clienteId': clienteSeleccionado,
-                      if (rutaId != null) 'rutaId': rutaId,
-                      'monedaCodigo': credito.monedaCodigo,
-                      'frecuenciaPagoId': frecuenciaId,
-                      'fechaInicio': formatDateValue(fechaInicio),
-                      'valorPrincipal': valorPrincipal,
-                      'porcentajeInteres': porcentajeInteres,
-                      'plazoDias': plazoDias,
-                      'omitirDomingos': omitirDomingos,
-                      'cajaMenorId': cajaId,
-                      if (observacion.isNotEmpty) 'observacion': observacion,
-                    };
-                    final CreditoRegistro optimista =
-                        creditoOptimistaModificado(
-                      credito: credito,
-                      catalogos: catalogos,
-                      clientes: clientes,
-                      clienteId: clienteSeleccionado,
-                      rutaId: rutaId,
-                      cajaMenorId: cajaId,
-                      frecuenciaPagoId: frecuenciaId,
-                      fechaInicio: fechaInicio,
-                      valorPrincipal: valorPrincipal,
-                      porcentajeInteres: porcentajeInteres,
-                      plazoDias: plazoDias,
-                      omitirDomingos: omitirDomingos,
-                      observacion: observacion.isEmpty ? null : observacion,
-                    );
-                    setDialogState(() => guardandoDialogo = true);
-                    onGuardarCreditoLocal(optimista);
-                    if (dialogContext.mounted) {
-                      Navigator.of(dialogContext).pop(true);
-                      mostrarMensaje('Credito modificado');
-                    }
-
-                    unawaited(() async {
-                      try {
-                        final CreditoRegistro respuesta =
-                            CreditoRegistro.fromJson(
-                          await apiClient.patchObject(
-                            '/creditos/${credito.id}',
-                            payload,
-                            queueOffline: true,
-                          ),
-                        );
-                        onGuardarCreditoLocal(respuesta);
-                        onRecargarEnSegundoPlano(
-                          catalogos: rutaId == null,
-                          presupuesto: true,
-                          cobrosRuta: true,
-                          creditos: true,
-                          movimientosCaja: true,
-                        );
-                      } on OfflineMutationQueuedException catch (error) {
-                        await onMarcarAccionOfflinePendiente(error);
-                      } catch (error) {
-                        setError(mensajeError(error));
-                        onGuardarCreditoLocal(credito);
-                        mostrarMensaje(mensajeError(error));
-                      }
-                    }());
-                  },
-                ),
-              ),
-              actions: <Widget>[
-                TextButton(
-                  onPressed: guardandoDialogo
-                      ? null
-                      : () => Navigator.of(dialogContext).pop(false),
-                  child: const Text('Cancelar'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  } finally {
-    valorController.dispose();
-    interesController.dispose();
-    plazoController.dispose();
-    observacionController.dispose();
-  }
+  await showDialog<bool>(
+    context: context,
+    builder: (BuildContext dialogContext) {
+      return _DialogoModificarCreditoContent(
+        credito: credito,
+        catalogos: catalogos,
+        clientes: clientes,
+        cajasCompatibles: cajasCompatibles,
+        clientesFormulario: clientesFormulario,
+        monedasFormulario: monedasFormulario,
+        apiClient: apiClient,
+        mostrarMensaje: mostrarMensaje,
+        mensajeError: mensajeError,
+        setError: setError,
+        onGuardarCreditoLocal: onGuardarCreditoLocal,
+        onMarcarAccionOfflinePendiente: onMarcarAccionOfflinePendiente,
+        onRecargarEnSegundoPlano: onRecargarEnSegundoPlano,
+      );
+    },
+  );
 }
 
 Future<void> mostrarDialogoEliminarCredito({

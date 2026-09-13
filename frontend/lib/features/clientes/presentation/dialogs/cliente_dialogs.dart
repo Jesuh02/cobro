@@ -170,213 +170,244 @@ Future<void> mostrarDialogoModificarCliente({
     return;
   }
 
-  final TextEditingController nombreController = TextEditingController(
-    text: cliente.nombreCompleto,
+  final bool? modificado = await showDialog<bool>(
+    context: context,
+    builder: (BuildContext dialogContext) => _DialogoModificarClienteContent(
+      cliente: cliente,
+      apiClient: apiClient,
+      mostrarMensaje: mostrarMensaje,
+      ejecutarAccion: ejecutarAccion,
+      onClienteModificado: onClienteModificado,
+      onRecargarEnSegundoPlano: onRecargarEnSegundoPlano,
+    ),
   );
-  final TextEditingController cedulaController = TextEditingController(
-    text: cliente.cedula ?? '',
-  );
-  final TextEditingController negocioController = TextEditingController(
-    text: cliente.nombreComercial ?? '',
-  );
-  final TextEditingController direccionController = TextEditingController(
-    text: cliente.direccion ?? '',
-  );
-  final TextEditingController correoController = TextEditingController(
-    text: cliente.correo ?? '',
-  );
-  final TextEditingController telefonoController = TextEditingController(
-    text: cliente.telefono ?? '',
-  );
-  LatLng? ubicacionCliente = cliente.tieneUbicacion
-      ? LatLng(cliente.latitude!, cliente.longitude!)
-      : null;
 
-  try {
-    final bool? modificado = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        bool guardandoDialogo = false;
+  if (modificado == true) {
+    mostrarMensaje('Cliente actualizado');
+  }
+}
 
-        return StatefulBuilder(
-          builder: (BuildContext context, StateSetter setDialogState) {
-            return AlertDialog(
-              title: const Text('Modificar cliente'),
-              content: DialogContent(
-                maxWidth: 460,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    TextField(
-                      controller: nombreController,
-                      enabled: !guardandoDialogo,
-                      autofocus: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Nombre completo',
-                        prefixIcon: Icon(Icons.person_rounded),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: cedulaController,
-                      enabled: !guardandoDialogo,
-                      keyboardType: TextInputType.number,
-                      inputFormatters: <TextInputFormatter>[
-                        FilteringTextInputFormatter.digitsOnly,
-                        LengthLimitingTextInputFormatter(20),
-                      ],
-                      decoration: const InputDecoration(
-                        labelText: 'Cedula',
-                        hintText: 'Numero de identificacion',
-                        prefixIcon: Icon(Icons.badge_rounded),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: negocioController,
-                      enabled: !guardandoDialogo,
-                      decoration: const InputDecoration(
-                        labelText: 'Negocio',
-                        prefixIcon: Icon(Icons.storefront_rounded),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: direccionController,
-                      enabled: !guardandoDialogo,
-                      decoration: const InputDecoration(
-                        labelText: 'Direccion',
-                        hintText: _direccionCasaHint,
-                        prefixIcon: Icon(Icons.location_on_rounded),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    ClienteUbicacionPicker(
-                      value: ubicacionCliente,
-                      enabled: !guardandoDialogo,
-                      onChanged: (LatLng? value) {
-                        setDialogState(() => ubicacionCliente = value);
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    DosColumnas(
-                      left: TextField(
-                        controller: correoController,
-                        enabled: !guardandoDialogo,
-                        keyboardType: TextInputType.emailAddress,
-                        decoration: const InputDecoration(
-                          labelText: 'Correo',
-                          prefixIcon: Icon(Icons.mail_rounded),
-                        ),
-                      ),
-                      right: TextField(
-                        controller: telefonoController,
-                        enabled: !guardandoDialogo,
-                        keyboardType: TextInputType.phone,
-                        decoration: const InputDecoration(
-                          labelText: 'Telefono',
-                          prefixIcon: Icon(Icons.phone_rounded),
-                        ),
-                      ),
-                    ),
-                  ],
+class _DialogoModificarClienteContent extends StatefulWidget {
+  const _DialogoModificarClienteContent({
+    required this.cliente,
+    required this.apiClient,
+    required this.mostrarMensaje,
+    required this.ejecutarAccion,
+    required this.onClienteModificado,
+    required this.onRecargarEnSegundoPlano,
+  });
+
+  final Cliente cliente;
+  final ApiClient apiClient;
+  final void Function(String) mostrarMensaje;
+  final Future<bool> Function(Future<void> Function()) ejecutarAccion;
+  final void Function(Cliente) onClienteModificado;
+  final void Function() onRecargarEnSegundoPlano;
+
+  @override
+  State<_DialogoModificarClienteContent> createState() =>
+      _DialogoModificarClienteContentState();
+}
+
+class _DialogoModificarClienteContentState
+    extends State<_DialogoModificarClienteContent> {
+  late final TextEditingController _nombreController;
+  late final TextEditingController _cedulaController;
+  late final TextEditingController _negocioController;
+  late final TextEditingController _direccionController;
+  late final TextEditingController _correoController;
+  late final TextEditingController _telefonoController;
+  late LatLng? _ubicacionCliente;
+  bool _guardando = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _nombreController =
+        TextEditingController(text: widget.cliente.nombreCompleto);
+    _cedulaController =
+        TextEditingController(text: widget.cliente.cedula ?? '');
+    _negocioController =
+        TextEditingController(text: widget.cliente.nombreComercial ?? '');
+    _direccionController =
+        TextEditingController(text: widget.cliente.direccion ?? '');
+    _correoController =
+        TextEditingController(text: widget.cliente.correo ?? '');
+    _telefonoController =
+        TextEditingController(text: widget.cliente.telefono ?? '');
+    _ubicacionCliente = widget.cliente.tieneUbicacion
+        ? LatLng(widget.cliente.latitude!, widget.cliente.longitude!)
+        : null;
+  }
+
+  @override
+  void dispose() {
+    _nombreController.dispose();
+    _cedulaController.dispose();
+    _negocioController.dispose();
+    _direccionController.dispose();
+    _correoController.dispose();
+    _telefonoController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _guardar() async {
+    if (_nombreController.text.trim().length < 2) {
+      widget.mostrarMensaje('El cliente necesita nombre completo');
+      return;
+    }
+
+    if (_ubicacionCliente != null &&
+        _direccionController.text.trim().isEmpty) {
+      widget.mostrarMensaje(_mensajeDireccionCasa);
+      return;
+    }
+
+    setState(() => _guardando = true);
+    final bool guardado = await widget.ejecutarAccion(() async {
+      final Cliente actualizado = Cliente.fromJson(
+        await widget.apiClient.patchObject(
+          '/clientes/${widget.cliente.id}',
+          <String, dynamic>{
+            'nombreCompleto': _nombreController.text.trim(),
+            if (_cedulaController.text.trim().isNotEmpty)
+              'cedula': _cedulaController.text.trim(),
+            if (_negocioController.text.trim().isNotEmpty)
+              'nombreComercial': _negocioController.text.trim(),
+            'direccion': _direccionController.text.trim(),
+            if (_ubicacionCliente != null) ...<String, dynamic>{
+              'latitud': _ubicacionCliente!.latitude,
+              'longitud': _ubicacionCliente!.longitude,
+            } else ...<String, dynamic>{
+              'latitud': null,
+              'longitud': null,
+            },
+            if (_correoController.text.trim().isNotEmpty)
+              'correo': _correoController.text.trim(),
+            if (_telefonoController.text.trim().isNotEmpty)
+              'telefono': _telefonoController.text.trim(),
+          },
+          queueOffline: true,
+        ),
+      );
+      widget.onClienteModificado(actualizado);
+      widget.onRecargarEnSegundoPlano();
+    });
+
+    if (!guardado) {
+      if (mounted) {
+        setState(() => _guardando = false);
+      }
+      return;
+    }
+
+    if (mounted) {
+      Navigator.of(context).pop(true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Modificar cliente'),
+      content: DialogContent(
+        maxWidth: 460,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            TextField(
+              controller: _nombreController,
+              enabled: !_guardando,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'Nombre completo',
+                prefixIcon: Icon(Icons.person_rounded),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _cedulaController,
+              enabled: !_guardando,
+              keyboardType: TextInputType.number,
+              inputFormatters: <TextInputFormatter>[
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(20),
+              ],
+              decoration: const InputDecoration(
+                labelText: 'Cedula',
+                hintText: 'Numero de identificacion',
+                prefixIcon: Icon(Icons.badge_rounded),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _negocioController,
+              enabled: !_guardando,
+              decoration: const InputDecoration(
+                labelText: 'Negocio',
+                prefixIcon: Icon(Icons.storefront_rounded),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _direccionController,
+              enabled: !_guardando,
+              decoration: const InputDecoration(
+                labelText: 'Direccion',
+                hintText: _direccionCasaHint,
+                prefixIcon: Icon(Icons.location_on_rounded),
+              ),
+            ),
+            const SizedBox(height: 12),
+            ClienteUbicacionPicker(
+              value: _ubicacionCliente,
+              enabled: !_guardando,
+              onChanged: (LatLng? value) {
+                setState(() => _ubicacionCliente = value);
+              },
+            ),
+            const SizedBox(height: 12),
+            DosColumnas(
+              left: TextField(
+                controller: _correoController,
+                enabled: !_guardando,
+                keyboardType: TextInputType.emailAddress,
+                decoration: const InputDecoration(
+                  labelText: 'Correo',
+                  prefixIcon: Icon(Icons.mail_rounded),
                 ),
               ),
-              actions: <Widget>[
-                TextButton(
-                  onPressed: guardandoDialogo
-                      ? null
-                      : () => Navigator.of(dialogContext).pop(false),
-                  child: const Text('Cancelar'),
+              right: TextField(
+                controller: _telefonoController,
+                enabled: !_guardando,
+                keyboardType: TextInputType.phone,
+                decoration: const InputDecoration(
+                  labelText: 'Telefono',
+                  prefixIcon: Icon(Icons.phone_rounded),
                 ),
-                FilledButton.icon(
-                  onPressed: guardandoDialogo
-                      ? null
-                      : () async {
-                          if (nombreController.text.trim().length < 2) {
-                            mostrarMensaje(
-                              'El cliente necesita nombre completo',
-                            );
-                            return;
-                          }
-
-                          if (ubicacionCliente != null &&
-                              direccionController.text.trim().isEmpty) {
-                            mostrarMensaje(_mensajeDireccionCasa);
-                            return;
-                          }
-
-                          setDialogState(() => guardandoDialogo = true);
-                          final bool guardado = await ejecutarAccion(() async {
-                            final Cliente actualizado = Cliente.fromJson(
-                              await apiClient.patchObject(
-                                '/clientes/${cliente.id}',
-                                <String, dynamic>{
-                                  'nombreCompleto':
-                                      nombreController.text.trim(),
-                                  if (cedulaController.text.trim().isNotEmpty)
-                                    'cedula': cedulaController.text.trim(),
-                                  if (negocioController.text.trim().isNotEmpty)
-                                    'nombreComercial':
-                                        negocioController.text.trim(),
-                                  'direccion': direccionController.text.trim(),
-                                  if (ubicacionCliente !=
-                                      null) ...<String, dynamic>{
-                                    'latitud': ubicacionCliente!.latitude,
-                                    'longitud': ubicacionCliente!.longitude,
-                                  } else ...<String, dynamic>{
-                                    'latitud': null,
-                                    'longitud': null,
-                                  },
-                                  if (correoController.text.trim().isNotEmpty)
-                                    'correo': correoController.text.trim(),
-                                  if (telefonoController.text.trim().isNotEmpty)
-                                    'telefono': telefonoController.text.trim(),
-                                },
-                                queueOffline: true,
-                              ),
-                            );
-                            onClienteModificado(actualizado);
-                            onRecargarEnSegundoPlano();
-                          });
-
-                          if (!guardado) {
-                            if (dialogContext.mounted) {
-                              setDialogState(() => guardandoDialogo = false);
-                            }
-                            return;
-                          }
-
-                          if (dialogContext.mounted) {
-                            Navigator.of(dialogContext).pop(true);
-                          }
-                        },
-                  icon: guardandoDialogo
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.check_rounded),
-                  label: const Text('Guardar'),
-                ),
-              ],
-            );
-          },
-        );
-      },
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: _guardando ? null : () => Navigator.of(context).pop(false),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton.icon(
+          onPressed: _guardando ? null : _guardar,
+          icon: _guardando
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.check_rounded),
+          label: const Text('Guardar'),
+        ),
+      ],
     );
-
-    if (modificado == true) {
-      mostrarMensaje('Cliente actualizado');
-    }
-  } finally {
-    nombreController.dispose();
-    cedulaController.dispose();
-    negocioController.dispose();
-    direccionController.dispose();
-    correoController.dispose();
-    telefonoController.dispose();
   }
 }
 

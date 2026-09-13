@@ -5,5 +5,6 @@ export 'cobro_ruta_model.dart';
 export 'credito_model.dart';
 export 'empleado_model.dart';
 export 'exportacion_model.dart';
+export 'pagina_datos_model.dart';
 export 'presupuesto_model.dart';
 export 'sesion_model.dart';

@@ -22,12 +22,12 @@ class CalculoCredito {
     required int diasIntervalo,
     required bool omitirDomingos,
   }) {
-    final double valorPrincipal = math.max(0.0, parseNumber(valor) ?? 0);
+    final double valorPrincipal = math.max(0.0, parseNumero(valor) ?? 0);
     final double porcentajeInteres = math.max(
       0.0,
-      parseNumber(interes) ?? 0,
+      parseNumero(interes) ?? 0,
     );
-    final int plazoDias = math.max(1, (parseNumber(plazo) ?? 1).round());
+    final int plazoDias = math.max(1, (parseNumero(plazo) ?? 1).round());
     final int intervalo = math.max(1, diasIntervalo);
     final int numeroCuotas = math.max(1, (plazoDias / intervalo).ceil());
     final double valorTotal = roundMoney(

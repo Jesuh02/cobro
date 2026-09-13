@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import '../../data/models/catalogo_model.dart';
 import '../utils/json_utils.dart';
+export '../utils/json_utils.dart';
 
 DateTime fechaHoraColombia([DateTime? value]) {
   return (value ?? DateTime.now()).toUtc().subtract(const Duration(hours: 5));

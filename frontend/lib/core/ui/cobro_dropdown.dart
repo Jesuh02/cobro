@@ -120,8 +120,7 @@ class _CobroDropdownFieldState<T> extends State<CobroDropdownField<T>> {
 
           double alturaMaxima = widget.menuMaxHeight;
           if (renderBox != null && renderBox.hasSize && renderBox.attached) {
-            final Offset posicionGlobal =
-                renderBox.localToGlobal(Offset.zero);
+            final Offset posicionGlobal = renderBox.localToGlobal(Offset.zero);
             final double espacioAbajo =
                 MediaQuery.of(overlayContext).size.height -
                     (posicionGlobal.dy + renderBox.size.height) -
@@ -172,7 +171,8 @@ class _CobroDropdownFieldState<T> extends State<CobroDropdownField<T>> {
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: widget.items.map((CobroDropdownItem<T> item) {
-                          final bool esSeleccionado = item.value == widget.value;
+                          final bool esSeleccionado =
+                              item.value == widget.value;
 
                           return InkWell(
                             borderRadius: BorderRadius.circular(12),
@@ -216,12 +216,16 @@ class _CobroDropdownFieldState<T> extends State<CobroDropdownField<T>> {
                                     CircleAvatar(
                                       radius: 16,
                                       backgroundColor: esSeleccionado
-                                          ? Theme.of(context).colorScheme.primary
+                                          ? Theme.of(context)
+                                              .colorScheme
+                                              .primary
                                           : Theme.of(context)
                                               .colorScheme
                                               .primaryContainer,
                                       foregroundColor: esSeleccionado
-                                          ? Theme.of(context).colorScheme.onPrimary
+                                          ? Theme.of(context)
+                                              .colorScheme
+                                              .onPrimary
                                           : Theme.of(context)
                                               .colorScheme
                                               .onPrimaryContainer,
@@ -242,8 +246,8 @@ class _CobroDropdownFieldState<T> extends State<CobroDropdownField<T>> {
                                                   .colorScheme
                                                   .primary)
                                           .withValues(
-                                            alpha: esSeleccionado ? 0.2 : 0.12,
-                                          ),
+                                        alpha: esSeleccionado ? 0.2 : 0.12,
+                                      ),
                                       foregroundColor: item.iconColor ??
                                           Theme.of(context).colorScheme.primary,
                                       child: Icon(item.icon, size: 16),
@@ -281,7 +285,8 @@ class _CobroDropdownFieldState<T> extends State<CobroDropdownField<T>> {
                                                 .bodySmall
                                                 ?.copyWith(
                                                   fontSize: 11,
-                                                  color: context.clay.subtleText,
+                                                  color:
+                                                      context.clay.subtleText,
                                                 ),
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
@@ -337,12 +342,10 @@ class _CobroDropdownFieldState<T> extends State<CobroDropdownField<T>> {
                       seleccionado!.avatarText!.isNotEmpty) ...<Widget>[
                     CircleAvatar(
                       radius: 11,
-                      backgroundColor: Theme.of(context)
-                          .colorScheme
-                          .primaryContainer,
-                      foregroundColor: Theme.of(context)
-                          .colorScheme
-                          .onPrimaryContainer,
+                      backgroundColor:
+                          Theme.of(context).colorScheme.primaryContainer,
+                      foregroundColor:
+                          Theme.of(context).colorScheme.onPrimaryContainer,
                       child: Text(
                         seleccionado.avatarText!,
                         style: const TextStyle(

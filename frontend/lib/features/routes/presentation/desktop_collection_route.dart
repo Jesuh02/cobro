@@ -351,11 +351,10 @@ class _DesktopCollectionRouteState extends State<DesktopCollectionRoute> {
           return left.key.compareTo(right.key);
         }
 
-        final int distanceComparison = distance
-            .as(LengthUnit.Meter, origin, left.value.point!)
-            .compareTo(
-              distance.as(LengthUnit.Meter, origin, right.value.point!),
-            );
+        final int distanceComparison =
+            distance.as(LengthUnit.Meter, origin, left.value.point!).compareTo(
+                  distance.as(LengthUnit.Meter, origin, right.value.point!),
+                );
         if (distanceComparison != 0) {
           return distanceComparison;
         }
@@ -1913,19 +1912,19 @@ class _CustomerMapTooltip extends StatelessWidget {
                                     fontWeight: FontWeight.w900,
                                   ),
                             ),
-                            if ((customer.business ?? '').isNotEmpty)
-                              ...<Widget>[
-                                const SizedBox(height: 2),
-                                Text(
-                                  customer.business!,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .bodySmall
-                                      ?.copyWith(color: tooltipSubtle),
-                                ),
-                              ],
+                            if ((customer.business ?? '')
+                                .isNotEmpty) ...<Widget>[
+                              const SizedBox(height: 2),
+                              Text(
+                                customer.business!,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(color: tooltipSubtle),
+                              ),
+                            ],
                           ],
                         ),
                       ),

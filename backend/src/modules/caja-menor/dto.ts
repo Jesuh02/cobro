@@ -88,6 +88,12 @@ export class CrearCajaMenorDto {
   @MaxLength(64)
   @Matches(resourceIdPattern, { message: resourceIdMessage() })
   responsableUsuarioId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  @Matches(resourceIdPattern, { message: resourceIdMessage() })
+  usuarioResponsableId?: string;
 }
 
 export class CrearMovimientoCajaDto {

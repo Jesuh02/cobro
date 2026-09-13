@@ -634,9 +634,11 @@ export class CajaMenorService implements OnModuleInit {
 
     const caja = await this.prisma.$transaction(async (tx) => {
       const scope = await this.obtenerScopeOrganizacionTbl(usuario, tx);
+      const requestedResponsableId =
+        dto.responsableUsuarioId?.trim() || dto.usuarioResponsableId?.trim();
       const targetUsuarioId =
-        this.esAdministrador(usuario) && dto.responsableUsuarioId?.trim()
-          ? dto.responsableUsuarioId.trim()
+        this.esAdministrador(usuario) && requestedResponsableId
+          ? requestedResponsableId
           : scope.usuarioId;
 
       const [responsable] = await tx.$queryRaw<UsuarioOrganizacionTblRow[]>(

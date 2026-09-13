@@ -272,7 +272,10 @@ class _ClaySurfaceState extends State<ClaySurface> {
             : const <BoxShadow>[],
       ),
       child: widget.onTap == null
-          ? content
+          ? Material(
+              type: MaterialType.transparency,
+              child: content,
+            )
           : Material(
               color: Colors.transparent,
               child: InkWell(

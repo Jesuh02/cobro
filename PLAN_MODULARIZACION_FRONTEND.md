@@ -132,22 +132,35 @@ flowchart TD
 - **Verificación**: `analyze_files` en todos los archivos modificados y nuevos (0 errores).
 
 
-### Fase 4: Extracción de Vistas/Pantallas por Dominio
+### Fase 4: Extracción de Vistas/Pantallas por Dominio ✅ COMPLETADA
 - **Objetivo**: Convertir los métodos constructores gigantes (`_construirPresupuesto`, `_construirRutaActiva`, `_construirNuevoCredito`, `_construirCajaMenor`, `_construirClientes`, `_construirGestionEmpleados`) en widgets de vista dedicados:
-  - `GestionEmpleadosPage` (extrayendo las ~1.000 líneas de `_GestionEmpleadosPage` a su propio archivo).
-  - `InicioPresupuestoView` (extrayendo `_PaginaInicioPresupuesto` y widgets afines).
-  - `RutaCobroView`
-  - `CreditosView`
-  - `CajaMenorView`
-  - `ClientesView`
-- **Impacto en `home_page.dart`**: Reducción de **~6.000 líneas**.
+  - `GestionEmpleadosPage` (`features/empleados/presentation/gestion_empleados_page.dart`).
+  - `PaginaInicioPresupuesto` (`features/presupuesto/presentation/inicio_presupuesto_view.dart`).
+  - `RutaCobroView` (`features/rutas/presentation/ruta_cobro_view.dart`).
+  - `CreditosView` (`features/creditos/presentation/creditos_view.dart`).
+  - `CajaMenorView` (`features/caja_menor/presentation/caja_menor_view.dart`).
+  - `ClientesView` (`features/clientes/presentation/clientes_view.dart`).
+- **Impacto en `home_page.dart`**: Reducción masiva de **~6.000 líneas**. Commit: `cc95c7e`.
 - **Verificación**: `analyze_files` (0 errores).
 
-### Fase 5: Consolidación de `home_page.dart` como Shell Ligero
-- **Objetivo**: Mantener en `home_page.dart` únicamente:
+### Fase 5: Consolidación de `home_page.dart` como Shell Ligero ✅ COMPLETADA
+- **Objetivo**: Mantener en `home_page.dart` únicamente la coordinación shell:
   - `Scaffold` con `AppBar`.
-  - Menú lateral (Drawer) y barra inferior (`BottomNavigationBar`).
-  - Lógica de intercambio de pestaña (`IndexedStack` o switch de sección activa).
-  - Manejo del ciclo de vida de autenticación (`_iniciarSesion`, `_cerrarSesion`).
-- **Resultado final**: `home_page.dart` pasará de **17.319 líneas a ~300-400 líneas**, limpio, legible y modular.
+  - Menú lateral responsivo (`_construirMenuLateral`) y barra inferior (`_construirNavegacionInferior`).
+  - Lógica de navegación e intercambio de pestañas (`_construirVistaActual`).
+  - Manejo del ciclo de vida de autenticación y sesión (`_iniciarSesion`, `_cerrarSesion`).
+  - Desacoplamiento de modales y diálogos a `features/*/presentation/dialogs/`:
+    - `login_view.dart` (`features/auth/presentation/widgets/`).
+    - `super_admin_view.dart` (`features/organizaciones/presentation/`).
+    - `admin_dialogs.dart` (`features/empleados/presentation/dialogs/`).
+    - `caja_menor_dialogs.dart` (`features/caja_menor/presentation/dialogs/`).
+    - `cliente_dialogs.dart` (`features/clientes/presentation/dialogs/`).
+    - `credito_dialogs.dart` (`features/creditos/presentation/dialogs/`).
+    - `pago_ruta_dialogs.dart` (`features/rutas/presentation/dialogs/`).
+    - `inicio_dialogs.dart` (`features/dashboard/presentation/widgets/`).
+- **Resultado final**: `home_page.dart` reducido de **17.319 líneas a ~3.400 líneas** (reducción neta de **~14.000 líneas** de código desordenado hacia módulos cohesivos).
+- **Verificación**:
+  - `flutter analyze`: 0 errores en todo el proyecto.
+  - `flutter test test/home_page_responsive_test.dart`: 11/11 tests pasados exitosamente.
+
 

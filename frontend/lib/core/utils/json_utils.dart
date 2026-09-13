@@ -79,4 +79,3 @@ String formatJsonDate(DateTime value) {
 String formatJsonDateTimeUtc(DateTime value) {
   return value.toUtc().toIso8601String();
 }
-

@@ -70,4 +70,3 @@ class MarcaAplicacion extends StatelessWidget {
     );
   }
 }
-

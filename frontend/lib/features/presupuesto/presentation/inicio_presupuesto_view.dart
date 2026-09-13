@@ -1086,10 +1086,6 @@ class DatoPresupuesto {
   final String? detalle;
 }
 
-
-
-
-
 class TarjetaPresupuestoItem extends StatelessWidget {
   const TarjetaPresupuestoItem({required this.item});
 

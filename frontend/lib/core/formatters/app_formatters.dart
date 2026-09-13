@@ -54,6 +54,16 @@ String formatDateTimeLabel(DateTime? value) {
       '${local.minute.toString().padLeft(2, '0')}';
 }
 
+String formatDateValue(DateTime value) {
+  return '${value.year.toString().padLeft(4, '0')}-'
+      '${value.month.toString().padLeft(2, '0')}-'
+      '${value.day.toString().padLeft(2, '0')}';
+}
+
+String formatDateTimeValue(DateTime value) {
+  return value.toUtc().toIso8601String();
+}
+
 String formatExportCellText(Object? value) {
   if (value == null) {
     return '';
@@ -190,4 +200,3 @@ String quitarCerosDecimales(String value) {
   }
   return limpio.isEmpty ? '0' : limpio;
 }
-

@@ -142,7 +142,8 @@ class _ClienteUbicacionPickerState extends State<ClienteUbicacionPicker> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : const Icon(Icons.my_location_rounded, size: 18),
-                    label: Text(_locating ? 'Ubicando...' : 'Guardar ubicación'),
+                    label:
+                        Text(_locating ? 'Ubicando...' : 'Guardar ubicación'),
                   )
                 : Row(
                     mainAxisSize: MainAxisSize.min,
@@ -198,4 +199,3 @@ class _ClienteUbicacionPickerState extends State<ClienteUbicacionPicker> {
     );
   }
 }
-

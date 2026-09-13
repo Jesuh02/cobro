@@ -226,9 +226,8 @@ class RutaCobroView extends StatelessWidget {
             titulo: 'Sin cuotas por cobrar',
             mensaje: 'No hay créditos activos con saldo para el filtro actual.',
             accion: FilledButton.icon(
-              onPressed: guardando || !puedeCrearCreditos
-                  ? null
-                  : onCrearCreditoModal,
+              onPressed:
+                  guardando || !puedeCrearCreditos ? null : onCrearCreditoModal,
               icon: const Icon(Icons.add_business_rounded),
               label: const Text('Crear credito'),
             ),

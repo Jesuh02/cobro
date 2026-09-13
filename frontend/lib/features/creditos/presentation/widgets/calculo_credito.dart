@@ -38,9 +38,8 @@ class CalculoCredito {
       valorTotal - valorPrincipal,
       2,
     );
-    final double valorCuota = numeroCuotas > 0
-        ? roundMoney(valorTotal / numeroCuotas, 2)
-        : 0.0;
+    final double valorCuota =
+        numeroCuotas > 0 ? roundMoney(valorTotal / numeroCuotas, 2) : 0.0;
     DateTime cursor = DateTime(
       fechaInicio.year,
       fechaInicio.month,
@@ -82,4 +81,3 @@ class CalculoCredito {
   final DateTime fechaMaxima;
   final int domingosOmitidos;
 }
-

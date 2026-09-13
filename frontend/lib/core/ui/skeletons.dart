@@ -312,4 +312,3 @@ class SkeletonTarjetaMovimientoCaja extends StatelessWidget {
     );
   }
 }
-

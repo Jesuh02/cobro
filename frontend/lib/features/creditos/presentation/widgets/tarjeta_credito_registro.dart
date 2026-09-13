@@ -144,7 +144,8 @@ class TarjetaCreditoRegistro extends StatelessWidget {
                 value: formatMoney(credito.valorPrincipal),
               ),
               DatoResumen(label: 'Saldo', value: formatMoney(credito.saldo)),
-              DatoResumen(label: 'Cuota', value: formatMoney(credito.valorCuota)),
+              DatoResumen(
+                  label: 'Cuota', value: formatMoney(credito.valorCuota)),
               DatoResumen(
                 label: 'Cuotas',
                 value: '${credito.cuotasRestantes} / ${credito.numeroCuotas}',

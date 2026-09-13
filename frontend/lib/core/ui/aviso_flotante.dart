@@ -304,4 +304,3 @@ class ErrorBanner extends StatelessWidget {
     );
   }
 }
-

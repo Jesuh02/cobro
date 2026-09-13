@@ -68,4 +68,3 @@ class DosColumnas extends StatelessWidget {
     );
   }
 }
-

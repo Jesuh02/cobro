@@ -11,7 +11,8 @@ import '../../../../core/ui/skeletons.dart';
 import '../../../../data/models/models.dart';
 import 'widgets/tarjeta_credito_registro.dart';
 
-String mensajeDatosBaseCredito(Catalogos? catalogos, {required bool sinClientes}) {
+String mensajeDatosBaseCredito(Catalogos? catalogos,
+    {required bool sinClientes}) {
   if (catalogos == null) {
     return 'No se pudieron cargar los catalogos.';
   }
@@ -93,17 +94,14 @@ class CreditosView extends StatelessWidget {
       onNearEnd: onNearEnd,
       acciones: <Widget>[
         OutlinedButton.icon(
-          onPressed:
-              guardando || !hayCreditoActivo || !puedeRefinanciarCreditos
-                  ? null
-                  : onRefinanciarGeneral,
+          onPressed: guardando || !hayCreditoActivo || !puedeRefinanciarCreditos
+              ? null
+              : onRefinanciarGeneral,
           icon: const Icon(Icons.currency_exchange_rounded),
           label: const Text('Refinanciar'),
         ),
         FilledButton.icon(
-          onPressed: guardando || !puedeCrearCreditos
-              ? null
-              : onCrearCredito,
+          onPressed: guardando || !puedeCrearCreditos ? null : onCrearCredito,
           icon: const Icon(Icons.add_business_rounded),
           label: const Text('Crear credito'),
         ),
@@ -117,9 +115,8 @@ class CreditosView extends StatelessWidget {
                 ? 'Crea un cliente y registra su credito en el mismo formulario.'
                 : mensajeDatosBase,
             accion: FilledButton.icon(
-              onPressed: guardando || !puedeCrearCreditos
-                  ? null
-                  : onCrearCredito,
+              onPressed:
+                  guardando || !puedeCrearCreditos ? null : onCrearCredito,
               icon: const Icon(Icons.add_business_rounded),
               label: const Text('Añadir crédito'),
             ),
@@ -142,9 +139,8 @@ class CreditosView extends StatelessWidget {
             titulo: 'No hay nada',
             mensaje: 'No hay creditos para mostrar con el filtro actual.',
             accion: FilledButton.icon(
-              onPressed: guardando || !puedeCrearCreditos
-                  ? null
-                  : onCrearCredito,
+              onPressed:
+                  guardando || !puedeCrearCreditos ? null : onCrearCredito,
               icon: const Icon(Icons.add_business_rounded),
               label: const Text('Crear credito'),
             ),

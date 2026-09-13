@@ -180,4 +180,3 @@ class DatoResumen extends StatelessWidget {
     );
   }
 }
-

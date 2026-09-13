@@ -21,4 +21,3 @@ const List<String> permisosEmpleadoCodigos = <String>[
   permisoModificarMovimientos,
   permisoEliminarMovimientos,
 ];
-

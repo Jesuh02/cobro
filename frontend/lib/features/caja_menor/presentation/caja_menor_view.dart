@@ -113,21 +113,22 @@ class CajaMenorView extends StatelessWidget {
                 : puedeCrearCajaMenor
                     ? 'Crea una caja menor para comenzar a registrar movimientos.'
                     : 'No tienes una caja menor asignada. Contacta al administrador para que cree tu caja.',
-            accion: (hayCajaMenor ? puedeRegistrarFlujoCaja : puedeCrearCajaMenor)
-                ? FilledButton.icon(
-                    onPressed: guardando
-                        ? null
-                        : hayCajaMenor
-                            ? onMovimientoCaja
-                            : onCrearCajaMenor,
-                    icon: const Icon(Icons.add_rounded),
-                    label: Text(
-                      hayCajaMenor
-                          ? 'Registrar movimiento'
-                          : 'Crear caja menor',
-                    ),
-                  )
-                : null,
+            accion:
+                (hayCajaMenor ? puedeRegistrarFlujoCaja : puedeCrearCajaMenor)
+                    ? FilledButton.icon(
+                        onPressed: guardando
+                            ? null
+                            : hayCajaMenor
+                                ? onMovimientoCaja
+                                : onCrearCajaMenor,
+                        icon: const Icon(Icons.add_rounded),
+                        label: Text(
+                          hayCajaMenor
+                              ? 'Registrar movimiento'
+                              : 'Crear caja menor',
+                        ),
+                      )
+                    : null,
           )
         else
           ...movimientos.map(

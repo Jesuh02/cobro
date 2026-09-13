@@ -368,7 +368,8 @@ class FlujoBilletes extends StatelessWidget {
                       Expanded(
                         child: PasoCalculo(
                           icono: Icons.percent_rounded,
-                          etiqueta: '${formatNumber(porcentajeInteres)}% interés',
+                          etiqueta:
+                              '${formatNumber(porcentajeInteres)}% interés',
                           valor: formatMoney(interes),
                           color: CobroAppTheme.warning,
                         ),
@@ -502,4 +503,3 @@ class PasoCalculo extends StatelessWidget {
     );
   }
 }
-

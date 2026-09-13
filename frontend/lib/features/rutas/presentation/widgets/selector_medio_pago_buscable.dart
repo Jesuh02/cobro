@@ -123,4 +123,3 @@ class SelectorMedioPagoBuscable extends StatelessWidget {
     );
   }
 }
-

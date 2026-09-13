@@ -25,8 +25,7 @@ class SelectorCobroRutaBuscable extends StatefulWidget {
       _SelectorCobroRutaBuscableState();
 }
 
-class _SelectorCobroRutaBuscableState
-    extends State<SelectorCobroRutaBuscable> {
+class _SelectorCobroRutaBuscableState extends State<SelectorCobroRutaBuscable> {
   late final TextEditingController _controller;
   late final FocusNode _focusNode;
   late final ScrollController _scrollController;
@@ -172,4 +171,3 @@ class _SelectorCobroRutaBuscableState
     _focusNode.requestFocus();
   }
 }
-

@@ -290,7 +290,7 @@ Future<void> mostrarDialogoCrearCajaMenor({
                               <String, dynamic>{
                                 'nombre': nombreController.text.trim(),
                                 if (esAdmin && usuarioResponsableId != null)
-                                  'usuarioResponsableId': usuarioResponsableId,
+                                  'responsableUsuarioId': usuarioResponsableId,
                                 'fechaApertura':
                                     formatDateTimeValue(fechaAperturaActual),
                                 'fechaCierre': formatDateTimeValue(fechaCierre),

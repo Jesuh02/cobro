@@ -12,12 +12,19 @@ import 'package:latlong2/latlong.dart';
 import '../../../app/app_theme.dart';
 import '../../../app/session_cache.dart';
 import '../../../core/constants/permisos_constants.dart';
+import '../../../core/formatters/app_formatters.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/network/api_exception.dart';
 import '../../../core/network/offline_mutation.dart';
 import '../../../core/platform/export_download.dart';
+import '../../../core/ui/aviso_flotante.dart';
+import '../../../core/ui/chips_indicadores.dart';
 import '../../../core/ui/clay.dart';
 import '../../../core/ui/cobro_dropdown.dart';
+import '../../../core/ui/marca_aplicacion.dart';
+import '../../../core/ui/skeletons.dart';
+import '../../../core/ui/visor_exportacion_excel.dart';
+import '../../../core/utils/json_utils.dart';
 import '../../../data/models/models.dart';
 import '../../routes/data/api_road_router.dart';
 import '../../routes/data/device_location_service.dart';
@@ -8033,9 +8040,11 @@ class _HomePageState extends State<HomePage> {
 }
 
 enum _TipoMensaje { exito, advertencia, error, info }
+typedef _TipoMensaje = TipoMensaje;
 
 _TipoMensaje _tipoMensaje(String message) {
   final String normalizado = message.toLowerCase();
+_TipoMensaje _tipoMensaje(String message) => calcularTipoMensaje(message);
 
   if (normalizado.contains('error') ||
       normalizado.contains('no se pudo') ||
@@ -8046,6 +8055,9 @@ _TipoMensaje _tipoMensaje(String message) {
       normalizado.contains('no tienes acceso')) {
     return _TipoMensaje.error;
   }
+typedef _AvisoFlotante = AvisoFlotante;
+typedef _AvisoEstilo = AvisoEstilo;
+typedef _MarcaAplicacion = MarcaAplicacion;
 
   if (normalizado.contains('no se puede') ||
       normalizado.contains('insuficiente') ||
@@ -9708,6 +9720,7 @@ class _Encabezado extends StatelessWidget {
 
 class _ErrorBanner extends StatelessWidget {
   const _ErrorBanner({required this.message});
+typedef _ErrorBanner = ErrorBanner;
 
   final String message;
 
@@ -9977,9 +9990,12 @@ class _VisorExportacionExcel extends StatelessWidget {
     required this.exportacion,
     required this.onDescargar,
   });
+typedef _VisorExportacionExcel = VisorExportacionExcel;
 
   final ExportacionExcel exportacion;
   final Future<void> Function() onDescargar;
+typedef _EtiquetaExportacion = EtiquetaExportacion;
+typedef _TablaVistaPreviaExcel = TablaVistaPreviaExcel;
 
   @override
   Widget build(BuildContext context) {
@@ -10336,10 +10352,16 @@ class _EstadoContador extends StatelessWidget {
 
 class _SkeletonListaCreditos extends StatefulWidget {
   const _SkeletonListaCreditos();
+typedef _SkeletonListaCreditos = SkeletonListaCreditos;
+typedef _SkeletonTarjetaCredito = SkeletonTarjetaCredito;
+typedef _SkeletonDatoCredito = SkeletonDatoCredito;
+typedef _SkeletonCreditoBloque = SkeletonCreditoBloque;
 
   @override
   State<_SkeletonListaCreditos> createState() => _SkeletonListaCreditosState();
 }
+typedef _SkeletonListaMovimientosCaja = SkeletonListaMovimientosCaja;
+typedef _SkeletonTarjetaMovimientoCaja = SkeletonTarjetaMovimientoCaja;
 
 class _SkeletonListaCreditosState extends State<_SkeletonListaCreditos>
     with SingleTickerProviderStateMixin {
@@ -10817,6 +10839,9 @@ class _TarjetaCreditoRegistro extends StatelessWidget {
 
 class _EstadoCreditoChip extends StatelessWidget {
   const _EstadoCreditoChip({required this.credito});
+typedef _EstadoCreditoChip = EstadoCreditoChip;
+typedef _EtiquetaRefinanciacion = EtiquetaRefinanciacion;
+typedef _EtiquetaCreditoModificado = EtiquetaCreditoModificado;
 
   final CreditoRegistro credito;
 
@@ -11060,6 +11085,9 @@ class _TarjetaCobroRuta extends StatelessWidget {
 
 class _BarraSaldo extends StatelessWidget {
   const _BarraSaldo({required this.abonado, required this.total});
+typedef _BarraSaldo = BarraSaldo;
+typedef _EstadoChip = EstadoChip;
+typedef _DatoResumen = DatoResumen;
 
   final double abonado;
   final double total;
@@ -14560,6 +14588,8 @@ class _GestionEmpleadosPageState extends State<_GestionEmpleadosPage> {
                 ),
               ),
               if (_cargando)
+ 
+... [truncated for diff preview]
                 const SizedBox(
                   width: 18,
                   height: 18,
@@ -15711,206 +15741,42 @@ String _fechaHoraValor(DateTime value) {
   return value.toUtc().toIso8601String();
 }
 
-DateTime _fechaHoraColombia([DateTime? value]) {
-  return (value ?? DateTime.now()).toUtc().subtract(const Duration(hours: 5));
-}
+DateTime _fechaHoraColombia([DateTime? value]) => fechaHoraColombia(value);
 
-String _nombreCajaMenorPorDefecto([DateTime? value]) {
-  final DateTime colombia = _fechaHoraColombia(value);
-  return '${colombia.day.toString().padLeft(2, '0')}/'
-      '${colombia.month.toString().padLeft(2, '0')}/'
-      '${colombia.year.toString().padLeft(4, '0')} '
-      '${colombia.hour.toString().padLeft(2, '0')}:'
-      '${colombia.minute.toString().padLeft(2, '0')}';
-}
+String _nombreCajaMenorPorDefecto([DateTime? value]) =>
+    nombreCajaMenorPorDefecto(value);
 
-String _fechaEtiqueta(DateTime? value) {
-  if (value == null) {
-    return '-';
-  }
+String _fechaEtiqueta(DateTime? value) => formatDateLabel(value);
 
-  const List<String> meses = <String>[
-    'ene',
-    'feb',
-    'mar',
-    'abr',
-    'may',
-    'jun',
-    'jul',
-    'ago',
-    'sep',
-    'oct',
-    'nov',
-    'dic',
-  ];
+String _fechaHoraEtiqueta(DateTime? value) => formatDateTimeLabel(value);
 
-  return '${value.day.toString().padLeft(2, '0')} '
-      '${meses[value.month - 1]} ${value.year}';
-}
+String _textoCeldaExportacion(Object? value) => formatExportCellText(value);
 
-String _fechaHoraEtiqueta(DateTime? value) {
-  if (value == null) {
-    return '-';
-  }
+String _textoCreditos(int value) => formatCreditsCount(value);
 
-  final DateTime local = value.toLocal();
-  return '${local.day.toString().padLeft(2, '0')}/'
-      '${local.month.toString().padLeft(2, '0')}/'
-      '${local.year.toString().padLeft(4, '0')} '
-      '${local.hour.toString().padLeft(2, '0')}:'
-      '${local.minute.toString().padLeft(2, '0')}';
-}
+double _redondearDinero(double value, [int decimales = 2]) =>
+    roundMoney(value, decimales);
 
-String _textoCeldaExportacion(Object? value) {
-  if (value == null) {
-    return '';
-  }
-  if (value is num) {
-    return _numero(value.toDouble()).replaceAll('.', ',');
-  }
-  return value.toString();
-}
+String _dinero(double value) => formatMoney(value);
 
-String _textoCreditos(int value) {
-  return value == 1 ? '1 credito' : '$value creditos';
-}
+String _dineroCredito(double value) => formatMoney(value);
 
-double _redondearDinero(double value, [int decimales = 2]) {
-  final num factor = math.pow(10, decimales);
-  return (value * factor).round() / factor;
-}
+String _etiquetaFrecuencia(FrecuenciaPago? frecuencia) =>
+    etiquetaFrecuencia(frecuencia);
 
-String _dinero(double value) {
-  final bool negativo = value < 0;
-  final double valorRedondeado = _redondearDinero(value.abs(), 2);
-  final String raw = _decimalPreciso(valorRedondeado);
-  final List<String> partes = raw.split('.');
-  final String entero = partes.first;
-  final StringBuffer buffer = StringBuffer();
+String _numero(double value) => formatNumber(value);
 
-  for (int i = 0; i < entero.length; i++) {
-    final int desdeFinal = entero.length - i;
-    buffer.write(entero[i]);
-    if (desdeFinal > 1 && desdeFinal % 3 == 1) {
-      buffer.write('.');
-    }
-  }
+double _leerMonto(String value) => parseMontoInput(value);
 
-  final String decimales = partes.length == 2 ? ',${partes.last}' : '';
-  return '${negativo ? '-' : ''}\$${buffer.toString()}$decimales';
-}
+double _leerPorcentaje(String value) => parsePorcentajeInput(value);
 
-String _dineroCredito(double value) {
-  return _dinero(value);
-}
+String _decimalPreciso(double value) => preciseDecimal(value);
 
-String _etiquetaFrecuencia(FrecuenciaPago? frecuencia) {
-  switch (frecuencia?.codigo.toUpperCase()) {
-    case 'DIARIO':
-      return 'diarias';
-    case 'SEMANAL':
-      return 'semanales';
-    case 'QUINCENAL':
-      return 'quincenales';
-    case 'MENSUAL':
-      return 'mensuales';
-    default:
-      return 'cada ${frecuencia?.diasIntervalo ?? 1} días';
-  }
-}
+String _expandirNotacionCientifica(String raw) =>
+    expandirNotacionCientifica(raw);
 
-String _numero(double value) {
-  if (value == 0) {
-    return '0';
-  }
+String _quitarCerosDecimales(String value) => quitarCerosDecimales(value);
 
-  return '${value < 0 ? '-' : ''}${_decimalPreciso(value.abs())}';
-}
+int _leerEnteroPositivo(String value) => parseEnteroPositivoInput(value);
 
-double _leerMonto(String value) {
-  final double? parsed = _parseNumero(value);
-  if (parsed == null || parsed <= 0) {
-    throw const FormatException('Ingresa un monto mayor que cero');
-  }
-  return parsed;
-}
-
-double _leerPorcentaje(String value) {
-  final double? parsed = _parseNumero(value);
-  if (parsed == null || parsed < 0) {
-    throw const FormatException('Ingresa un porcentaje válido');
-  }
-  return parsed;
-}
-
-String _decimalPreciso(double value) {
-  if (value == 0 || value.isNaN || value.isInfinite) {
-    return '0';
-  }
-
-  final String raw = value.toString().toLowerCase();
-  if (!raw.contains('e')) {
-    return _quitarCerosDecimales(raw);
-  }
-
-  return _quitarCerosDecimales(_expandirNotacionCientifica(raw));
-}
-
-String _expandirNotacionCientifica(String raw) {
-  final List<String> partes = raw.split('e');
-  final String mantisa = partes.first;
-  final int exponente = int.parse(partes.last);
-  final int punto = mantisa.indexOf('.');
-  final int posicionDecimal = punto == -1 ? mantisa.length : punto;
-  final String digitos = mantisa.replaceAll('.', '');
-  final int nuevaPosicion = posicionDecimal + exponente;
-
-  if (nuevaPosicion <= 0) {
-    final String ceros = ''.padLeft(-nuevaPosicion, '0');
-    return '0.$ceros$digitos';
-  }
-
-  if (nuevaPosicion >= digitos.length) {
-    final String ceros = ''.padLeft(nuevaPosicion - digitos.length, '0');
-    return '$digitos$ceros';
-  }
-
-  return '${digitos.substring(0, nuevaPosicion)}.'
-      '${digitos.substring(nuevaPosicion)}';
-}
-
-String _quitarCerosDecimales(String value) {
-  if (!value.contains('.')) {
-    return value;
-  }
-
-  var limpio = value;
-  while (limpio.endsWith('0')) {
-    limpio = limpio.substring(0, limpio.length - 1);
-  }
-  if (limpio.endsWith('.')) {
-    limpio = limpio.substring(0, limpio.length - 1);
-  }
-  return limpio.isEmpty ? '0' : limpio;
-}
-
-int _leerEnteroPositivo(String value) {
-  final double? parsed = _parseNumero(value);
-  if (parsed == null || parsed <= 0) {
-    throw const FormatException('Ingresa un plazo mayor que cero');
-  }
-  return math.max(1, parsed.round());
-}
-
-double? _parseNumero(String value) {
-  final String normalized =
-      value.trim().replaceAll(RegExp(r'[^0-9,.-]'), '').replaceAll(',', '.');
-  if (normalized.isEmpty) {
-    return null;
-  }
-  final double? parsed = double.tryParse(normalized);
-  if (parsed == null || parsed.isNaN || parsed.isInfinite) {
-    return null;
-  }
-  return parsed;
-}
+double? _parseNumero(String value) => parseNumero(value);

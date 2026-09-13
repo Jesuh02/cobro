@@ -1188,66 +1188,15 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  Future<String?> _solicitarDireccionParaMapa(CobroRuta cobro) async {
-    final TextEditingController controller = TextEditingController();
-    try {
-      return await showDialog<String>(
-        context: context,
-        builder: (BuildContext dialogContext) {
-          return AlertDialog(
-            title: const Text('Dirección del cliente'),
-            content: SizedBox(
-              width: 420,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    'Escribe la dirección de ${cobro.cliente} antes de guardar el punto GPS.',
-                  ),
-                  const SizedBox(height: 14),
-                  TextField(
-                    controller: controller,
-                    autofocus: true,
-                    textInputAction: TextInputAction.done,
-                    decoration: const InputDecoration(
-                      labelText: 'Dirección',
-                      prefixIcon: Icon(Icons.location_on_rounded),
-                    ),
-                    onSubmitted: (String value) {
-                      final String direccion = value.trim();
-                      if (direccion.isNotEmpty) {
-                        Navigator.of(dialogContext).pop(direccion);
-                      }
-                    },
-                  ),
-                ],
-              ),
-            ),
-            actions: <Widget>[
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(),
-                child: const Text('Cancelar'),
-              ),
-              FilledButton.icon(
-                onPressed: () {
-                  final String direccion = controller.text.trim();
-                  if (direccion.isEmpty) {
-                    _mostrarMensaje('Escribe la dirección del cliente');
-                    return;
-                  }
-                  Navigator.of(dialogContext).pop(direccion);
-                },
-                icon: const Icon(Icons.my_location_rounded),
-                label: const Text('Continuar'),
-              ),
-            ],
-          );
-        },
-      );
-    } finally {
-      controller.dispose();
-    }
+  Future<String?> _solicitarDireccionParaMapa(CobroRuta cobro) {
+    return showDialog<String>(
+      context: context,
+      builder: (BuildContext dialogContext) =>
+          _DialogoSolicitarDireccionParaMapa(
+        cobro: cobro,
+        mostrarMensaje: _mostrarMensaje,
+      ),
+    );
   }
 
   CollectionMapCustomer _mapCustomerFromCobro(CobroRuta cobro) {
@@ -3479,3 +3428,90 @@ enum _AccionSesion {
   gestionEmpleados,
   cerrarSesion,
 }
+
+class _DialogoSolicitarDireccionParaMapa extends StatefulWidget {
+  const _DialogoSolicitarDireccionParaMapa({
+    required this.cobro,
+    required this.mostrarMensaje,
+  });
+
+  final CobroRuta cobro;
+  final void Function(String) mostrarMensaje;
+
+  @override
+  State<_DialogoSolicitarDireccionParaMapa> createState() =>
+      _DialogoSolicitarDireccionParaMapaState();
+}
+
+class _DialogoSolicitarDireccionParaMapaState
+    extends State<_DialogoSolicitarDireccionParaMapa> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _continuar() {
+    final String direccion = _controller.text.trim();
+    if (direccion.isEmpty) {
+      widget.mostrarMensaje('Escribe la dirección del cliente');
+      return;
+    }
+    Navigator.of(context).pop(direccion);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Dirección del cliente'),
+      content: SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(
+              'Escribe la dirección de ${widget.cobro.cliente} antes de guardar el punto GPS.',
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: _controller,
+              autofocus: true,
+              textInputAction: TextInputAction.done,
+              decoration: const InputDecoration(
+                labelText: 'Dirección',
+                prefixIcon: Icon(Icons.location_on_rounded),
+              ),
+              onSubmitted: (String value) {
+                final String direccion = value.trim();
+                if (direccion.isNotEmpty) {
+                  Navigator.of(context).pop(direccion);
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton.icon(
+          onPressed: _continuar,
+          icon: const Icon(Icons.my_location_rounded),
+          label: const Text('Continuar'),
+        ),
+      ],
+    );
+  }
+}
+

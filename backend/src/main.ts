@@ -22,7 +22,7 @@ async function bootstrap() {
   });
   const config = app.get(ConfigService);
   const port = config.get<number>('PORT', 3000);
-  const host = config.get<string>('HOST', '127.0.0.1');
+  const host = config.get<string>('HOST', process.env.PORT ? '0.0.0.0' : '127.0.0.1');
   const corsOrigin = config.get<string>('CORS_ORIGIN', '*');
   const trustProxyHops = config.get<number>('TRUST_PROXY_HOPS', 0);
   const enforceHttps = config.get<boolean>('ENFORCE_HTTPS', false);

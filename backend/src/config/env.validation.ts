@@ -58,7 +58,8 @@ type ValidatedConfig = {
 
 const allowedEnvironments = ['development', 'test', 'production'] as const;
 
-export function validateEnv(config: RawConfig): ValidatedConfig {
+export function validateEnv(rawConfig: RawConfig): ValidatedConfig {
+  const config: RawConfig = { ...process.env, ...rawConfig };
   const nodeEnv = config.NODE_ENV ?? 'development';
 
   if (!allowedEnvironments.includes(nodeEnv as ValidatedConfig['NODE_ENV'])) {

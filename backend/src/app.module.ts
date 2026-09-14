@@ -26,7 +26,7 @@ import { RutasModule } from './modules/rutas/rutas.module';
         resolve(process.cwd(), '.env'),
       ],
       isGlobal: true,
-      validatePredefined: process.env.NODE_ENV === 'production',
+      validatePredefined: true,
       validate: validateEnv,
     }),
     ThrottlerModule.forRoot([

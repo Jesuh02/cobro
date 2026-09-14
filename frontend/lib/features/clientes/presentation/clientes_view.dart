@@ -12,6 +12,7 @@ class ClientesView extends StatelessWidget {
     required this.clientes,
     required this.sinClientesRegistrados,
     required this.esAdministrador,
+    this.puedeModificar = false,
     required this.buscarController,
     required this.onRefresh,
     required this.onCrearCliente,
@@ -24,6 +25,7 @@ class ClientesView extends StatelessWidget {
   final List<Cliente> clientes;
   final bool sinClientesRegistrados;
   final bool esAdministrador;
+  final bool puedeModificar;
   final TextEditingController buscarController;
   final Future<void> Function() onRefresh;
   final VoidCallback onCrearCliente;
@@ -74,6 +76,7 @@ class ClientesView extends StatelessWidget {
                 child: ClienteItem(
                   cliente: cliente,
                   esAdministrador: esAdministrador,
+                  puedeModificar: puedeModificar,
                   onModificar: () => onModificarCliente(cliente),
                   onEliminar: () => onEliminarCliente(cliente),
                 ),

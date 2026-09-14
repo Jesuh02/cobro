@@ -192,4 +192,109 @@ describe('ClientesService', () => {
       }),
     ).rejects.toThrow(ForbiddenException);
   });
+
+  it('rejects client update when employee lacks MODIFICAR_CLIENTES permission', async () => {
+    const tenantScope = {
+      esAdministrador: jest.fn().mockReturnValue(false),
+    };
+
+    const service = new ClientesService(
+      {} as never,
+      tenantScope as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(
+      service.actualizarCliente(
+        'cli-1',
+        { nombreCompleto: 'Nuevo Nombre' },
+        {
+          usuarioId: 'u-cobrador',
+          usuario: 'cobrador',
+          organizacionId: 'org-1',
+          roles: ['COBRADOR'],
+          permisos: ['CREAR_CREDITOS'],
+        },
+      ),
+    ).rejects.toThrow(ForbiddenException);
+  });
+
+  it('allows client update when employee has MODIFICAR_CLIENTES permission', async () => {
+    const actual = {
+      id: 'cli-1',
+      persona_id: 'per-1',
+      nombre_completo: 'Juan Gomez',
+      nombre_comercial: null,
+      notas: null,
+      cedula: '123456',
+      direccion: 'Calle 1',
+      correo: null,
+      latitud: null,
+      longitud: null,
+      telefono: '3001234567',
+      creado_en: new Date('2026-09-01T00:00:00.000Z'),
+      actualizado_en: new Date('2026-09-01T00:00:00.000Z'),
+      activo: true,
+    };
+
+    const actualizado = {
+      ...actual,
+      nombre_completo: 'Juan Gomez Actualizado',
+    };
+
+    const queryRaw = jest
+      .fn()
+      // 1. tx: query existing
+      .mockResolvedValueOnce([actual])
+      // 2. after tx: query updated
+      .mockResolvedValueOnce([actualizado]);
+
+    const executeRaw = jest.fn().mockResolvedValue(1);
+
+    const tx = {
+      $queryRaw: queryRaw,
+      $executeRaw: executeRaw,
+    };
+
+    const prisma = {
+      $queryRaw: queryRaw,
+      $executeRaw: executeRaw,
+      $transaction: async (cb: (t: unknown) => Promise<unknown>) => cb(tx),
+    };
+
+    const tenantScope = {
+      esAdministrador: jest.fn().mockReturnValue(false),
+      obtenerScopeOrganizacionTbl: jest.fn().mockResolvedValue({
+        usuarioId: 'u-cobrador',
+        organizacionId: 'org-1',
+      }),
+    };
+
+    const cache = { deleteByPrefix: jest.fn() };
+
+    const service = new ClientesService(
+      prisma as never,
+      tenantScope as never,
+      {} as never,
+      cache as never,
+    );
+
+    const result = await service.actualizarCliente(
+      'cli-1',
+      { nombreCompleto: 'Juan Gomez Actualizado' },
+      {
+        usuarioId: 'u-cobrador',
+        usuario: 'cobrador',
+        organizacionId: 'org-1',
+        roles: ['COBRADOR'],
+        permisos: ['MODIFICAR_CLIENTES'],
+      },
+    );
+
+    expect(result.id).toBe('cli-1');
+    expect(result.nombreCompleto).toBe('Juan Gomez Actualizado');
+    expect(cache.deleteByPrefix).toHaveBeenCalledWith('cobros:');
+  });
 });
+

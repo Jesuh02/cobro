@@ -5,6 +5,7 @@ const String permisoCrearCreditos = 'CREAR_CREDITOS';
 const String permisoRefinanciarCreditos = 'REFINANCIAR_CREDITOS';
 const String permisoModificarCreditos = 'MODIFICAR_CREDITOS';
 const String permisoEliminarCreditos = 'ELIMINAR_CREDITOS';
+const String permisoModificarClientes = 'MODIFICAR_CLIENTES';
 const String permisoAgregarCuota = 'AGREGAR_CUOTA';
 const String permisoModificarMovimientos = 'MODIFICAR_MOVIMIENTOS';
 const String permisoEliminarMovimientos = 'ELIMINAR_MOVIMIENTOS';
@@ -17,6 +18,7 @@ const List<String> permisosEmpleadoCodigos = <String>[
   permisoRefinanciarCreditos,
   permisoModificarCreditos,
   permisoEliminarCreditos,
+  permisoModificarClientes,
   permisoAgregarCuota,
   permisoModificarMovimientos,
   permisoEliminarMovimientos,

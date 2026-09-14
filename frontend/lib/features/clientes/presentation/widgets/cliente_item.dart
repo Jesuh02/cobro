@@ -14,12 +14,14 @@ class ClienteItem extends StatelessWidget {
     super.key,
     required this.cliente,
     required this.esAdministrador,
+    this.puedeModificar = false,
     required this.onModificar,
     required this.onEliminar,
   });
 
   final Cliente cliente;
   final bool esAdministrador;
+  final bool puedeModificar;
   final VoidCallback onModificar;
   final VoidCallback onEliminar;
 
@@ -95,7 +97,7 @@ class ClienteItem extends StatelessWidget {
                   fontWeight: FontWeight.w900,
                 ),
           ),
-          if (esAdministrador) ...<Widget>[
+          if (esAdministrador || puedeModificar) ...<Widget>[
             const SizedBox(width: 4),
             PopupMenuButton<AccionCliente>(
               tooltip: 'Acciones',
@@ -109,27 +111,29 @@ class ClienteItem extends StatelessWidget {
                 }
               },
               itemBuilder: (BuildContext context) {
-                return const <PopupMenuEntry<AccionCliente>>[
-                  PopupMenuItem<AccionCliente>(
-                    value: AccionCliente.modificar,
-                    child: Row(
-                      children: <Widget>[
-                        Icon(Icons.edit_outlined),
-                        SizedBox(width: 12),
-                        Text('Modificar'),
-                      ],
+                return <PopupMenuEntry<AccionCliente>>[
+                  if (esAdministrador || puedeModificar)
+                    const PopupMenuItem<AccionCliente>(
+                      value: AccionCliente.modificar,
+                      child: Row(
+                        children: <Widget>[
+                          Icon(Icons.edit_outlined),
+                          SizedBox(width: 12),
+                          Text('Modificar'),
+                        ],
+                      ),
                     ),
-                  ),
-                  PopupMenuItem<AccionCliente>(
-                    value: AccionCliente.eliminar,
-                    child: Row(
-                      children: <Widget>[
-                        Icon(Icons.delete_outline_rounded),
-                        SizedBox(width: 12),
-                        Text('Eliminar'),
-                      ],
+                  if (esAdministrador)
+                    const PopupMenuItem<AccionCliente>(
+                      value: AccionCliente.eliminar,
+                      child: Row(
+                        children: <Widget>[
+                          Icon(Icons.delete_outline_rounded),
+                          SizedBox(width: 12),
+                          Text('Eliminar'),
+                        ],
+                      ),
                     ),
-                  ),
                 ];
               },
             ),

@@ -45,6 +45,7 @@ const String _permisoCrearCreditos = permisoCrearCreditos;
 const String _permisoRefinanciarCreditos = permisoRefinanciarCreditos;
 const String _permisoModificarCreditos = permisoModificarCreditos;
 const String _permisoEliminarCreditos = permisoEliminarCreditos;
+const String _permisoModificarClientes = permisoModificarClientes;
 const String _permisoAgregarCuota = permisoAgregarCuota;
 const String _permisoModificarMovimientos = permisoModificarMovimientos;
 const String _permisoEliminarMovimientos = permisoEliminarMovimientos;
@@ -745,6 +746,8 @@ class _HomePageState extends State<HomePage> {
       _usuarioSesion?.puede(_permisoModificarCreditos) ?? false;
   bool get _puedeEliminarCreditos =>
       _usuarioSesion?.puede(_permisoEliminarCreditos) ?? false;
+  bool get _puedeModificarClientes =>
+      _usuarioSesion?.puede(_permisoModificarClientes) ?? false;
   bool get _puedeAgregarCuota =>
       _usuarioSesion?.puede(_permisoAgregarCuota) ?? false;
   bool get _puedeModificarMovimientos =>
@@ -1072,6 +1075,7 @@ class _HomePageState extends State<HomePage> {
       clientes: _filtrarClientes(),
       sinClientesRegistrados: _clientes.isEmpty,
       esAdministrador: _usuarioSesion?.esAdministrador ?? false,
+      puedeModificar: _puedeModificarClientes,
       buscarController: _buscarClienteController,
       onRefresh: _cargar,
       onCrearCliente: _abrirCrearClienteConCredito,
@@ -2807,6 +2811,7 @@ class _HomePageState extends State<HomePage> {
       context: context,
       cliente: cliente,
       esAdministrador: _usuarioSesion?.esAdministrador ?? false,
+      puedeModificar: _puedeModificarClientes,
       apiClient: _apiClient,
       mostrarMensaje: _mostrarMensaje,
       ejecutarAccion: _ejecutarAccion,

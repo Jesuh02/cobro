@@ -159,14 +159,16 @@ Future<void> mostrarDialogoModificarCliente({
   required BuildContext context,
   required Cliente cliente,
   required bool esAdministrador,
+  bool? puedeModificar,
   required ApiClient apiClient,
   required void Function(String) mostrarMensaje,
   required Future<bool> Function(Future<void> Function()) ejecutarAccion,
   required void Function(Cliente) onClienteModificado,
   required void Function() onRecargarEnSegundoPlano,
 }) async {
-  if (!esAdministrador) {
-    mostrarMensaje('Solo los administradores pueden modificar clientes');
+  final bool permitido = puedeModificar ?? esAdministrador;
+  if (!permitido) {
+    mostrarMensaje('No tienes permiso para modificar clientes');
     return;
   }
 

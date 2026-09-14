@@ -1306,6 +1306,12 @@ export class AuthService {
         return;
       }
 
+      await tx.$executeRaw(Prisma.sql`
+        INSERT INTO public.tbl_recursos (nom, rec_orden, rec_interface)
+        VALUES ('MODIFICAR_CLIENTES', 75, 'WEB')
+        ON CONFLICT (rec_interface, nom) DO NOTHING
+      `);
+
       const recursosPermiso = await tx.$queryRaw<Array<{ id: string }>>(
         Prisma.sql`
           SELECT id_rec::text AS id

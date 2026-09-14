@@ -42,6 +42,11 @@ const permisosEmpleadoSeed = [
     rolNombre: 'Permiso eliminar creditos',
   },
   {
+    codigo: 'MODIFICAR_CLIENTES',
+    nombre: 'Modificar clientes',
+    rolNombre: 'Permiso modificar clientes',
+  },
+  {
     codigo: 'AGREGAR_CUOTA',
     nombre: 'Agregar cuota',
     rolNombre: 'Permiso agregar cuota',

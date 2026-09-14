@@ -36,6 +36,12 @@ export const permisosEmpleado = [
     rolNombre: 'Permiso eliminar creditos',
   },
   {
+    codigo: 'MODIFICAR_CLIENTES',
+    nombre: 'Modificar clientes',
+    rolNombre: 'Permiso modificar clientes',
+    predeterminado: false,
+  },
+  {
     codigo: 'AGREGAR_CUOTA',
     nombre: 'Agregar cuota',
     rolNombre: 'Permiso agregar cuota',
@@ -59,7 +65,9 @@ export const permisosEmpleadoCodigos = permisosEmpleado.map(
 );
 
 export const permisosEmpleadoPredeterminadosCodigos: string[] =
-  permisosEmpleadoCodigos.filter((codigo) => codigo !== 'VER_EMPLEADOS');
+  permisosEmpleadoCodigos.filter(
+    (codigo) => codigo !== 'VER_EMPLEADOS' && codigo !== 'MODIFICAR_CLIENTES',
+  );
 
 export const permisosEmpleadoPorCodigo = new Map(
   permisosEmpleado.map((permiso) => [permiso.codigo, permiso]),

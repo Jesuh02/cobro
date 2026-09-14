@@ -10,6 +10,10 @@ import {
   TenantScopeService,
 } from '../../common/tenancy/tenant-scope.service';
 import { AuthenticatedUser } from '../auth/auth.types';
+import {
+  PermisoEmpleadoCodigo,
+  permisosEmpleadoPorCodigo,
+} from '../auth/permissions';
 import { RutasService } from '../rutas/rutas.service';
 import {
   ActualizarClienteDto,
@@ -279,7 +283,7 @@ export class ClientesService {
     dto: ActualizarClienteDto,
     usuario: AuthenticatedUser,
   ) {
-    this.asegurarAdministrador(usuario);
+    this.asegurarPermiso(usuario, 'MODIFICAR_CLIENTES');
 
     const nombreCompleto = this.requerirTexto(
       dto.nombreCompleto,
@@ -685,6 +689,24 @@ export class ClientesService {
       nombres: partes.slice(0, -1).join(' '),
       apellidos: partes[partes.length - 1],
     };
+  }
+
+  private asegurarPermiso(
+    usuario: AuthenticatedUser,
+    permiso: PermisoEmpleadoCodigo,
+  ) {
+    if (
+      this.tenantScope.esAdministrador(usuario) ||
+      usuario.permisos?.includes(permiso)
+    ) {
+      return;
+    }
+
+    const nombrePermiso =
+      permisosEmpleadoPorCodigo.get(permiso)?.nombre ?? 'esta accion';
+    throw new ForbiddenException(
+      `No tienes permiso para ${nombrePermiso.toLowerCase()}`,
+    );
   }
 
   private asegurarAdministrador(usuario: AuthenticatedUser) {

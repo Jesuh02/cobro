@@ -4,7 +4,7 @@ import { periodicNoiseGLSL } from './utils'
 export class DofPointsMaterial extends THREE.ShaderMaterial {
   constructor() {
     super({
-      vertexShader: /* glsl */ `
+      vertexShader: /* glsls */ `
       uniform sampler2D positions;
       uniform sampler2D initialPositions;
       uniform float uTime;

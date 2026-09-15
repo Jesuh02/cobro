@@ -38,7 +38,7 @@ export function CobrosHero() {
         </p>
 
         <div className="flex items-center justify-center gap-4 mt-14 max-sm:flex-col">
-          <Link href="#pricing">
+          <Link href="/app/">
             <Button
               className="bg-white text-black hover:bg-white/90 font-mono rounded-none px-8 h-12"
               onMouseEnter={() => setHovering(true)}

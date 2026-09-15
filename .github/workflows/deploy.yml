@@ -1,0 +1,68 @@
+name: Deploy Web App to Cloudflare
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'frontend/**'
+      - 'Landing_cobro/**'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install Flutter Dependencies
+        run: |
+          cd frontend
+          flutter pub get
+
+      - name: Build Flutter Web App
+        run: |
+          cd frontend
+          flutter build web --release --base-href /app/ --dart-define=API_BASE_URL=https://cobro-production.up.railway.app/api/v1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Copy Flutter Web to Landing public/app
+        run: |
+          mkdir -p Landing_cobro/optimus-the-ai-platform-to-build-and-ship/public/app
+          cp -r frontend/build/web/* Landing_cobro/optimus-the-ai-platform-to-build-and-ship/public/app/
+
+      - name: Install Landing Dependencies
+        run: |
+          cd Landing_cobro/optimus-the-ai-platform-to-build-and-ship
+          pnpm install --frozen-lockfile
+
+      - name: Build Landing Page (Next.js export)
+        run: |
+          cd Landing_cobro/optimus-the-ai-platform-to-build-and-ship
+          pnpm build
+
+      - name: Deploy to Cloudflare Workers
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: 'Landing_cobro/optimus-the-ai-platform-to-build-and-ship'
+          command: deploy
+

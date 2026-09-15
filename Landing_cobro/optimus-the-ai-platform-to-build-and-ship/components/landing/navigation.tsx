@@ -73,7 +73,7 @@ export function Navigation() {
           {/* Desktop CTA */}
           <div className="hidden md:flex items-center gap-4">
             <a
-              href="#"
+              href="/app/"
               className={`transition-all duration-500 ${
                 isScrolled
                   ? `text-foreground/70 hover:text-foreground ${isScrolled ? "text-xs" : "text-sm"}`
@@ -82,16 +82,18 @@ export function Navigation() {
             >
               Iniciar sesión
             </a>
-            <Button
-              size="sm"
-              className={`rounded-full transition-all duration-500 ${
-                isScrolled
-                  ? "bg-foreground hover:bg-foreground/90 text-background px-4 h-8 text-xs"
-                  : "bg-white hover:bg-white/90 text-black px-6"
-              }`}
-            >
-              Empezar gratis
-            </Button>
+            <a href="/app/">
+              <Button
+                size="sm"
+                className={`rounded-full transition-all duration-500 ${
+                  isScrolled
+                    ? "bg-foreground hover:bg-foreground/90 text-background px-4 h-8 text-xs"
+                    : "bg-white hover:bg-white/90 text-black px-6"
+                }`}
+              >
+                Empezar gratis
+              </Button>
+            </a>
           </div>
 
           {/* Mobile Menu Button */}
@@ -145,19 +147,21 @@ export function Navigation() {
             }`}
             style={{ transitionDelay: isMobileMenuOpen ? "300ms" : "0ms" }}
           >
-            <Button
-              variant="outline"
-              className="flex-1 rounded-full h-14 text-base"
-              onClick={() => setIsMobileMenuOpen(false)}
-            >
-              Iniciar sesión
-            </Button>
-            <Button
-              className="flex-1 bg-foreground text-background rounded-full h-14 text-base"
-              onClick={() => setIsMobileMenuOpen(false)}
-            >
-              Empezar gratis
-            </Button>
+            <a href="/app/" className="flex-1" onClick={() => setIsMobileMenuOpen(false)}>
+              <Button
+                variant="outline"
+                className="w-full rounded-full h-14 text-base"
+              >
+                Iniciar sesión
+              </Button>
+            </a>
+            <a href="/app/" className="flex-1" onClick={() => setIsMobileMenuOpen(false)}>
+              <Button
+                className="w-full bg-foreground text-background rounded-full h-14 text-base"
+              >
+                Empezar gratis
+              </Button>
+            </a>
           </div>
         </div>
       </div>

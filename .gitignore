@@ -37,3 +37,7 @@ docker/**/.env
 ESTRUCTURA_PROYECTO.md
 REGISTRO_CAMBIOS_CHAT.md
 
+# Next.js Landing build outputs and generated Flutter web app
+Landing_cobro/**/public/app/
+Landing_cobro/**/.next/
+Landing_cobro/**/out/

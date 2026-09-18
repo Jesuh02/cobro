@@ -41,3 +41,12 @@ REGISTRO_CAMBIOS_CHAT.md
 Landing_cobro/**/public/app/
 Landing_cobro/**/.next/
 Landing_cobro/**/out/
+
+# Cloudflare Security Audit Skill and generated artifacts
+.agents/
+architecture.md
+coverage-ledger.json
+findings.json
+REPORT.md
+FINDINGS-DETAIL.md
+

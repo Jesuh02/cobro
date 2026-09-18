@@ -58,6 +58,10 @@ jobs:
           cd Landing_cobro/optimus-the-ai-platform-to-build-and-ship
           pnpm build
 
+      - name: Ensure Cloudflare _headers in out
+        run: |
+          cp Landing_cobro/optimus-the-ai-platform-to-build-and-ship/public/_headers Landing_cobro/optimus-the-ai-platform-to-build-and-ship/out/_headers
+
       - name: Deploy to Cloudflare Workers
         run: |
           cd Landing_cobro/optimus-the-ai-platform-to-build-and-ship

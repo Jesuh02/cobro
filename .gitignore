@@ -23,9 +23,6 @@ build/
 .vscode/
 *.iml
 
-# WhatsApp sessions and temporary data
-.openwa-session/
-**/.openwa-session/
 
 # Docker volumes, persistent databases, sessions and secrets
 docker/**/data/

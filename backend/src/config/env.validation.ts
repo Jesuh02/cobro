@@ -32,14 +32,11 @@ type ValidatedConfig = {
   R2_BUCKET_NAME?: string;
   R2_SIGNED_URL_TTL_SECONDS: number;
   R2_SECRET_ACCESS_KEY?: string;
-  WHATSAPP_PROVIDER: 'evolution' | 'openwa' | 'ycloud';
+  WHATSAPP_PROVIDER: 'evolution' | 'ycloud';
   EVOLUTION_ENABLED: boolean;
   EVOLUTION_BASE_URL: string;
   EVOLUTION_API_KEY?: string;
   EVOLUTION_INSTANCE_NAME: string;
-  OPENWA_ENABLED: boolean;
-  OPENWA_BASE_URL: string;
-  OPENWA_API_KEY?: string;
   YCLOUD_API_KEY?: string;
   YCLOUD_BASE_URL: string;
   YCLOUD_ENABLED: boolean;
@@ -134,11 +131,9 @@ export function validateEnv(rawConfig: RawConfig): ValidatedConfig {
   );
   const whatsappProvider = (
     config.WHATSAPP_PROVIDER?.trim().toLowerCase() || 'evolution'
-  ) as 'evolution' | 'openwa' | 'ycloud';
-  if (!['evolution', 'openwa', 'ycloud'].includes(whatsappProvider)) {
-    throw new Error(
-      'WHATSAPP_PROVIDER must be "evolution", "openwa" or "ycloud"',
-    );
+  ) as 'evolution' | 'ycloud';
+  if (!['evolution', 'ycloud'].includes(whatsappProvider)) {
+    throw new Error('WHATSAPP_PROVIDER must be "evolution" or "ycloud"');
   }
 
   const evolutionEnabled = readBoolean(
@@ -152,15 +147,6 @@ export function validateEnv(rawConfig: RawConfig): ValidatedConfig {
   const evolutionApiKey = optional(config.EVOLUTION_API_KEY);
   const evolutionInstanceName =
     config.EVOLUTION_INSTANCE_NAME?.trim() || 'cobrod';
-
-  const openwaEnabled = readBoolean(
-    config.OPENWA_ENABLED,
-    'OPENWA_ENABLED',
-    false,
-  );
-  const openwaBaseUrl =
-    config.OPENWA_BASE_URL?.trim() || 'http://127.0.0.1:8080';
-  assertHttpUrl(openwaBaseUrl, 'OPENWA_BASE_URL', nodeEnv);
 
   const ycloudEnabled = readBoolean(
     config.YCLOUD_ENABLED,
@@ -297,9 +283,6 @@ export function validateEnv(rawConfig: RawConfig): ValidatedConfig {
     EVOLUTION_BASE_URL: evolutionBaseUrl,
     EVOLUTION_API_KEY: evolutionApiKey,
     EVOLUTION_INSTANCE_NAME: evolutionInstanceName,
-    OPENWA_ENABLED: openwaEnabled,
-    OPENWA_BASE_URL: openwaBaseUrl,
-    OPENWA_API_KEY: optional(config.OPENWA_API_KEY),
     YCLOUD_API_KEY: optional(config.YCLOUD_API_KEY),
     YCLOUD_BASE_URL: ycloudBaseUrl,
     YCLOUD_ENABLED: ycloudEnabled,
@@ -372,7 +355,7 @@ function assertHttpUrl(value: string, name: string, nodeEnv: string) {
   const isInternalHost = [
     '127.0.0.1',
     'localhost',
-    'openwa',
+    'evolution-api',
     'host.docker.internal',
   ].includes(parsed.hostname.toLowerCase());
 

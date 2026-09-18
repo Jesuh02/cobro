@@ -32,9 +32,11 @@ describe('NotificationsService', () => {
 
     const config = new ConfigService({
       NOTIFICATIONS_ENABLED: true,
-      WHATSAPP_PROVIDER: 'openwa',
-      OPENWA_ENABLED: true,
-      OPENWA_BASE_URL: 'http://localhost:8080',
+      WHATSAPP_PROVIDER: 'evolution',
+      EVOLUTION_ENABLED: true,
+      EVOLUTION_BASE_URL: 'http://localhost:8080',
+      EVOLUTION_API_KEY: 'test-key',
+      EVOLUTION_INSTANCE_NAME: 'cobrod',
       NOTIFICATION_BRAND_NAME: 'Cobro',
     });
 
@@ -134,7 +136,7 @@ describe('NotificationsService', () => {
     ]);
 
     whatsappMock.send.mockRejectedValueOnce(
-      new Error('Open-WA connection timeout'),
+      new Error('WhatsApp connection timeout'),
     );
 
     await expect(

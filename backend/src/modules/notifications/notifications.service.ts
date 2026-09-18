@@ -348,9 +348,6 @@ export class NotificationsService {
     if (provider === 'evolution') {
       return this.config.get<boolean>('EVOLUTION_ENABLED') ?? true;
     }
-    if (provider === 'openwa') {
-      return this.config.get<boolean>('OPENWA_ENABLED') ?? true;
-    }
     return this.config.get<boolean>('YCLOUD_ENABLED') ?? false;
   }
 

@@ -8,28 +8,49 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# Asegurar que exista archivo .env
+# Asegurar que exista archivo .env con credenciales seguras
 if [ ! -f ".env" ]; then
-  echo "Creando .env a partir de .env.example..."
+  echo "Creando .env a partir de .env.example con claves seguras autogeneradas..."
   cp .env.example .env
+  RANDOM_KEY=$(openssl rand -hex 24 2>/dev/null || head -c 32 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 32)
+  RANDOM_DB_PASS=$(openssl rand -hex 16 2>/dev/null || head -c 20 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 20)
+  sed -i "s/AUTHENTICATION_API_KEY=genera_una_clave_aleatoria_y_segura_aqui/AUTHENTICATION_API_KEY=${RANDOM_KEY}/g" .env
+  sed -i "s/POSTGRES_PASSWORD=evolution_secret_password/POSTGRES_PASSWORD=${RANDOM_DB_PASS}/g" .env
+  echo "✅ Archivo .env creado con credenciales unicas generadas."
 fi
 
 # Cargar variables
 source .env
 
+BIND_IP="${BIND_IP:-127.0.0.1}"
 PORT="${PORT:-8080}"
 SERVER_URL="${SERVER_URL:-http://localhost:8080}"
-API_KEY="${AUTHENTICATION_API_KEY:-cobrod-secure-evolution-key}"
+API_KEY="${AUTHENTICATION_API_KEY}"
 INSTANCE="${EVOLUTION_INSTANCE_NAME:-cobrod}"
 DB_USER="${POSTGRES_USER:-evolution}"
-DB_PASS="${POSTGRES_PASSWORD:-evolution_secret_password}"
+DB_PASS="${POSTGRES_PASSWORD}"
 DB_NAME="${POSTGRES_DB:-evolution}"
+
+# Validaciones estrictas de seguridad de credenciales
+if [ -z "${API_KEY}" ] || [ "${API_KEY}" = [ "${API_KEY}" = "genera_una_clave_aleatoria_y_segura_aqui" ]; then
+  echo "❌ ERROR DE SEGURIDAD: Debes definir una AUTHENTICATION_API_KEY segura en tu archivo docker/whatsapp/.env."
+  echo "💡 Tip: Puedes generar una con: openssl rand -hex 32"
+  exit 1
+fi
+
+if [ -z "${DB_PASS}" ] || [ "${DB_PASS}" = "evolution_secret_password" ]; then
+  echo "❌ ERROR DE SEGURIDAD: Debes definir una POSTGRES_PASSWORD segura en tu archivo docker/whatsapp/.env."
+  exit 1
+fi
 
 echo "=========================================================="
 echo "🚀 Iniciando stack de WhatsApp (Evolution API v2.3.7)..."
-echo "Puerto:       http://localhost:${PORT}"
-echo "API Key:      ${API_KEY}"
+echo "Enlace:       http://${BIND_IP}:${PORT}"
+echo "API Key:      ${API_KEY:0:6}****************"
 echo "Instancia:    ${INSTANCE}"
+if [ "${BIND_IP}" = "0.0.0.0" ]; then
+  echo "⚠️  ADVERTENCIA: BIND_IP=0.0.0.0 expone el servicio a interfaces publicas."
+fi
 echo "=========================================================="
 
 # 1. Crear red y volumen si no existen
@@ -79,7 +100,7 @@ if [ ! "$(docker ps -q -f name=^/cobrod-evolution-api$)" ]; then
     --name cobrod-evolution-api \
     --restart unless-stopped \
     --network cobrod_evolution_net \
-    -p "${PORT}:8080" \
+    -p "${BIND_IP}:${PORT}:8080" \
     -e SERVER_URL="${SERVER_URL}" \
     -e AUTHENTICATION_API_KEY="${API_KEY}" \
     -e DATABASE_PROVIDER="postgresql" \

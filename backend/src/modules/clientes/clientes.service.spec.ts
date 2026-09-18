@@ -86,6 +86,55 @@ describe('ClientesService', () => {
     ).rejects.toThrow('Las coordenadas deben ser números finitos');
   });
 
+  it('rejects client creation when cedula already exists in same organization', async () => {
+    const queryRaw = jest
+      .fn()
+      // 1. select duplicates returns true
+      .mockResolvedValueOnce([{ existe: true }]);
+
+    const tx = {
+      $queryRaw: queryRaw,
+    };
+
+    const prisma = {
+      $transaction: async (cb: (t: unknown) => Promise<unknown>) => cb(tx),
+    };
+
+    const tenantScope = {
+      obtenerScopeOrganizacionTbl: jest.fn().mockResolvedValue({
+        usuarioId: 'u-1',
+        organizacionId: 'org-1',
+      }),
+    };
+
+    const service = new ClientesService(
+      prisma as never,
+      tenantScope as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(
+      service.crearCliente(
+        {
+          nombreCompleto: 'Maria Perez',
+          cedula: '987654',
+          direccion: 'Carrera 5',
+          telefono: '3119876543',
+        },
+        {
+          usuarioId: 'u-1',
+          usuario: 'admin',
+          organizacionId: 'org-1',
+          roles: ['ADMINISTRADOR'],
+          permisos: [],
+        },
+      ),
+    ).rejects.toMatchObject({
+      code: 'CEDULA_YA_REGISTRADA',
+    });
+  });
+
   it('creates client in tbl schema and links route', async () => {
     const queryRaw = jest
       .fn()

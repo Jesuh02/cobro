@@ -146,12 +146,14 @@ CREATE TABLE IF NOT EXISTS tbl_personas (
   per_creacion TIMESTAMPTZ NOT NULL DEFAULT now(),
   per_latitud DECIMAL(10, 7),
   per_longitud DECIMAL(10, 7),
-  CONSTRAINT ux_tbl_personas_documento UNIQUE (per_documento),
   CONSTRAINT chk_tbl_personas_documento
     CHECK (length(trim(per_documento)) > 0),
   CONSTRAINT chk_tbl_personas_email
     CHECK (per_email IS NULL OR position('@' IN per_email) > 1)
 );
+
+CREATE INDEX IF NOT EXISTS ix_tbl_personas_documento
+  ON tbl_personas (per_documento);
 
 CREATE UNIQUE INDEX IF NOT EXISTS ix_tbl_personas_email_normalizado
   ON tbl_personas (lower(per_email))

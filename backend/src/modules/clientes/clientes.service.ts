@@ -164,8 +164,10 @@ export class ClientesService {
             Prisma.sql`
               SELECT EXISTS (
                 SELECT 1
-                FROM public.tbl_personas
-                WHERE per_documento = ${input.cedula}
+                FROM public.tbl_clientes c
+                JOIN public.tbl_personas p ON p.id_per = c.cli_persona
+                WHERE p.per_documento = ${input.cedula}
+                  AND c.org_id = ${scope.organizacionId}::uuid
               ) AS existe
             `,
           );
@@ -370,9 +372,11 @@ export class ClientesService {
             Prisma.sql`
               SELECT EXISTS (
                 SELECT 1
-                FROM public.tbl_personas
-                WHERE per_documento = ${cedulaFinal}
-                  AND id_per::text <> ${actual.persona_id}
+                FROM public.tbl_clientes c
+                JOIN public.tbl_personas p ON p.id_per = c.cli_persona
+                WHERE p.per_documento = ${cedulaFinal}
+                  AND c.org_id = ${scope.organizacionId}::uuid
+                  AND c.id_cli::text <> ${clienteId}
               ) AS existe
             `,
           );

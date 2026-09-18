@@ -10,6 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 
+import { InMemoryCacheService } from '../../common/cache/in-memory-cache.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import {
   ActualizarOrganizacionSuperAdminDto,
@@ -133,11 +134,45 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly passwords: PasswordService,
     private readonly config: ConfigService,
+    private readonly cache: InMemoryCacheService,
   ) {}
 
   async login(dto: LoginDto): Promise<AuthSessionResponse> {
     const nombreUsuario = this.normalizarUsuario(dto.usuario);
-    return this.loginTbl(nombreUsuario, dto.contrasena);
+    const lockoutKey = `auth:lockout:${nombreUsuario}`;
+    const failedKey = `auth:failed:${nombreUsuario}`;
+
+    const lockout = this.cache.get<number>(lockoutKey);
+    if (lockout.hit) {
+      throw new UnauthorizedException(
+        'Cuenta bloqueada temporalmente por demasiados intentos fallidos. Intenta más tarde en 5 minutos.',
+      );
+    }
+
+    try {
+      const session = await this.loginTbl(nombreUsuario, dto.contrasena);
+      this.cache.delete(failedKey);
+      this.cache.delete(lockoutKey);
+      return session;
+    } catch (error) {
+      if (
+        error instanceof UnauthorizedException &&
+        error.message === 'Usuario o contrasena invalidos'
+      ) {
+        const current = this.cache.get<number>(failedKey);
+        const attempts = (current.hit ? current.value : 0) + 1;
+        if (attempts >= 5) {
+          this.cache.set(lockoutKey, Date.now(), { ttlMs: 5 * 60 * 1000 });
+          this.cache.delete(failedKey);
+          throw new UnauthorizedException(
+            'Cuenta bloqueada temporalmente por demasiados intentos fallidos. Intenta más tarde en 5 minutos.',
+          );
+        } else {
+          this.cache.set(failedKey, attempts, { ttlMs: 5 * 60 * 1000 });
+        }
+      }
+      throw error;
+    }
   }
 
 

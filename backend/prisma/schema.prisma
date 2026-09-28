@@ -8,42 +8,6 @@ datasource db {
   schemas  = ["public"]
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 model TblPersona {
   idPer        String       @id @default(dbgenerated("gen_random_uuid()")) @map("id_per") @db.Uuid
   primerNombre String       @map("per_primer_nombre")
@@ -58,6 +22,7 @@ model TblPersona {
   clientes     TblCliente[] @relation("TblClientePersona")
   usuario      TblUsuario?
 
+  @@index([documento], map: "ix_tbl_personas_documento")
   @@map("tbl_personas")
   @@schema("public")
 }
@@ -101,6 +66,7 @@ model TblRecurso {
   interface String          @default("WEB") @map("rec_interface")
   roles     TblRolRecurso[]
 
+  @@unique([interface, nombre], map: "ux_tbl_recursos_interface_nombre")
   @@map("tbl_recursos")
   @@schema("public")
 }
@@ -112,6 +78,7 @@ model TblRolRecurso {
   recurso TblRecurso @relation(fields: [recId], references: [idRec])
   rol     TblRol     @relation(fields: [rolId], references: [idRol])
 
+  @@unique([recId, rolId], map: "ux_tbl_roles_recursos")
   @@map("tbl_roles_recursos")
   @@schema("public")
 }
@@ -137,6 +104,7 @@ model TblOrganizacion {
   usuarios                TblUsuarioOrganizacion[]
   tbl_wompi_transacciones tbl_wompi_transacciones[]
 
+  @@index([activo, accesoHasta], map: "ix_tbl_organizaciones_acceso")
   @@map("tbl_organizaciones")
   @@schema("public")
 }
@@ -151,6 +119,7 @@ model TblUsuarioOrganizacion {
   rol          TblRol          @relation(fields: [rolId], references: [idRol])
   usuario      TblUsuario      @relation(fields: [usuId], references: [idUsu])
 
+  @@unique([usuId, orgId, rolId], map: "ux_tbl_usuarios_organizaciones")
   @@map("tbl_usuarios_organizaciones")
   @@schema("public")
 }
@@ -168,6 +137,8 @@ model TblCliente {
   tbl_notificaciones tbl_notificaciones[]
   rutas              TblRutaCliente[]
 
+  @@unique([orgId, personaId], map: "ux_tbl_clientes_org_persona")
+  @@unique([orgId, referencia], map: "ux_tbl_clientes_org_referencia")
   @@map("tbl_clientes")
   @@schema("public")
 }
@@ -184,6 +155,8 @@ model TblRuta {
   usuario      TblUsuario       @relation(fields: [usuId], references: [idUsu])
   clientes     TblRutaCliente[]
 
+  @@unique([orgId, nombre], map: "ux_tbl_rutas_org_nombre")
+  @@index([usuId], map: "ix_tbl_rutas_usuario")
   @@map("tbl_rutas")
   @@schema("public")
 }
@@ -197,6 +170,8 @@ model TblRutaCliente {
   cliente  TblCliente @relation(fields: [cliId], references: [idCli])
   ruta     TblRuta    @relation(fields: [rutId], references: [idRut])
 
+  @@unique([rutId, cliId], map: "ux_tbl_rutas_clientes")
+  @@index([cliId], map: "ix_tbl_rutas_clientes_cliente")
   @@map("tbl_rutas_clientes")
   @@schema("public")
 }
@@ -231,12 +206,13 @@ model TblCaja {
   orgId        String          @map("org_id") @db.Uuid
   gasId        String?         @map("gas_id") @db.Uuid
   mon_id       String          @db.Uuid
-  tbl_monedas  tbl_monedas     @relation(fields: [mon_id], references: [id_mon], onDelete: Restrict, onUpdate: NoAction, map: "fk_cajas_moneda")
+  tbl_monedas  tbl_monedas     @relation(fields: [mon_id], references: [id_mon], onUpdate: NoAction, map: "fk_cajas_moneda")
   gasto        TblGasto?       @relation("TblCajaGasto", fields: [gasId], references: [idGas])
   organizacion TblOrganizacion @relation(fields: [orgId], references: [idOrg])
   gastos       TblGasto[]      @relation("TblGastoCaja")
   sesiones     TblSesionCaja[]
 
+  @@unique([orgId, nombre], map: "ux_tbl_cajas_org_nombre")
   @@map("tbl_cajas")
   @@schema("public")
 }
@@ -289,6 +265,7 @@ model TblMovimientoCaja {
   sesion         TblSesionCaja?  @relation(fields: [scaId], references: [idSca])
   usuario        TblUsuario      @relation(fields: [usuId], references: [idUsu])
 
+  @@index([orgId, creacion(sort: Desc)], map: "ix_tbl_movimientos_cajas_org_fecha")
   @@map("tbl_movimientos_cajas")
   @@schema("public")
 }
@@ -306,13 +283,15 @@ model TblCredito {
   pcrId              String               @map("pcr_id") @db.Uuid
   cliId              String               @map("cli_id") @db.Uuid
   mon_id             String               @db.Uuid
-  tbl_monedas        tbl_monedas          @relation(fields: [mon_id], references: [id_mon], onDelete: Restrict, onUpdate: NoAction, map: "fk_creditos_moneda")
+  tbl_monedas        tbl_monedas          @relation(fields: [mon_id], references: [id_mon], onUpdate: NoAction, map: "fk_creditos_moneda")
   cliente            TblCliente           @relation(fields: [cliId], references: [idCli])
   producto           TblProductoCredito   @relation(fields: [pcrId], references: [idPcr])
   usuario            TblUsuario           @relation(fields: [usuId], references: [idUsu])
   cuotas             TblCuota[]
   tbl_notificaciones tbl_notificaciones[]
 
+  @@index([cliId, estado], map: "ix_tbl_creditos_cliente_estado")
+  @@index([usuId, estado], map: "ix_tbl_creditos_usuario_estado")
   @@map("tbl_creditos")
   @@schema("public")
 }
@@ -328,6 +307,8 @@ model TblCuota {
   credito          TblCredito     @relation(fields: [creId], references: [idCre])
   pagos            TblCuotaPago[]
 
+  @@unique([creId, numero], map: "ux_tbl_cuotas_credito_numero")
+  @@index([fechaVencimiento, estado], map: "ix_tbl_cuotas_vencimiento_estado")
   @@map("tbl_cuotas")
   @@schema("public")
 }
@@ -359,10 +340,11 @@ model TblPago {
   mon_id                  String                   @db.Uuid
   cuotas                  TblCuotaPago[]
   tbl_notificaciones      tbl_notificaciones[]
-  tbl_monedas             tbl_monedas              @relation(fields: [mon_id], references: [id_mon], onDelete: Restrict, onUpdate: NoAction, map: "fk_pagos_moneda")
+  tbl_monedas             tbl_monedas              @relation(fields: [mon_id], references: [id_mon], onUpdate: NoAction, map: "fk_pagos_moneda")
   medioPago               TblMedioPago             @relation(fields: [medId], references: [idMed])
   tbl_wompi_transacciones tbl_wompi_transacciones?
 
+  @@index([fecha(sort: Desc)], map: "ix_tbl_pagos_fecha")
   @@map("tbl_pagos")
   @@schema("public")
 }
@@ -378,6 +360,8 @@ model TblCuotaPago {
   cuota   TblCuota @relation(fields: [cuoId], references: [idCuo])
   pago    TblPago  @relation(fields: [pagosId], references: [idPag])
 
+  @@unique([cuoId, pagosId], map: "ux_tbl_cuotas_pagos")
+  @@index([pagosId], map: "ix_tbl_cuotas_pagos_pago")
   @@map("tbl_cuotas_pagos")
   @@schema("public")
 }
@@ -420,6 +404,8 @@ model tbl_notificaciones {
 
   @@index([cli_id], map: "idx_tbl_notificaciones_cli")
   @@index([org_id], map: "idx_tbl_notificaciones_org")
+  @@index([cre_id], map: "idx_tbl_notificaciones_cre")
+  @@index([not_estado], map: "idx_tbl_notificaciones_estado")
   @@schema("public")
 }
 
@@ -443,5 +429,6 @@ model tbl_wompi_transacciones {
   tbl_pagos                TblPago?        @relation(fields: [pag_id], references: [idPag], onUpdate: NoAction)
 
   @@index([org_id, wtr_creacion(sort: Desc)], map: "ix_tbl_wompi_transacciones_org_creacion")
+  @@index([wtr_estado], map: "ix_tbl_wompi_transacciones_estado")
   @@schema("public")
 }

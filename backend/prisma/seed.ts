@@ -10,6 +10,38 @@ async function main() {
 }
 
 async function poblarCatalogosSistema() {
+
+  // 0. Aplicar restricciones CHECK que Prisma no soporta de forma nativa
+  const dbConfigSql = `
+
+    -- Restricciones CHECK
+    DO $$ BEGIN ALTER TABLE public.tbl_personas ADD CONSTRAINT chk_tbl_personas_documento CHECK (length(trim(per_documento)) > 0); EXCEPTION WHEN OTHERS THEN END; $$;
+    DO $$ BEGIN ALTER TABLE public.tbl_personas ADD CONSTRAINT chk_tbl_personas_email CHECK (per_email IS NULL OR position('@' IN per_email) > 1); EXCEPTION WHEN OTHERS THEN END; $$;
+    DO $$ BEGIN ALTER TABLE public.tbl_roles ADD CONSTRAINT chk_tbl_roles_nivel CHECK (rol_nivel > 0); EXCEPTION WHEN OTHERS THEN END; $$;
+    DO $$ BEGIN ALTER TABLE public.tbl_recursos ADD CONSTRAINT chk_tbl_recursos_orden CHECK (rec_orden >= 0); EXCEPTION WHEN OTHERS THEN END; $$;
+    DO $$ BEGIN ALTER TABLE public.tbl_organizaciones ADD CONSTRAINT chk_tbl_organizaciones_email CHECK (org_email IS NULL OR position('@' IN org_email) > 1); EXCEPTION WHEN OTHERS THEN END; $$;
+    DO $$ BEGIN ALTER TABLE public.tbl_organizaciones ADD CONSTRAINT chk_tbl_organizaciones_monto_plan CHECK (org_monto_plan >= 0); EXCEPTION WHEN OTHERS THEN END; $$;
+    DO $$ BEGIN ALTER TABLE public.tbl_organizaciones ADD CONSTRAINT chk_tbl_organizaciones_moneda_plan CHECK (org_moneda_plan = upper(org_moneda_plan)); EXCEPTION WHEN OTHERS THEN END; $$;
+    DO $$ BEGIN ALTER TABLE public.tbl_productos_creditos ADD CONSTRAINT chk_tbl_productos_creditos_tasa CHECK (pcr_tasa_interes >= 0); EXCEPTION WHEN OTHERS THEN END; $$;
+    DO $$ BEGIN ALTER TABLE public.tbl_monedas ADD CONSTRAINT chk_tbl_monedas_decimales CHECK (mon_decimales BETWEEN 0 AND 6); EXCEPTION WHEN OTHERS THEN END; $$;
+    DO $$ BEGIN ALTER TABLE public.tbl_gastos ADD CONSTRAINT chk_tbl_gastos_monto CHECK (gas_monto > 0); EXCEPTION WHEN OTHERS THEN END; $$;
+    DO $$ BEGIN ALTER TABLE public.tbl_sesiones_cajas ADD CONSTRAINT chk_tbl_sesiones_cajas_fechas CHECK (sca_fecha_cierre IS NULL OR sca_fecha_cierre >= sca_fecha_apertura); EXCEPTION WHEN OTHERS THEN END; $$;
+    DO $$ BEGIN ALTER TABLE public.tbl_movimientos_cajas ADD CONSTRAINT chk_tbl_movimientos_cajas_monto CHECK (mca_monto > 0); EXCEPTION WHEN OTHERS THEN END; $$;
+    DO $$ BEGIN ALTER TABLE public.tbl_creditos ADD CONSTRAINT chk_tbl_creditos_valores CHECK (cre_total > 0 AND cre_tasa_interes >= 0 AND cre_interes_total >= 0 AND cre_total_pagar >= cre_total); EXCEPTION WHEN OTHERS THEN END; $$;
+    DO $$ BEGIN ALTER TABLE public.tbl_creditos ADD CONSTRAINT chk_tbl_creditos_fechas CHECK (cre_fecha_fin >= cre_fecha_inicio); EXCEPTION WHEN OTHERS THEN END; $$;
+    DO $$ BEGIN ALTER TABLE public.tbl_cuotas ADD CONSTRAINT chk_tbl_cuotas_valores CHECK (cuo_valor > 0 AND cuo_total_pagado >= 0); EXCEPTION WHEN OTHERS THEN END; $$;
+    DO $$ BEGIN ALTER TABLE public.tbl_pagos ADD CONSTRAINT chk_tbl_pagos_monto CHECK (pag_monto > 0); EXCEPTION WHEN OTHERS THEN END; $$;
+    DO $$ BEGIN ALTER TABLE public.tbl_cuotas_pagos ADD CONSTRAINT chk_tbl_cuotas_pagos_valores CHECK (cpa_capital >= 0 AND cpa_interes >= 0 AND cpa_total > 0); EXCEPTION WHEN OTHERS THEN END; $$;
+  `;
+
+  for (const q of dbConfigSql.split(';').map(x => x.trim()).filter(Boolean)) {
+    try {
+      await prisma.$executeRawUnsafe(q);
+    } catch (e) {
+      // Ignorar errores si ya existen
+    }
+  }
+
   // 1. Monedas
   await prisma.$executeRaw`
     INSERT INTO public.tbl_monedas (mon_codigo, mon_nombre, mon_simbolo, mon_decimales)

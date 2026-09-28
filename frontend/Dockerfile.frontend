@@ -16,7 +16,8 @@ RUN flutter pub get
 COPY . .
 
 # Compilamos la aplicación web.
-RUN flutter build web --release --base-href /app/ --dart-define=API_BASE_URL=http://localhost:3000/api/v1
+# Usamos 127.0.0.1 en vez de localhost para evitar que Chrome fuerce HTTPS por políticas HSTS cacheadas
+RUN flutter build web --release --base-href /app/ --dart-define=API_BASE_URL=http://127.0.0.1:3000/api/v1
 
 # ==============================================================================
 # Etapa 2: Producción

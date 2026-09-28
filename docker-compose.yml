@@ -16,13 +16,15 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-    # CRÍTICO: Healthcheck para asegurar que la DB esté lista para aceptar
-    # conexiones antes de que el backend intente ejecutar migraciones.
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U prueba -d cobro_db"]
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      default:
+        aliases:
+          - postgres-db.supabase.co
 
   # ============================================================================
   # 2. Backend API (NestJS + Prisma)
@@ -34,16 +36,21 @@ services:
     container_name: cobro_backend
     restart: unless-stopped
     environment:
-      # Conexión a la base de datos apuntando al servicio postgres-db
-      DATABASE_URL: "postgresql://prueba:adminprueba!BB@postgres-db:5432/cobro_db?schema=public"
-      # JWT Secret (requerido típicamente en NestJS Auth)
+      NODE_ENV: "development"
+      # Forzamos al servidor a escuchar en 0.0.0.0 para que el puerto expuesto en Docker funcione
+      HOST: "0.0.0.0"
+      DATABASE_URL: "postgresql://prueba:adminprueba!BB@postgres-db.supabase.co:5432/cobro_db?schema=public"
+      # JWT Secret
       AUTH_TOKEN_SECRET: ${AUTH_TOKEN_SECRET:-clave_secreta_por_defecto_123}
-      # Credenciales para el administrador por defecto generadas en el seed
+      # Credenciales para el administrador inicial
+      ADMIN_USERNAME: "prueba"
+      ADMIN_PASSWORD: "adminprueba!BB"
       ADMIN_EMAIL: "admin@demo.com"
-      ADMIN_PASSWORD: "admin123"
       ADMIN_ROLE: "ADMINISTRADOR"
     ports:
       - "3000:3000"
+    # Ejecutamos db push y llamamos directamente al seed compilado ya que npx prisma db seed falla por config
+    command: ["sh", "-c", "npx prisma db push --accept-data-loss && node dist/prisma/seed.js && node dist/src/main.js"]
     # Dependencia estricta: El backend no iniciará hasta que postgres-db pase su healthcheck
     depends_on:
       postgres-db:

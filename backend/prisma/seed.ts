@@ -1,386 +1,192 @@
 import { Prisma, PrismaClient } from '@prisma/client';
-
 import { PasswordService } from '../src/modules/auth/password.service';
 
 const prisma = new PrismaClient();
-const passwords = new PasswordService();
-
-const permisosEmpleadoSeed = [
-  {
-    codigo: 'VER_EMPLEADOS',
-    nombre: 'Ver empleados',
-    rolNombre: 'Permiso ver empleados',
-  },
-  {
-    codigo: 'CREAR_CAJA_MENOR',
-    nombre: 'Crear caja menor',
-    rolNombre: 'Permiso crear caja menor',
-  },
-  {
-    codigo: 'REGISTRAR_FLUJO_CAJA',
-    nombre: 'Registrar flujo en caja menor',
-    rolNombre: 'Permiso registrar flujo en caja menor',
-  },
-  {
-    codigo: 'CREAR_CREDITOS',
-    nombre: 'Crear creditos',
-    rolNombre: 'Permiso crear creditos',
-  },
-  {
-    codigo: 'REFINANCIAR_CREDITOS',
-    nombre: 'Refinanciar creditos',
-    rolNombre: 'Permiso refinanciar creditos',
-  },
-  {
-    codigo: 'MODIFICAR_CREDITOS',
-    nombre: 'Modificar creditos',
-    rolNombre: 'Permiso modificar creditos',
-  },
-  {
-    codigo: 'ELIMINAR_CREDITOS',
-    nombre: 'Eliminar creditos',
-    rolNombre: 'Permiso eliminar creditos',
-  },
-  {
-    codigo: 'MODIFICAR_CLIENTES',
-    nombre: 'Modificar clientes',
-    rolNombre: 'Permiso modificar clientes',
-  },
-  {
-    codigo: 'AGREGAR_CUOTA',
-    nombre: 'Agregar cuota',
-    rolNombre: 'Permiso agregar cuota',
-  },
-  {
-    codigo: 'MODIFICAR_MOVIMIENTOS',
-    nombre: 'Modificar movimientos',
-    rolNombre: 'Permiso modificar movimientos',
-  },
-  {
-    codigo: 'ELIMINAR_MOVIMIENTOS',
-    nombre: 'Eliminar movimientos',
-    rolNombre: 'Permiso eliminar movimientos',
-  },
-] as const;
+const passwordService = new PasswordService();
 
 async function main() {
-  await prisma.moneda.createMany({
-    data: [
-      {
-        codigoMoneda: 'COP',
-        nombre: 'Peso colombiano',
-        simbolo: '$',
-        decimales: 2,
-      },
-      {
-        codigoMoneda: 'USD',
-        nombre: 'Dolar estadounidense',
-        simbolo: '$',
-        decimales: 2,
-      },
-    ],
-    skipDuplicates: true,
-  });
-
-  await prisma.estadoUsuario.createMany({
-    data: [
-      { codigo: 'ACTIVO', nombre: 'Activo' },
-      { codigo: 'INACTIVO', nombre: 'Inactivo' },
-    ],
-    skipDuplicates: true,
-  });
-
-  await prisma.rol.createMany({
-    data: [
-      { codigo: 'ADMINISTRADOR', nombre: 'Administrador' },
-      { codigo: 'COBRADOR', nombre: 'Cobrador' },
-      { codigo: 'AUDITOR', nombre: 'Auditor' },
-    ],
-    skipDuplicates: true,
-  });
-
-  await sincronizarPermisosEmpleado();
-
-  await prisma.estadoCliente.createMany({
-    data: [
-      { codigo: 'ACTIVO', nombre: 'Activo' },
-      { codigo: 'SUSPENDIDO', nombre: 'Suspendido' },
-      { codigo: 'BLOQUEADO', nombre: 'Bloqueado' },
-    ],
-    skipDuplicates: true,
-  });
-
-  await prisma.tipoDocumento.createMany({
-    data: [
-      { codigo: 'CC', nombre: 'Cedula de ciudadania' },
-      { codigo: 'CE', nombre: 'Cedula de extranjeria' },
-      { codigo: 'NIT', nombre: 'NIT' },
-      { codigo: 'PASAPORTE', nombre: 'Pasaporte' },
-    ],
-    skipDuplicates: true,
-  });
-
-  await prisma.tipoContacto.createMany({
-    data: [
-      { codigo: 'TELEFONO', nombre: 'Telefono' },
-      { codigo: 'WHATSAPP', nombre: 'WhatsApp' },
-      { codigo: 'CORREO', nombre: 'Correo electronico' },
-    ],
-    skipDuplicates: true,
-  });
-
-  await prisma.tipoDireccion.createMany({
-    data: [
-      { codigo: 'CASA', nombre: 'Casa' },
-      { codigo: 'NEGOCIO', nombre: 'Negocio' },
-      { codigo: 'OTRA', nombre: 'Otra' },
-    ],
-    skipDuplicates: true,
-  });
-
-  await prisma.estadoRuta.createMany({
-    data: [
-      { codigo: 'ABIERTA', nombre: 'Abierta' },
-      { codigo: 'CERRADA', nombre: 'Cerrada' },
-      { codigo: 'PAUSADA', nombre: 'Pausada' },
-    ],
-    skipDuplicates: true,
-  });
-
-  await prisma.frecuenciaPago.createMany({
-    data: [
-      { codigo: 'DIARIO', nombre: 'Diario', diasIntervalo: 1 },
-      { codigo: 'SEMANAL', nombre: 'Semanal', diasIntervalo: 7 },
-      { codigo: 'QUINCENAL', nombre: 'Quincenal', diasIntervalo: 15 },
-      { codigo: 'MENSUAL', nombre: 'Mensual', diasIntervalo: 30 },
-    ],
-    skipDuplicates: true,
-  });
-
-  await prisma.estadoCredito.createMany({
-    data: [
-      { codigo: 'CONFIGURADO', nombre: 'Configurado' },
-      { codigo: 'ACTIVO', nombre: 'Activo' },
-      { codigo: 'PAGADO', nombre: 'Pagado' },
-      { codigo: 'VENCIDO', nombre: 'Vencido' },
-      { codigo: 'ANULADO', nombre: 'Anulado' },
-    ],
-    skipDuplicates: true,
-  });
-
-  await prisma.estadoCuota.createMany({
-    data: [
-      { codigo: 'PENDIENTE', nombre: 'Pendiente' },
-      { codigo: 'PAGADA', nombre: 'Pagada' },
-      { codigo: 'VENCIDA', nombre: 'Vencida' },
-      { codigo: 'ANULADA', nombre: 'Anulada' },
-    ],
-    skipDuplicates: true,
-  });
-
-  await prisma.medioPago.createMany({
-    data: [
-      { codigo: 'EFECTIVO', nombre: 'Efectivo' },
-      { codigo: 'TRANSFERENCIA', nombre: 'Transferencia' },
-      { codigo: 'TARJETA', nombre: 'Tarjeta' },
-      { codigo: 'OTRO', nombre: 'Otro' },
-    ],
-    skipDuplicates: true,
-  });
-
-  await prisma.tipoMovimientoCaja.createMany({
-    data: [
-      {
-        codigo: 'AJUSTE_ENTRADA',
-        nombre: 'Ajuste de entrada',
-        naturaleza: 'E',
-      },
-      { codigo: 'RECAUDO', nombre: 'Recaudo', naturaleza: 'E' },
-      {
-        codigo: 'DESEMBOLSO_CREDITO',
-        nombre: 'Desembolso de credito',
-        naturaleza: 'S',
-      },
-      { codigo: 'GASTO', nombre: 'Gasto', naturaleza: 'S' },
-      { codigo: 'AJUSTE_SALIDA', nombre: 'Ajuste de salida', naturaleza: 'S' },
-    ],
-    skipDuplicates: true,
-  });
-  await prisma.tipoMovimientoCaja.updateMany({
-    where: { codigo: { in: ['GASTO', 'DESEMBOLSO_CREDITO', 'AJUSTE_SALIDA'] } },
-    data: { naturaleza: 'S' },
-  });
-  await prisma.tipoMovimientoCaja.updateMany({
-    where: { codigo: { in: ['RECAUDO', 'AJUSTE_ENTRADA'] } },
-    data: { naturaleza: 'E' },
-  });
-
-  await prisma.categoriaGasto.createMany({
-    data: [
-      { codigo: 'TRANSPORTE', nombre: 'Transporte' },
-      { codigo: 'PAPELERIA', nombre: 'Papeleria' },
-      { codigo: 'COMISION', nombre: 'Comision' },
-      { codigo: 'OTRO', nombre: 'Otro' },
-    ],
-    skipDuplicates: true,
-  });
-
+  await poblarCatalogosSistema();
   await crearAdministradorInicial();
 }
 
-async function sincronizarPermisosEmpleado() {
-  const rolAdministrador = await prisma.rol.findUnique({
-    where: { codigo: 'ADMINISTRADOR' },
-  });
+async function poblarCatalogosSistema() {
+  // 1. Monedas
+  await prisma.$executeRaw`
+    INSERT INTO public.tbl_monedas (mon_codigo, mon_nombre, mon_simbolo, mon_decimales)
+    VALUES
+      ('COP', 'Peso colombiano', '$', 2),
+      ('USD', 'Dolar estadounidense', '$', 2)
+    ON CONFLICT (mon_codigo) DO NOTHING;
+  `;
 
-  for (const permiso of permisosEmpleadoSeed) {
-    const [rol, recurso] = await Promise.all([
-      prisma.rol.upsert({
-        where: { codigo: permiso.codigo },
-        create: { codigo: permiso.codigo, nombre: permiso.rolNombre },
-        update: { nombre: permiso.rolNombre },
-      }),
-      prisma.$queryRaw<Array<{ recurso_id: number }>>(Prisma.sql`
-        INSERT INTO public.recurso (codigo, nombre)
-        VALUES (${permiso.codigo}, ${permiso.nombre})
-        ON CONFLICT (codigo) DO UPDATE
-        SET nombre = EXCLUDED.nombre,
-            actualizado_en = now()
-        RETURNING recurso_id
-      `),
-    ]);
-    const recursoId = recurso[0]?.recurso_id;
+  // 2. Roles
+  await prisma.$executeRaw`
+    INSERT INTO public.tbl_roles (rol_tip, rol_nivel)
+    VALUES
+      ('ADMINISTRADOR', 1),
+      ('COBRADOR', 2),
+      ('AUDITOR', 3),
+      ('SUPER_ADMIN', 4)
+    ON CONFLICT (rol_tip) DO UPDATE SET rol_nivel = EXCLUDED.rol_nivel;
+  `;
 
-    if (!recursoId) {
-      throw new Error(`No existe el recurso ${permiso.codigo}`);
-    }
-
-    await prisma.$executeRaw(Prisma.sql`
-      INSERT INTO public.rol_recurso (rol_id, recurso_id)
-      VALUES (${rol.rolId}, ${recursoId})
-      ON CONFLICT DO NOTHING
-    `);
-
-    if (rolAdministrador) {
-      await prisma.$executeRaw(Prisma.sql`
-        INSERT INTO public.rol_recurso (rol_id, recurso_id)
-        VALUES (${rolAdministrador.rolId}, ${recursoId})
-        ON CONFLICT DO NOTHING
-      `);
-    }
+  // 3. Recursos
+  const countRecursos = await prisma.$queryRaw<Array<{count: bigint}>>`SELECT count(*) FROM public.tbl_recursos`;
+  if (Number(countRecursos[0].count) === 0) {
+    await prisma.$executeRaw`
+      INSERT INTO public.tbl_recursos (nom, rec_orden, rec_interface)
+      VALUES
+        ('VER_EMPLEADOS', 10, 'WEB'),
+        ('CREAR_CAJA_MENOR', 20, 'WEB'),
+        ('REGISTRAR_FLUJO_CAJA', 30, 'WEB'),
+        ('CREAR_CREDITOS', 40, 'WEB'),
+        ('REFINANCIAR_CREDITOS', 50, 'WEB'),
+        ('MODIFICAR_CREDITOS', 60, 'WEB'),
+        ('ELIMINAR_CREDITOS', 70, 'WEB'),
+        ('MODIFICAR_CLIENTES', 75, 'WEB'),
+        ('AGREGAR_CUOTA', 80, 'WEB'),
+        ('MODIFICAR_MOVIMIENTOS', 90, 'WEB'),
+        ('ELIMINAR_MOVIMIENTOS', 100, 'WEB');
+    `;
   }
+
+  // 4. Roles Recursos
+  const countRolRecurso = await prisma.$queryRaw<Array<{count: bigint}>>`SELECT count(*) FROM public.tbl_roles_recursos`;
+  if (Number(countRolRecurso[0].count) === 0) {
+    await prisma.$executeRaw`
+      INSERT INTO public.tbl_roles_recursos (rol_id, rec_id)
+      SELECT rol.id_rol, recurso.id_rec
+      FROM public.tbl_roles rol
+      JOIN public.tbl_recursos recurso ON recurso.rec_interface = 'WEB'
+      WHERE rol.rol_tip = 'ADMINISTRADOR'
+        AND recurso.nom IN ('VER_EMPLEADOS', 'CREAR_CAJA_MENOR', 'REGISTRAR_FLUJO_CAJA', 'CREAR_CREDITOS', 'REFINANCIAR_CREDITOS', 'MODIFICAR_CREDITOS', 'ELIMINAR_CREDITOS', 'MODIFICAR_CLIENTES', 'AGREGAR_CUOTA', 'MODIFICAR_MOVIMIENTOS', 'ELIMINAR_MOVIMIENTOS')
+    `;
+    await prisma.$executeRaw`
+      INSERT INTO public.tbl_roles_recursos (rol_id, rec_id)
+      SELECT rol.id_rol, recurso.id_rec
+      FROM public.tbl_roles rol
+      JOIN public.tbl_recursos recurso ON recurso.rec_interface = 'WEB'
+      WHERE rol.rol_tip = 'AUDITOR' AND recurso.nom = 'VER_EMPLEADOS'
+    `;
+    await prisma.$executeRaw`
+      INSERT INTO public.tbl_roles_recursos (rol_id, rec_id)
+      SELECT rol.id_rol, recurso.id_rec
+      FROM public.tbl_roles rol
+      JOIN public.tbl_recursos recurso ON recurso.rec_interface = 'WEB'
+      WHERE rol.rol_tip = 'COBRADOR'
+        AND recurso.nom IN ('CREAR_CAJA_MENOR', 'REGISTRAR_FLUJO_CAJA', 'CREAR_CREDITOS', 'REFINANCIAR_CREDITOS', 'MODIFICAR_CREDITOS', 'ELIMINAR_CREDITOS', 'AGREGAR_CUOTA', 'MODIFICAR_MOVIMIENTOS', 'ELIMINAR_MOVIMIENTOS')
+    `;
+  }
+
+  // 5. Productos Creditos
+  await prisma.$executeRaw`
+    INSERT INTO public.tbl_productos_creditos (pcr_nombre, pcr_frecuencia, pcr_tasa_interes)
+    VALUES
+      ('Credito diario', 'DIARIO', 20.0000),
+      ('Credito semanal', 'SEMANAL', 20.0000),
+      ('Credito quincenal', 'QUINCENAL', 20.0000),
+      ('Credito mensual', 'MENSUAL', 20.0000)
+    ON CONFLICT (pcr_nombre) DO UPDATE SET pcr_frecuencia = EXCLUDED.pcr_frecuencia, pcr_tasa_interes = EXCLUDED.pcr_tasa_interes;
+  `;
+
+  // 6. Medios Pagos
+  await prisma.$executeRaw`
+    INSERT INTO public.tbl_medios_pagos (med_nombre, med_tipo)
+    VALUES
+      ('Efectivo', 'EFECTIVO'),
+      ('Transferencia', 'TRANSFERENCIA'),
+      ('Tarjeta', 'TARJETA'),
+      ('Billetera', 'BILLETERA'),
+      ('Otro', 'OTRO')
+    ON CONFLICT (med_tipo) DO NOTHING;
+  `;
+
+  // 7. Categorias Gastos
+  await prisma.$executeRaw`
+    INSERT INTO public.tbl_categorias_gastos (cga_nombre, cga_descripcion)
+    VALUES
+      ('TRANSPORTE', 'Gastos de transporte'),
+      ('PAPELERIA', 'Papeleria e insumos'),
+      ('COMISION', 'Comisiones operativas'),
+      ('OTRO', 'Otros gastos')
+    ON CONFLICT (cga_nombre) DO NOTHING;
+  `;
 }
 
 async function crearAdministradorInicial() {
-  const administradores = await prisma.usuario.count({
-    where: {
-      passwordHash: { not: 'disabled' },
-      roles: {
-        some: {
-          rol: { codigo: 'ADMINISTRADOR' },
-        },
-      },
-    },
-  });
+  const adminRoleType = 'ADMINISTRADOR';
 
-  if (administradores > 0) {
+  // Verificamos si ya existe algun usuario activo con rol ADMINISTRADOR
+  const admins = await prisma.$queryRaw<Array<{ id_usu: string }>>`
+    SELECT u.id_usu::text
+    FROM public.tbl_usuarios u
+    JOIN public.tbl_usuarios_organizaciones uo ON u.id_usu = uo.usu_id
+    JOIN public.tbl_roles r ON uo.rol_id = r.id_rol
+    WHERE r.rol_tip = ${adminRoleType}
+      AND u.usu_activo = true
+      AND u.usu_password != 'disabled'
+    LIMIT 1
+  `;
+
+  if (admins.length > 0) {
+    console.info('Ya existe un administrador en la base de datos. Omitiendo creacion.');
     return;
   }
 
-  const [estadoActivo, rolAdministrador] = await Promise.all([
-    prisma.estadoUsuario.findUnique({ where: { codigo: 'ACTIVO' } }),
-    prisma.rol.findUnique({ where: { codigo: 'ADMINISTRADOR' } }),
-  ]);
+  const nombreCompleto = process.env.SUPERADMIN_NOMBRE || 'Administrador Cobro';
+  const nombreUsuario = process.env.SUPERADMIN_USUARIO || 'prueba';
+  const correo = process.env.SUPERADMIN_CORREO || 'admin@demo.com';
+  const passwordPlano = process.env.SUPERADMIN_PASSWORD || 'adminprueba!BB';
 
-  if (!estadoActivo || !rolAdministrador) {
-    throw new Error('Faltan catalogos base para crear el administrador');
-  }
-
-  const nombreUsuario = (process.env.ADMIN_USERNAME ?? 'admin')
-    .trim()
-    .toLowerCase();
-  const correo = (process.env.ADMIN_EMAIL ?? 'admin@cobro.local')
-    .trim()
-    .toLowerCase();
-  const contrasena =
-    process.env.ADMIN_PASSWORD ?? 'Admin-local-development-12345!';
-  if (
-    contrasena.length < 12 ||
-    contrasena.length > 128 ||
-    (process.env.NODE_ENV === 'production' && !process.env.ADMIN_PASSWORD)
-  ) {
-    throw new Error(
-      'ADMIN_PASSWORD is required in production and must have 12 to 128 characters',
-    );
-  }
-  const nombreCompleto = process.env.ADMIN_FULL_NAME ?? 'Administrador Cobro';
+  const passwordHash = await passwordService.hash(passwordPlano);
   const nombre = separarNombre(nombreCompleto);
-  const existente = await prisma.usuario.findUnique({
-    where: { nombreUsuario },
+
+  await prisma.$transaction(async (tx) => {
+    const [persona] = await tx.$queryRaw<Array<{ id: string }>>`
+      INSERT INTO public.tbl_personas (per_primer_nombre, per_apellido, per_documento, per_email)
+      VALUES (${nombre.nombres}, ${nombre.apellidos || ' '}, ${'admin-seed-' + nombreUsuario}, ${correo})
+      RETURNING id_per::text AS id
+    `;
+
+    const [usuario] = await tx.$queryRaw<Array<{ id: string }>>`
+      INSERT INTO public.tbl_usuarios (usu_usuario, usu_password, persona_id)
+      VALUES (${nombreUsuario}, ${passwordHash}, ${persona.id}::uuid)
+      RETURNING id_usu::text AS id
+    `;
+
+    const [organizacion] = await tx.$queryRaw<Array<{ id: string }>>`
+      INSERT INTO public.tbl_organizaciones (org_nombre, org_activo, org_es_sistema)
+      VALUES ('Organizacion Demo', true, false)
+      RETURNING id_org::text AS id
+    `;
+
+    const [rol] = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT id_rol::text AS id FROM public.tbl_roles WHERE rol_tip = 'ADMINISTRADOR' LIMIT 1
+    `;
+
+    await tx.$executeRaw`
+      INSERT INTO public.tbl_usuarios_organizaciones (usu_id, org_id, rol_id)
+      VALUES (${usuario.id}::uuid, ${organizacion.id}::uuid, ${rol.id}::uuid)
+    `;
+    
+    console.info(`Administrador inicial creado exitosamente: ${nombreUsuario}`);
   });
-
-  if (existente) {
-    await prisma.usuario.update({
-      where: { usuarioId: existente.usuarioId },
-      data: {
-        estadoUsuarioId: estadoActivo.estadoUsuarioId,
-        passwordHash: await passwords.hash(contrasena),
-      },
-    });
-    await prisma.usuarioRol.upsert({
-      where: {
-        usuarioId_rolId: {
-          usuarioId: existente.usuarioId,
-          rolId: rolAdministrador.rolId,
-        },
-      },
-      create: {
-        usuarioId: existente.usuarioId,
-        rolId: rolAdministrador.rolId,
-      },
-      update: {},
-    });
-    return;
-  }
-
-  await prisma.usuario.create({
-    data: {
-      estadoUsuarioId: estadoActivo.estadoUsuarioId,
-      nombreUsuario,
-      passwordHash: await passwords.hash(contrasena),
-      nombres: nombre.nombres,
-      apellidos: nombre.apellidos,
-      correo,
-      roles: {
-        create: {
-          rolId: rolAdministrador.rolId,
-        },
-      },
-    },
-  });
-
-  console.info(`Administrador inicial creado: ${nombreUsuario}`);
 }
 
 function separarNombre(nombreCompleto: string) {
   const partes = nombreCompleto.trim().split(/\s+/);
-
-  if (partes.length === 1) {
-    return { nombres: partes[0], apellidos: '' };
-  }
-
-  return {
-    nombres: partes.slice(0, -1).join(' '),
-    apellidos: partes[partes.length - 1],
-  };
+  if (partes.length === 1) return { nombres: partes[0], apellidos: '' };
+  const primerNombre = partes[0];
+  const apellidos = partes.slice(1).join(' ');
+  return { nombres: primerNombre, apellidos };
 }
 
 main()
   .then(async () => {
     await prisma.$disconnect();
   })
-  .catch(async (error: unknown) => {
-    console.error(error);
+  .catch(async (e) => {
+    console.error(e);
     await prisma.$disconnect();
     process.exit(1);
   });

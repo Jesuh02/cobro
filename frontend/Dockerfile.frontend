@@ -2,7 +2,7 @@
 # Etapa 1: Builder
 # ==============================================================================
 # Usamos una imagen de CirrusLabs que contiene el SDK de Flutter preinstalado
-FROM ghcr.io/cirruslabs/flutter:3.24.0 AS builder
+FROM ghcr.io/cirruslabs/flutter:stable AS builder
 
 # Establecemos el directorio de trabajo
 WORKDIR /app

@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  # ============================================================================
+  # 1. Base de Datos (PostgreSQL)
+  # ============================================================================
+  postgres-db:
+    image: postgres:15-alpine
+    container_name: cobro_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: prueba
+      POSTGRES_PASSWORD: adminprueba!BB
+      POSTGRES_DB: cobro_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # CRÍTICO: Healthcheck para asegurar que la DB esté lista para aceptar
+    # conexiones antes de que el backend intente ejecutar migraciones.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prueba -d cobro_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================================
+  # 2. Backend API (NestJS + Prisma)
+  # ============================================================================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.backend
+    container_name: cobro_backend
+    restart: unless-stopped
+    environment:
+      # Conexión a la base de datos apuntando al servicio postgres-db
+      DATABASE_URL: "postgresql://prueba:adminprueba!BB@postgres-db:5432/cobro_db?schema=public"
+      # JWT Secret (requerido típicamente en NestJS Auth)
+      AUTH_TOKEN_SECRET: ${AUTH_TOKEN_SECRET:-clave_secreta_por_defecto_123}
+      # Credenciales para el administrador por defecto generadas en el seed
+      ADMIN_EMAIL: "admin@demo.com"
+      ADMIN_PASSWORD: "admin123"
+      ADMIN_ROLE: "ADMINISTRADOR"
+    ports:
+      - "3000:3000"
+    # Dependencia estricta: El backend no iniciará hasta que postgres-db pase su healthcheck
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+
+  # ============================================================================
+  # 3. Frontend Cliente (Flutter Web + Nginx)
+  # ============================================================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.frontend
+    container_name: cobro_frontend
+    restart: unless-stopped
+    ports:
+      # Mapeamos el puerto 8080 del host al puerto 80 del contenedor Nginx
+      - "8080:80"
+    depends_on:
+      - backend
+
+# ==============================================================================
+# Declaración de Volúmenes
+# ==============================================================================
+volumes:
+  pgdata:
+    name: cobro_pg_data

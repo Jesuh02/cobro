@@ -23,7 +23,7 @@ class AppConfig {
         uri.hasQuery ||
         uri.hasFragment ||
         (uri.scheme != 'https' && !(uri.scheme == 'http' && loopback)) ||
-        (kReleaseMode && uri.scheme != 'https')) {
+        (kReleaseMode && uri.scheme != 'https' && !loopback)) {
       throw StateError(
         'API_BASE_URL debe ser una URL HTTPS valida sin credenciales, query ni fragmento',
       );

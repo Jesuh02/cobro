@@ -1,0 +1,66 @@
+# ==============================================================================
+# Etapa 1: Builder
+# ==============================================================================
+# Usamos node:22-slim en lugar de alpine para evitar problemas con Prisma y la falta de libc
+FROM node:22-slim AS builder
+
+# Instalamos openssl, requerido por el motor subyacente de Prisma
+RUN apt-get update -y && apt-get install -y openssl
+
+# Establecemos el directorio de trabajo dentro del contenedor
+WORKDIR /app
+
+# Copiamos los archivos de declaración de dependencias
+COPY package*.json ./
+COPY prisma ./prisma/
+
+# Instalamos todas las dependencias (incluyendo devDependencies para compilar)
+RUN npm install
+
+# Generamos el Prisma Client
+RUN npx prisma generate
+
+# Copiamos el resto del código fuente del backend
+COPY . .
+
+# Compilamos el proyecto (esto generará la carpeta "dist")
+RUN npm run build
+
+# ==============================================================================
+# Etapa 2: Producción
+# ==============================================================================
+FROM node:22-slim AS production
+
+# Instalamos openssl necesario para ejecutar Prisma, y limpiamos la cache de apt para reducir tamaño
+RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copiamos solo los archivos necesarios
+COPY package*.json ./
+COPY prisma ./prisma/
+
+# Instalamos únicamente las dependencias de producción para mantener la imagen ligera
+RUN npm ci --omit=dev
+
+# Instalamos el CLI de prisma de manera temporal o global para asegurar que el comando npx prisma funcione 
+# en producción sin requerir devDependencies.
+RUN npm install prisma --no-save
+
+# Copiamos la carpeta dist (código compilado) desde la etapa builder
+COPY --from=builder /app/dist ./dist
+# Copiamos el Prisma Client generado en el node_modules del builder
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+
+# Variables de entorno por defecto
+ENV NODE_ENV=production
+ENV PORT=3000
+
+# Exponemos el puerto de la aplicación
+EXPOSE 3000
+
+# Arranque autónomo (plug-and-play):
+# 1. Ejecuta las migraciones de Prisma para inicializar/actualizar la base de datos
+# 2. Ejecuta el seed para insertar catálogos o administradores iniciales
+# 3. Levanta el servidor de NestJS
+CMD ["sh", "-c", "npx prisma migrate deploy && npx prisma db seed && node dist/src/main.js"]

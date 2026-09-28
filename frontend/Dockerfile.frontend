@@ -1,0 +1,37 @@
+# ==============================================================================
+# Etapa 1: Builder
+# ==============================================================================
+# Usamos una imagen de CirrusLabs que contiene el SDK de Flutter preinstalado
+FROM ghcr.io/cirruslabs/flutter:3.24.0 AS builder
+
+# Establecemos el directorio de trabajo
+WORKDIR /app
+
+# Copiamos pubspec para instalar las dependencias primero
+COPY pubspec.* ./
+RUN flutter pub get
+
+# Copiamos todo el código fuente del proyecto
+COPY . .
+
+# Compilamos la aplicación web.
+RUN flutter build web --release --base-href /app/ --dart-define=API_BASE_URL=http://localhost:3000/api/v1
+
+# ==============================================================================
+# Etapa 2: Producción
+# ==============================================================================
+# Usamos una imagen ligera de Nginx basada en Alpine para servir los estáticos
+FROM nginx:alpine AS production
+
+# Limpiamos el contenido por defecto del Nginx
+RUN rm -rf /usr/share/nginx/html/*
+
+# Copiamos los artefactos de la compilación de Flutter desde la etapa builder
+# hacia la carpeta /app en Nginx, coincidiendo con el --base-href que especificamos.
+COPY --from=builder /app/build/web /usr/share/nginx/html/app
+
+# Exponemos el puerto estándar 80
+EXPOSE 80
+
+# Nginx se arranca de forma automática al iniciar el contenedor
+CMD ["nginx", "-g", "daemon off;"]

@@ -753,6 +753,8 @@ model TblCaja {
   creacion     DateTime        @default(now()) @map("caj_creacion") @db.Timestamptz(6)
   orgId        String          @map("org_id") @db.Uuid
   gasId        String?         @map("gas_id") @db.Uuid
+  mon_id       String          @db.Uuid
+  tbl_monedas  tbl_monedas     @relation(fields: [mon_id], references: [id_mon], onDelete: Restrict, onUpdate: NoAction, map: "fk_cajas_moneda")
   gasto        TblGasto?       @relation("TblCajaGasto", fields: [gasId], references: [idGas])
   organizacion TblOrganizacion @relation(fields: [orgId], references: [idOrg])
   gastos       TblGasto[]      @relation("TblGastoCaja")
@@ -826,6 +828,8 @@ model TblCredito {
   usuId              String               @map("usu_id") @db.Uuid
   pcrId              String               @map("pcr_id") @db.Uuid
   cliId              String               @map("cli_id") @db.Uuid
+  mon_id             String               @db.Uuid
+  tbl_monedas        tbl_monedas          @relation(fields: [mon_id], references: [id_mon], onDelete: Restrict, onUpdate: NoAction, map: "fk_creditos_moneda")
   cliente            TblCliente           @relation(fields: [cliId], references: [idCli])
   producto           TblProductoCredito   @relation(fields: [pcrId], references: [idPcr])
   usuario            TblUsuario           @relation(fields: [usuId], references: [idUsu])
@@ -875,8 +879,10 @@ model TblPago {
   idempotencyLlave        String                   @unique @default(dbgenerated("gen_random_uuid()")) @map("pag_idempotency_llave") @db.Uuid
   estado                  String                   @default("REGISTRADO") @map("pag_estado")
   medId                   String                   @map("med_id") @db.Uuid
+  mon_id                  String                   @db.Uuid
   cuotas                  TblCuotaPago[]
   tbl_notificaciones      tbl_notificaciones[]
+  tbl_monedas             tbl_monedas              @relation(fields: [mon_id], references: [id_mon], onDelete: Restrict, onUpdate: NoAction, map: "fk_pagos_moneda")
   medioPago               TblMedioPago             @relation(fields: [medId], references: [idMed])
   tbl_wompi_transacciones tbl_wompi_transacciones?
 
@@ -908,6 +914,9 @@ model tbl_monedas {
   mon_decimales           BigInt                    @default(2)
   mon_activa              Boolean                   @default(true)
   mon_creacion            DateTime                  @default(now()) @db.Timestamptz(6)
+  tbl_cajas               TblCaja[]
+  tbl_creditos            TblCredito[]
+  tbl_pagos               TblPago[]
   tbl_wompi_transacciones tbl_wompi_transacciones[]
 
   @@schema("public")

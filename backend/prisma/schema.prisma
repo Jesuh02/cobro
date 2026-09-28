@@ -177,10 +177,10 @@ model TblRutaCliente {
 }
 
 model TblProductoCredito {
-  idPcr       String       @id @default(dbgenerated("gen_random_uuid()")) @map("id_pcr") @db.Uuid
-  nombre      String       @unique @map("pcr_nombre")
-  frecuencia  String       @map("pcr_frecuencia")
-  tasaInteres Decimal      @map("pcr_tasa_interes")
+  idPcr       String                           @id @default(dbgenerated("gen_random_uuid()")) @map("id_pcr") @db.Uuid
+  nombre      String                           @unique @map("pcr_nombre")
+  frecuencia  producto_credito_frecuencia_enum @map("pcr_frecuencia")
+  tasaInteres Decimal                          @map("pcr_tasa_interes")
   creditos    TblCredito[]
 
   @@map("tbl_productos_creditos")
@@ -200,7 +200,7 @@ model TblCategoriaGasto {
 model TblCaja {
   idCaj        String          @id @default(dbgenerated("gen_random_uuid()")) @map("id_caj") @db.Uuid
   nombre       String          @map("caj_nombre")
-  tipo         String          @default("MENOR") @map("caj_tipo")
+  tipo         caja_tipo_enum  @default(MENOR) @map("caj_tipo")
   activa       Boolean         @default(true) @map("caj_activa")
   creacion     DateTime        @default(now()) @map("caj_creacion") @db.Timestamptz(6)
   orgId        String          @map("org_id") @db.Uuid
@@ -234,36 +234,36 @@ model TblGasto {
 }
 
 model TblSesionCaja {
-  idSca           String              @id @default(dbgenerated("gen_random_uuid()")) @map("id_sca") @db.Uuid
-  fechaApertura   DateTime            @default(now()) @map("sca_fecha_apertura") @db.Timestamptz(6)
-  fechaCierre     DateTime?           @map("sca_fecha_cierre") @db.Timestamptz(6)
-  montoInicial    Decimal             @default(0) @map("sca_monto_inicial")
-  totalCobrado    Decimal             @default(0) @map("sca_total_cobrado")
-  totalGasto      Decimal             @default(0) @map("sca_total_gasto")
-  estado          String              @default("ABIERTA") @map("sca_estado")
-  cajId           String              @map("caj_id") @db.Uuid
-  usuId           String              @map("usu_id") @db.Uuid
+  idSca           String                  @id @default(dbgenerated("gen_random_uuid()")) @map("id_sca") @db.Uuid
+  fechaApertura   DateTime                @default(now()) @map("sca_fecha_apertura") @db.Timestamptz(6)
+  fechaCierre     DateTime?               @map("sca_fecha_cierre") @db.Timestamptz(6)
+  montoInicial    Decimal                 @default(0) @map("sca_monto_inicial")
+  totalCobrado    Decimal                 @default(0) @map("sca_total_cobrado")
+  totalGasto      Decimal                 @default(0) @map("sca_total_gasto")
+  estado          sesion_caja_estado_enum @default(ABIERTA) @map("sca_estado")
+  cajId           String                  @map("caj_id") @db.Uuid
+  usuId           String                  @map("usu_id") @db.Uuid
   movimientosCaja TblMovimientoCaja[]
-  caja            TblCaja             @relation(fields: [cajId], references: [idCaj])
-  usuario         TblUsuario          @relation(fields: [usuId], references: [idUsu])
+  caja            TblCaja                 @relation(fields: [cajId], references: [idCaj])
+  usuario         TblUsuario              @relation(fields: [usuId], references: [idUsu])
 
   @@map("tbl_sesiones_cajas")
   @@schema("public")
 }
 
 model TblMovimientoCaja {
-  idMca          String          @id @default(dbgenerated("gen_random_uuid()")) @map("id_mca") @db.Uuid
-  tipo           String          @map("mca_tipo")
-  monto          Decimal         @map("mca_monto")
-  referenciaId   String?         @map("mca_referencia_id") @db.Uuid
-  referenciaTipo String?         @map("mca_referencia_tipo")
-  creacion       DateTime        @default(now()) @map("mca_creacion") @db.Timestamptz(6)
-  orgId          String          @map("org_id") @db.Uuid
-  usuId          String          @map("usu_id") @db.Uuid
-  scaId          String?         @map("sca_id") @db.Uuid
-  organizacion   TblOrganizacion @relation(fields: [orgId], references: [idOrg])
-  sesion         TblSesionCaja?  @relation(fields: [scaId], references: [idSca])
-  usuario        TblUsuario      @relation(fields: [usuId], references: [idUsu])
+  idMca          String                           @id @default(dbgenerated("gen_random_uuid()")) @map("id_mca") @db.Uuid
+  tipo           movimiento_caja_tipo_enum        @map("mca_tipo")
+  monto          Decimal                          @map("mca_monto")
+  referenciaId   String?                          @map("mca_referencia_id") @db.Uuid
+  referenciaTipo movimiento_referencia_tipo_enum? @map("mca_referencia_tipo")
+  creacion       DateTime                         @default(now()) @map("mca_creacion") @db.Timestamptz(6)
+  orgId          String                           @map("org_id") @db.Uuid
+  usuId          String                           @map("usu_id") @db.Uuid
+  scaId          String?                          @map("sca_id") @db.Uuid
+  organizacion   TblOrganizacion                  @relation(fields: [orgId], references: [idOrg])
+  sesion         TblSesionCaja?                   @relation(fields: [scaId], references: [idSca])
+  usuario        TblUsuario                       @relation(fields: [usuId], references: [idUsu])
 
   @@index([orgId, creacion(sort: Desc)], map: "ix_tbl_movimientos_cajas_org_fecha")
   @@map("tbl_movimientos_cajas")
@@ -273,7 +273,7 @@ model TblMovimientoCaja {
 model TblCredito {
   idCre              String               @id @default(dbgenerated("gen_random_uuid()")) @map("id_cre") @db.Uuid
   total              Decimal              @map("cre_total")
-  estado             String               @default("ACTIVO") @map("cre_estado")
+  estado             credito_estado_enum  @default(ACTIVO) @map("cre_estado")
   tasaInteres        Decimal              @map("cre_tasa_interes")
   interesTotal       Decimal              @map("cre_interes_total")
   totalPagar         Decimal              @map("cre_total_pagar")
@@ -297,14 +297,14 @@ model TblCredito {
 }
 
 model TblCuota {
-  idCuo            String         @id @default(dbgenerated("gen_random_uuid()")) @map("id_cuo") @db.Uuid
-  numero           BigInt         @map("cuo_numero")
-  valor            Decimal        @map("cuo_valor")
-  totalPagado      Decimal        @default(0) @map("cuo_total_pagado")
-  estado           String         @default("PENDIENTE") @map("cuo_estado")
-  fechaVencimiento DateTime       @map("cuo_fecha_vencimiento") @db.Date
-  creId            String         @map("cre_id") @db.Uuid
-  credito          TblCredito     @relation(fields: [creId], references: [idCre])
+  idCuo            String            @id @default(dbgenerated("gen_random_uuid()")) @map("id_cuo") @db.Uuid
+  numero           BigInt            @map("cuo_numero")
+  valor            Decimal           @map("cuo_valor")
+  totalPagado      Decimal           @default(0) @map("cuo_total_pagado")
+  estado           cuota_estado_enum @default(PENDIENTE) @map("cuo_estado")
+  fechaVencimiento DateTime          @map("cuo_fecha_vencimiento") @db.Date
+  creId            String            @map("cre_id") @db.Uuid
+  credito          TblCredito        @relation(fields: [creId], references: [idCre])
   pagos            TblCuotaPago[]
 
   @@unique([creId, numero], map: "ux_tbl_cuotas_credito_numero")
@@ -335,7 +335,7 @@ model TblPago {
   fecha                   DateTime                 @default(now()) @map("pag_fecha") @db.Timestamptz(6)
   referencia              String?                  @map("pag_referencia")
   idempotencyLlave        String                   @unique @default(dbgenerated("gen_random_uuid()")) @map("pag_idempotency_llave") @db.Uuid
-  estado                  String                   @default("REGISTRADO") @map("pag_estado")
+  estado                  pago_estado_enum         @default(REGISTRADO) @map("pag_estado")
   medId                   String                   @map("med_id") @db.Uuid
   mon_id                  String                   @db.Uuid
   cuotas                  TblCuotaPago[]
@@ -370,8 +370,8 @@ model TblCuotaPago {
 model tbl_monedas {
   id_mon                  String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   mon_codigo              String                    @unique(map: "ux_tbl_monedas_codigo") @db.Char(3)
-  mon_nombre              String                    @db.VarChar(80)
-  mon_simbolo             String                    @db.VarChar(8)
+  mon_nombre              String
+  mon_simbolo             String
   mon_decimales           BigInt                    @default(2)
   mon_activa              Boolean                   @default(true)
   mon_creacion            DateTime                  @default(now()) @db.Timestamptz(6)
@@ -384,23 +384,23 @@ model tbl_monedas {
 }
 
 model tbl_notificaciones {
-  id_not                 String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  org_id                 String          @db.Uuid
-  cli_id                 String          @db.Uuid
-  cre_id                 String?         @db.Uuid
-  pag_id                 String?         @db.Uuid
-  not_tipo               String          @db.VarChar(50)
-  not_canal              String          @db.VarChar(50)
-  not_estado             String          @default("PENDIENTE") @db.VarChar(50)
-  not_destinatario       String          @db.VarChar(180)
-  not_referencia_externa String?         @db.VarChar(255)
+  id_not                 String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  org_id                 String                   @db.Uuid
+  cli_id                 String                   @db.Uuid
+  cre_id                 String?                  @db.Uuid
+  pag_id                 String?                  @db.Uuid
+  not_tipo               notificacion_tipo_enum
+  not_canal              notificacion_canal_enum
+  not_estado             notificacion_estado_enum @default(PENDIENTE)
+  not_destinatario       String
+  not_referencia_externa String?
   not_error              String?
-  not_creacion           DateTime        @default(now()) @db.Timestamptz(6)
-  not_envio              DateTime?       @db.Timestamptz(6)
-  tbl_clientes           TblCliente      @relation(fields: [cli_id], references: [idCli], onDelete: Cascade, onUpdate: NoAction)
-  tbl_creditos           TblCredito?     @relation(fields: [cre_id], references: [idCre], onDelete: Cascade, onUpdate: NoAction)
-  tbl_organizaciones     TblOrganizacion @relation(fields: [org_id], references: [idOrg], onDelete: Cascade, onUpdate: NoAction)
-  tbl_pagos              TblPago?        @relation(fields: [pag_id], references: [idPag], onDelete: Cascade, onUpdate: NoAction)
+  not_creacion           DateTime                 @default(now()) @db.Timestamptz(6)
+  not_envio              DateTime?                @db.Timestamptz(6)
+  tbl_clientes           TblCliente               @relation(fields: [cli_id], references: [idCli], onDelete: Cascade, onUpdate: NoAction)
+  tbl_creditos           TblCredito?              @relation(fields: [cre_id], references: [idCre], onDelete: Cascade, onUpdate: NoAction)
+  tbl_organizaciones     TblOrganizacion          @relation(fields: [org_id], references: [idOrg], onDelete: Cascade, onUpdate: NoAction)
+  tbl_pagos              TblPago?                 @relation(fields: [pag_id], references: [idPag], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([cli_id], map: "idx_tbl_notificaciones_cli")
   @@index([org_id], map: "idx_tbl_notificaciones_org")
@@ -411,24 +411,168 @@ model tbl_notificaciones {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model tbl_wompi_transacciones {
-  id_wtr                   String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  org_id                   String          @db.Uuid
-  pag_id                   String?         @unique(map: "ux_tbl_wompi_transacciones_pago") @db.Uuid
-  mon_id                   String          @db.Uuid
-  wtr_tipo_pago            String          @db.VarChar(50)
-  wtr_estado               String          @default("PENDIENTE") @db.VarChar(50)
-  wtr_monto                Decimal         @db.Decimal(14, 2)
+  id_wtr                   String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  org_id                   String               @db.Uuid
+  pag_id                   String?              @unique(map: "ux_tbl_wompi_transacciones_pago") @db.Uuid
+  mon_id                   String               @db.Uuid
+  wtr_tipo_pago            wompi_tipo_pago_enum
+  wtr_estado               wompi_estado_enum    @default(PENDIENTE)
+  wtr_monto                Decimal              @db.Decimal(14, 2)
   wtr_monto_centavos       BigInt
-  wtr_referencia           String          @unique(map: "ux_tbl_wompi_transacciones_referencia") @db.VarChar(120)
-  wtr_wompi_transaction_id String?         @unique(map: "ux_tbl_wompi_transacciones_transaction") @db.VarChar(120)
-  wtr_periodo_inicio       DateTime?       @db.Date
-  wtr_periodo_fin          DateTime?       @db.Date
-  wtr_creacion             DateTime        @default(now()) @db.Timestamptz(6)
-  tbl_monedas              tbl_monedas     @relation(fields: [mon_id], references: [id_mon], onUpdate: NoAction)
-  tbl_organizaciones       TblOrganizacion @relation(fields: [org_id], references: [idOrg], onDelete: Cascade, onUpdate: NoAction)
-  tbl_pagos                TblPago?        @relation(fields: [pag_id], references: [idPag], onUpdate: NoAction)
+  wtr_referencia           String               @unique(map: "ux_tbl_wompi_transacciones_referencia")
+  wtr_wompi_transaction_id String?              @unique(map: "ux_tbl_wompi_transacciones_transaction")
+  wtr_periodo_inicio       DateTime?            @db.Date
+  wtr_periodo_fin          DateTime?            @db.Date
+  wtr_creacion             DateTime             @default(now()) @db.Timestamptz(6)
+  tbl_monedas              tbl_monedas          @relation(fields: [mon_id], references: [id_mon], onUpdate: NoAction)
+  tbl_organizaciones       TblOrganizacion      @relation(fields: [org_id], references: [idOrg], onDelete: Cascade, onUpdate: NoAction)
+  tbl_pagos                TblPago?             @relation(fields: [pag_id], references: [idPag], onUpdate: NoAction)
 
   @@index([org_id, wtr_creacion(sort: Desc)], map: "ix_tbl_wompi_transacciones_org_creacion")
   @@index([wtr_estado], map: "ix_tbl_wompi_transacciones_estado")
+  @@schema("public")
+}
+
+enum rol_tipo_enum {
+  SUPER_ADMIN
+  ADMINISTRADOR
+  COBRADOR
+  AUDITOR
+
+  @@schema("public")
+}
+
+enum recurso_interface_enum {
+  WEB
+  MOBILE
+  API
+  BACKOFFICE
+
+  @@schema("public")
+}
+
+enum producto_credito_frecuencia_enum {
+  DIARIO
+  SEMANAL
+  QUINCENAL
+  MENSUAL
+
+  @@schema("public")
+}
+
+enum caja_tipo_enum {
+  PRINCIPAL
+  MENOR
+  RECAUDO
+  OPERATIVA
+
+  @@schema("public")
+}
+
+enum sesion_caja_estado_enum {
+  ABIERTA
+  CERRADA
+  ANULADA
+
+  @@schema("public")
+}
+
+enum movimiento_caja_tipo_enum {
+  APERTURA
+  RECAUDO
+  GASTO
+  DESEMBOLSO_CREDITO
+  AJUSTE_ENTRADA
+  AJUSTE_SALIDA
+  CIERRE
+
+  @@schema("public")
+}
+
+enum movimiento_referencia_tipo_enum {
+  CREDITO
+  PAGO
+  GASTO
+  SESION_CAJA
+  AJUSTE
+
+  @@schema("public")
+}
+
+enum credito_estado_enum {
+  CONFIGURADO
+  ACTIVO
+  PAGADO
+  VENCIDO
+  ANULADO
+
+  @@schema("public")
+}
+
+enum cuota_estado_enum {
+  PENDIENTE
+  PAGADA
+  VENCIDA
+  ANULADA
+
+  @@schema("public")
+}
+
+enum pago_estado_enum {
+  REGISTRADO
+  CONFIRMADO
+  ANULADO
+
+  @@schema("public")
+}
+
+enum medio_pago_tipo_enum {
+  EFECTIVO
+  TRANSFERENCIA
+  TARJETA
+  BILLETERA
+  OTRO
+
+  @@schema("public")
+}
+
+enum wompi_tipo_pago_enum {
+  ORGANIZACION_PLAN
+  ORGANIZACION_RENOVACION
+  CLIENTE_CREDITO
+
+  @@schema("public")
+}
+
+enum wompi_estado_enum {
+  PENDIENTE
+  APROBADA
+  RECHAZADA
+  EXPIRADA
+  ANULADA
+
+  @@schema("public")
+}
+
+enum notificacion_tipo_enum {
+  CREDITO_APROBADO
+  PAGO_RECIBIDO
+  CREDITO_FINALIZADO
+
+  @@schema("public")
+}
+
+enum notificacion_canal_enum {
+  CORREO
+  WHATSAPP
+
+  @@schema("public")
+}
+
+enum notificacion_estado_enum {
+  PENDIENTE
+  ENVIADA
+  FALLIDA
+
   @@schema("public")
 }

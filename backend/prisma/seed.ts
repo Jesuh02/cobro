@@ -1,8 +1,8 @@
 import { Prisma, PrismaClient } from '@prisma/client';
-import { PasswordService } from '../src/modules/auth/password.service';
+import { randomBytes, scrypt } from 'node:crypto';
 
 const prisma = new PrismaClient();
-const passwordService = new PasswordService();
+
 
 async function main() {
   await poblarCatalogosSistema();
@@ -13,6 +13,8 @@ async function poblarCatalogosSistema() {
 
   // 0. Aplicar restricciones CHECK que Prisma no soporta de forma nativa
   const dbConfigSql = `
+
+
 
     -- Restricciones CHECK
     DO $$ BEGIN ALTER TABLE public.tbl_personas ADD CONSTRAINT chk_tbl_personas_documento CHECK (length(trim(per_documento)) > 0); EXCEPTION WHEN OTHERS THEN END; $$;
@@ -170,7 +172,29 @@ async function crearAdministradorInicial() {
   const correo = process.env.SUPERADMIN_CORREO || 'admin@demo.com';
   const passwordPlano = process.env.SUPERADMIN_PASSWORD || 'adminprueba!BB';
 
-  const passwordHash = await passwordService.hash(passwordPlano);
+  
+  
+  const salt = randomBytes(24).toString('base64url');
+  const buffer = await new Promise<Buffer>((resolve, reject) => {
+    scrypt(
+      passwordPlano,
+      salt,
+      64,
+      {
+        N: 32768,
+        r: 8,
+        p: 3,
+        maxmem: 64 * 1024 * 1024,
+      },
+      (err, derivedKey) => {
+        if (err) reject(err);
+        else resolve(derivedKey);
+      }
+    );
+  });
+  const passwordHash = `scrypt$v2$32768$8$3$${salt}$${buffer.toString('base64url')}`;
+
+
   const nombre = separarNombre(nombreCompleto);
 
   await prisma.$transaction(async (tx) => {

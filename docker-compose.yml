@@ -59,8 +59,8 @@ services:
     container_name: cobro_frontend
     restart: unless-stopped
     ports:
-      # Mapeamos el puerto 8080 del host al puerto 80 del contenedor Nginx
-      - "8080:80"
+      # Mapeamos el puerto 8081 del host al puerto 80 del contenedor Nginx
+      - "8081:80"
     depends_on:
       - backend
 

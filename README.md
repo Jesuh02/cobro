@@ -4,6 +4,35 @@ Monorepo integral para la gestión y administración financiera de microcrédito
 
 ---
 
+## 💡 ¿Qué problema resuelve este proyecto?
+
+En el modelo tradicional de **microcréditos y cobranza en ruta** (puerta a puerta / cartera diaria), la operativa suele gestionarse de manera manual o empírica (planillas de papel, cuadernos o mensajería informal). Esto genera descontrol financiero, pérdida de capital y riesgos operativos.
+
+**CobroD** sistematiza y asegura todo el ciclo operativo resolviendo los siguientes problemas críticos:
+
+1. **Descuadres de caja y fuga de dinero**:
+   - *Problema*: Dificultad para conciliar al final del día el dinero recaudado frente a los nuevos créditos desembolsados y los gastos en ruta (combustible, viáticos) de cada cobrador.
+   - *Solución*: Módulo estricto de **Caja Menor y Arqueo Diario** con validación de saldos en tiempo real mediante la ecuación contable:
+     $$\text{PRESUPUESTO} = \text{CAJA MENOR} + \text{RECAUDADO} - \text{CRÉDITOS} - \text{GASTOS}$$
+
+2. **Inconsistencias, fraude y cobros duplicados en campo**:
+   - *Problema*: Mala conectividad celular en ruta que provoca registros repetidos, o cobradores que no pueden validar el estado de cuenta real del cliente.
+   - *Solución*: Backend con **bloqueos pesimistas (`FOR UPDATE`)**, **ventana de idempotencia de 30 segundos** y **cola de mutaciones offline en Flutter** que almacena abonos localmente y sincroniza de forma segura al recuperar la señal.
+
+3. **Ineficiencia logística y sobrecostos de transporte**:
+   - *Problema*: Cobradores recorriendo la ciudad sin un orden geográfico, perdiendo tiempo y dinero en traslados desordenados.
+   - *Solución*: **Georreferenciación GPS** de clientes en mapa interactivo y cálculo de **ruta diaria óptima** mediante el algoritmo **Dijkstra** integrado con el motor **OSRM**.
+
+4. **Falta de comprobantes y desconfianza del cliente**:
+   - *Problema*: Los clientes no reciben constancia inmediata o clara de sus abonos y saldos pendientes.
+   - *Solución*: Generación y despacho automático de recibos transaccionales por **WhatsApp a costo \$0** (usando Evolution API / Baileys) y por correo electrónico.
+
+5. **Complejidad y errores en liquidación financiera**:
+   - *Problema*: Cálculo manual erróneo de amortizaciones, intereses, cuotas dominicales o penalizaciones por mora.
+   - *Solución*: Motor financiero automatizado de amortización (cuotas fijas, liquidación en cascada, refinanciación asistida) y **reportes contables exportables a Excel (`exceljs`)**.
+
+---
+
 ## 1. Arquitectura del Monorepo
 
 ![Diagrama de Arquitectura](arquitectura.svg)

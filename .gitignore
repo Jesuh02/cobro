@@ -47,3 +47,15 @@ findings.json
 REPORT.md
 FINDINGS-DETAIL.md
 
+
+# Draw.io diagrams
+*.drawio
+*.drawio.bkp
+*.drawio.svg
+*.drawio.png
+~*.drawio
+*.dio
+*.drawio.dtmp
+*.svg
+
+!arquitectura.svg

@@ -6,6 +6,8 @@ Monorepo integral para la gestión y administración financiera de microcrédito
 
 ## 1. Arquitectura del Monorepo
 
+![Diagrama de Arquitectura](arquitectura.svg)
+
 El repositorio está organizado en aplicaciones y servicios desacoplados:
 
 - **Backend (`backend/`)**: API REST construida con **NestJS**, **TypeScript**, **Prisma ORM** y **PostgreSQL 15**. Implementa arquitectura modular, transacciones ACID con bloqueos pesimistas, control de concurrencia y validaciones de seguridad de grado financiero.

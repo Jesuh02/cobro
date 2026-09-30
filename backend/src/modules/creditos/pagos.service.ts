@@ -2,6 +2,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   Optional,
   forwardRef,
 } from '@nestjs/common';
@@ -33,6 +34,7 @@ type PagoAplicacionTblRow = {
 
 @Injectable()
 export class PagosService {
+  private readonly logger = new Logger(PagosService.name);
   private esquemaTblDisponible?: boolean;
 
   constructor(
@@ -90,17 +92,18 @@ export class PagosService {
       this.normalizarTextoOpcional(dto.referenciaExterna) ??
       this.normalizarTextoOpcional(dto.observacion);
 
-    const resultadoPago = await this.prisma.$transaction(
+    const resultadoPago = await this.ejecutarTransaccionConReintentos(
       async (tx) => {
         const scope = await this.tenantScope.obtenerScopeOrganizacionTbl(
           usuario,
           tx,
         );
         await tx.$queryRaw(Prisma.sql`
-          SELECT id_cuo
-          FROM public.tbl_cuotas
-          WHERE id_cuo = ${dto.creditoCuotaId}::uuid
-          FOR UPDATE
+          SELECT cu.id_cuo
+          FROM public.tbl_cuotas cu
+          JOIN public.tbl_creditos cr ON cr.id_cre = cu.cre_id
+          WHERE cu.id_cuo = ${dto.creditoCuotaId}::uuid
+          FOR UPDATE OF cr
         `);
 
         const [cuota] = await tx.$queryRaw<
@@ -246,6 +249,7 @@ export class PagosService {
           SELECT id_cuo
           FROM public.tbl_cuotas
           WHERE cre_id = ${cuota.credito_id}::uuid
+          ORDER BY cuo_numero ASC
           FOR UPDATE
         `);
 
@@ -350,6 +354,7 @@ export class PagosService {
               sca.sca_fecha_apertura DESC,
               sca.id_sca DESC
             LIMIT 1
+            FOR UPDATE OF sca
           `);
 
           const sesion = sesiones[0];
@@ -635,6 +640,61 @@ export class PagosService {
       usuario.roles.includes('AUDITOR') ||
       usuario.roles.includes('SUPERVISOR')
     );
+  }
+
+  private async ejecutarTransaccionConReintentos<T>(
+    operacion: (tx: Prisma.TransactionClient) => Promise<T>,
+    opciones?: {
+      maxWait?: number;
+      timeout?: number;
+      retries?: number;
+      delayBaseMs?: number;
+    },
+  ): Promise<T> {
+    const maxRetries = opciones?.retries ?? 3;
+    const delayBaseMs = opciones?.delayBaseMs ?? 50;
+    let intento = 0;
+
+    while (true) {
+      try {
+        return await this.prisma.$transaction(
+          async (tx) => operacion(tx),
+          {
+            maxWait: opciones?.maxWait ?? 10_000,
+            timeout: opciones?.timeout ?? 15_000,
+          },
+        );
+      } catch (error: unknown) {
+        intento++;
+        const esPrismaP2034 =
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2034';
+        const mensaje =
+          typeof (error as { message?: unknown })?.message === 'string'
+            ? (error as { message: string }).message.toLowerCase()
+            : '';
+        const esConflictoEscrituraODeadlock =
+          esPrismaP2034 ||
+          mensaje.includes('write conflict') ||
+          mensaje.includes('deadlock') ||
+          mensaje.includes('restart transaction') ||
+          mensaje.includes('could not serialize') ||
+          mensaje.includes('40001') ||
+          mensaje.includes('40p01');
+
+        if (esConflictoEscrituraODeadlock && intento <= maxRetries) {
+          const jitter = Math.floor(Math.random() * 40);
+          const delay = delayBaseMs * Math.pow(2, intento - 1) + jitter;
+          this.logger.warn(
+            `Conflicto de concurrencia al registrar pago (intento ${intento}/${maxRetries}). Reintentando en ${delay}ms...`,
+          );
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          continue;
+        }
+
+        throw error;
+      }
+    }
   }
 
   private nombreDesdeCodigo(codigo: string): string {

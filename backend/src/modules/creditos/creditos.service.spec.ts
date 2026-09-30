@@ -609,4 +609,55 @@ describe('PagosService', () => {
       ),
     ).rejects.toThrow('La cuota esta anulada');
   });
+
+  it('retries when transaction fails due to P2034 write conflict', async () => {
+    const errorP2034 = new Prisma.PrismaClientKnownRequestError(
+      'Transaction failed due to a write conflict or a deadlock. Please retry your transaction',
+      {
+        code: 'P2034',
+        clientVersion: '6.0.0',
+      },
+    );
+
+    let intento = 0;
+    mockPrisma.$transaction.mockImplementation(
+      async (cb: (tx: unknown) => unknown) => {
+        intento++;
+        if (intento === 1) {
+          throw errorP2034;
+        }
+        return cb(mockPrisma);
+      },
+    );
+
+    mockPrisma.$queryRaw
+      .mockResolvedValueOnce([{ id_cuo: 'cuota-1' }])
+      .mockResolvedValueOnce([
+        {
+          cuota_id: 'cuota-1',
+          cuota_estado: 'ANULADA',
+          credito_id: 'credito-1',
+          credito_estado: 'ACTIVO',
+          cliente_id: 'cliente-1',
+          cliente: 'Juan Perez',
+          org_id: '22222222-2222-4222-8222-222222222222',
+          usuario_id: '11111111-1111-4111-8111-111111111111',
+          usuario: 'admin_test',
+          moneda_id: 'moneda-1',
+          moneda_codigo: 'COP',
+        },
+      ]);
+
+    await expect(
+      pagosService.registrarPago(
+        {
+          creditoCuotaId: 'cuota-1',
+          montoPagado: 50_000,
+        },
+        usuarioTest(),
+      ),
+    ).rejects.toThrow('La cuota esta anulada');
+
+    expect(intento).toBe(2);
+  });
 });

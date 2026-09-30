@@ -77,6 +77,15 @@ export class DomainExceptionFilter implements ExceptionFilter<unknown> {
       };
     }
 
+    if (this.isTransactionConflict(exception)) {
+      return {
+        statusCode: HttpStatus.CONFLICT,
+        code: 'TRANSACTION_CONFLICT',
+        message:
+          'Conflicto de concurrencia al procesar la transaccion. Por favor, reintente la operacion.',
+      };
+    }
+
     return {
       statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
       code: 'INTERNAL_ERROR',
@@ -163,6 +172,23 @@ export class DomainExceptionFilter implements ExceptionFilter<unknown> {
 
     if (exception instanceof Prisma.PrismaClientRustPanicError) {
       return true;
+    }
+
+    return false;
+  }
+
+  private isTransactionConflict(exception: unknown): boolean {
+    if (exception instanceof Prisma.PrismaClientKnownRequestError) {
+      return exception.code === 'P2034';
+    }
+
+    if (typeof (exception as { message?: unknown })?.message === 'string') {
+      const msg = (exception as { message: string }).message.toLowerCase();
+      return (
+        msg.includes('write conflict') ||
+        msg.includes('deadlock') ||
+        msg.includes('restart transaction')
+      );
     }
 
     return false;

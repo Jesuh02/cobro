@@ -1844,6 +1844,7 @@ export class CajaMenorService implements OnModuleInit {
         sca.sca_fecha_apertura DESC,
         sca.id_sca DESC
       LIMIT 1
+      FOR UPDATE OF sca
     `);
 
     const sesion = sesiones[0];

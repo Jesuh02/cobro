@@ -59,3 +59,7 @@ FINDINGS-DETAIL.md
 *.svg
 
 !arquitectura.svg
+
+# Local database DDL & diagrams
+backend/database/cockroach_init_cobrod.sql
+backend/database/ddl_cobrod_er_diagram.mmd

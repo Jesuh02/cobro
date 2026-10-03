@@ -39,21 +39,22 @@ En el modelo tradicional de **microcréditos y cobranza en ruta** (puerta a puer
 
 El repositorio está organizado en aplicaciones y servicios desacoplados:
 
-- **Backend (`backend/`)**: API REST construida con **NestJS**, **TypeScript**, **Prisma ORM** y **PostgreSQL 15**. Implementa arquitectura modular, transacciones ACID con bloqueos pesimistas, control de concurrencia y validaciones de seguridad de grado financiero.
+- **Backend (`backend/`)**: API REST construida con **NestJS**, **TypeScript**, **Prisma ORM** y **CockroachDB** en producción (**PostgreSQL 15** en Docker local). Implementa arquitectura modular, transacciones ACID con bloqueos pesimistas, control de concurrencia y validaciones de seguridad de grado financiero.
 - **Frontend App (`frontend/`)**: Cliente multiplataforma desarrollado en **Flutter (Dart 3)**, orientado principalmente a Web (CanvasKit/HTML) y adaptable a dispositivos móviles (Android/iOS). Incluye ruteo interactivo sobre mapas, soporte para mutaciones offline y componentes neomórficos.
 
 - **Infraestructura Docker (`docker-compose.yml` y `docker/`)**: Entorno contenerizado para despliegue local inmediato (plug-and-play) y pasarela de mensajería independiente con **Evolution API v2** (WhatsApp vía Baileys a costo \$0).
 
 ---
 
-## 2. Base de Datos: Arquitectura y Transición
+## 2. Base de Datos: Arquitectura y Compatibilidad
 
-### Motor Activo: PostgreSQL 15
-El sistema opera de forma nativa sobre **PostgreSQL 15** (disponible localmente vía Docker con la imagen `postgres:15-alpine`).
+### Motor en Producción: CockroachDB Cloud
+En producción, el sistema opera sobre **CockroachDB Cloud**, garantizando resiliencia, alta disponibilidad y distribución geográfica con compatibilidad ANSI SQL / PostgreSQL.
 
-### Origen y Transición desde CockroachDB
-- **Historial**: El esquema inicial del proyecto fue concebido y modelado originalmente en CockroachDB Cloud (`backend/database/cockroach_init_cobrod.sql`).
-- **Estandarización**: Para garantizar un entorno de desarrollo local ágil, ligero y 100% reproducible sin depender de clústeres distribuidos en la nube, se estandarizó toda la base de datos hacia **PostgreSQL 15 estándar (ANSI SQL)**.
+### Motor en Desarrollo Local: PostgreSQL 15
+Para el desarrollo local ágil, autónomo y desconectado, se utiliza **PostgreSQL 15** (`postgres:15-alpine` vía Docker Compose).
+
+- **Estandarización y Portabilidad**: El esquema DDL original (`backend/database/cockroach_init_cobrod.sql`) y el modelo unificado Prisma (`tbl_*`) son 100% compatibles tanto con CockroachDB Cloud en producción como con PostgreSQL 15 en Docker local.
 
 - **Sincronización Ágil y Restricciones CHECK**: Se utiliza `npx prisma db push` para mantener sincronizado el esquema. Dado que Prisma no gestiona restricciones `CHECK` de forma nativa en su esquema, el script `backend/prisma/seed.ts` las inyecta de forma idempotente (`gas_monto > 0`, `cre_total > 0`, saldos no negativos, etc.).
 

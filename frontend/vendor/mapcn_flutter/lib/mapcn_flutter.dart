@@ -139,8 +139,9 @@ class Mapcn extends StatefulWidget {
     this.showLoadingIndicator = true,
     this.showAttribution = true,
     this.tileUrlTemplate =
-        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-    this.attributionText = '© OpenStreetMap contributors',
+        'https://tile.jawg.io/jawg-streets/{z}/{x}/{y}.png',
+    this.attributionText =
+        '© Jawg Maps © OpenStreetMap contributors',
     this.minZoom = 2.0,
     this.maxZoom = 18.0,
     this.pulseDuration = const Duration(seconds: 2),

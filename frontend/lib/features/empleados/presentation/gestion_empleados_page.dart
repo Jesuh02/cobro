@@ -106,8 +106,27 @@ class _GestionEmpleadosPageState extends State<GestionEmpleadosPage> {
   List<ActividadEmpleado> _actividades = const <ActividadEmpleado>[];
   late DateTime _actividadFechaInicio;
   late DateTime _actividadFechaFin;
-  final TextEditingController _buscarActividadEmpleadoController =
-      TextEditingController();
+  TextEditingController? _filtroEmpleadoControllerInst;
+  TextEditingController get _filtroEmpleadoController {
+    if (_filtroEmpleadoControllerInst == null) {
+      final TextEditingController ctrl = TextEditingController();
+      ctrl.addListener(_onFiltroEmpleadoChanged);
+      _filtroEmpleadoControllerInst = ctrl;
+    }
+    return _filtroEmpleadoControllerInst!;
+  }
+
+  TextEditingController? _buscarActividadEmpleadoControllerInst;
+  TextEditingController get _buscarActividadEmpleadoController {
+    if (_buscarActividadEmpleadoControllerInst == null) {
+      final TextEditingController ctrl = TextEditingController();
+      ctrl.addListener(_onBuscarActividadEmpleadoChanged);
+      _buscarActividadEmpleadoControllerInst = ctrl;
+    }
+    return _buscarActividadEmpleadoControllerInst!;
+  }
+
+  bool _sincronizandoFiltro = false;
   String? _empleadoSeleccionadoId;
   Set<String> _permisosSeleccionados = Set<String>.of(
     permisosEmpleadoCodigos,
@@ -124,16 +143,77 @@ class _GestionEmpleadosPageState extends State<GestionEmpleadosPage> {
     final DateTime hoy = _hoyColombia();
     _actividadFechaInicio = hoy;
     _actividadFechaFin = hoy;
-    _buscarActividadEmpleadoController.addListener(_actualizarFiltroActividad);
     unawaited(_recargarEmpleados());
   }
 
   @override
   void dispose() {
-    _buscarActividadEmpleadoController
-        .removeListener(_actualizarFiltroActividad);
-    _buscarActividadEmpleadoController.dispose();
+    _filtroEmpleadoControllerInst?.removeListener(_onFiltroEmpleadoChanged);
+    _filtroEmpleadoControllerInst?.dispose();
+    _buscarActividadEmpleadoControllerInst
+        ?.removeListener(_onBuscarActividadEmpleadoChanged);
+    _buscarActividadEmpleadoControllerInst?.dispose();
     super.dispose();
+  }
+
+  void _onFiltroEmpleadoChanged() {
+    if (_sincronizandoFiltro) {
+      return;
+    }
+    _sincronizandoFiltro = true;
+    if (_buscarActividadEmpleadoController.text !=
+        _filtroEmpleadoController.text) {
+      _buscarActividadEmpleadoController.text =
+          _filtroEmpleadoController.text;
+    }
+    _aplicarFiltroEmpleado();
+    _sincronizandoFiltro = false;
+  }
+
+  void _onBuscarActividadEmpleadoChanged() {
+    if (_sincronizandoFiltro) {
+      return;
+    }
+    _sincronizandoFiltro = true;
+    if (_filtroEmpleadoController.text !=
+        _buscarActividadEmpleadoController.text) {
+      _filtroEmpleadoController.text =
+          _buscarActividadEmpleadoController.text;
+    }
+    _aplicarFiltroEmpleado();
+    _sincronizandoFiltro = false;
+  }
+
+  void _aplicarFiltroEmpleado() {
+    if (!mounted) {
+      return;
+    }
+    final String query =
+        _filtroEmpleadoController.text.trim().toLowerCase();
+
+    if (query.isNotEmpty) {
+      final List<EmpleadoGestion> coincidentes = _empleadosFiltrados;
+      if (coincidentes.isNotEmpty) {
+        final bool seleccionValida = coincidentes.any(
+          (EmpleadoGestion e) => e.id == _empleadoSeleccionadoId,
+        );
+        if (!seleccionValida) {
+          _empleadoSeleccionadoId = coincidentes.first.id;
+          _permisosSeleccionados = coincidentes.first.permisos.toSet();
+        }
+        _aplicarATodos = false;
+      } else {
+        _empleadoSeleccionadoId = null;
+        _permisosSeleccionados = const <String>{};
+      }
+    } else {
+      if (_empleadoSeleccionadoId == null && _empleados.isNotEmpty) {
+        _empleadoSeleccionadoId = _empleados.first.id;
+        _permisosSeleccionados =
+            _empleados.first.permisos.toSet();
+      }
+    }
+    setState(() {});
   }
 
   EmpleadoGestion? _empleadoPorId(String? empleadoId) {
@@ -158,6 +238,7 @@ class _GestionEmpleadosPageState extends State<GestionEmpleadosPage> {
 
   bool get _actividadFiltrosActivos {
     return !_actividadHoyActiva ||
+        _filtroEmpleadoController.text.trim().isNotEmpty ||
         _buscarActividadEmpleadoController.text.trim().isNotEmpty;
   }
 
@@ -174,17 +255,34 @@ class _GestionEmpleadosPageState extends State<GestionEmpleadosPage> {
     );
   }
 
+  List<EmpleadoGestion> get _empleadosFiltrados {
+    final String query =
+        _filtroEmpleadoController.text.trim().toLowerCase();
+    if (query.isEmpty) {
+      return _empleados;
+    }
+    return _empleados.where((EmpleadoGestion empleado) {
+      return empleado.nombreCompleto.toLowerCase().contains(query) ||
+          empleado.usuario.toLowerCase().contains(query) ||
+          empleado.correo.toLowerCase().contains(query);
+    }).toList(growable: false);
+  }
+
   List<ActividadEmpleado> get _actividadesFiltradas {
     final String consulta =
-        _buscarActividadEmpleadoController.text.trim().toLowerCase();
+        _filtroEmpleadoController.text.trim().toLowerCase();
     if (consulta.isEmpty) {
       return _actividades;
     }
 
     return _actividades.where((ActividadEmpleado actividad) {
-      return actividad.nombreCompleto.toLowerCase().contains(consulta) ||
+      final bool coincideTexto =
+          actividad.nombreCompleto.toLowerCase().contains(consulta) ||
           actividad.usuario.toLowerCase().contains(consulta) ||
           actividad.correo.toLowerCase().contains(consulta);
+      final bool coincideId = _empleadoSeleccionadoId != null &&
+          actividad.empleadoId == _empleadoSeleccionadoId;
+      return coincideTexto || coincideId;
     }).toList(growable: false);
   }
 
@@ -199,12 +297,6 @@ class _GestionEmpleadosPageState extends State<GestionEmpleadosPage> {
 
     return 'Actividad del ${formatDateLabel(_actividadFechaInicio)} al '
         '${formatDateLabel(_actividadFechaFin)}';
-  }
-
-  void _actualizarFiltroActividad() {
-    if (mounted) {
-      setState(() {});
-    }
   }
 
   Future<void> _recargarEmpleados() async {
@@ -310,30 +402,32 @@ class _GestionEmpleadosPageState extends State<GestionEmpleadosPage> {
     setState(() {
       _actividadFechaInicio = hoy;
       _actividadFechaFin = hoy;
+      _filtroEmpleadoController.clear();
       _buscarActividadEmpleadoController.clear();
     });
     await _recargarActividadEmpleados();
   }
 
   void _sincronizarSeleccion({required bool resetPermisos}) {
-    if (_empleados.isEmpty) {
+    final List<EmpleadoGestion> disponibles = _empleadosFiltrados;
+    if (disponibles.isEmpty) {
       _empleadoSeleccionadoId = null;
       _permisosSeleccionados = Set<String>.of(permisosEmpleadoCodigos);
       return;
     }
 
-    if (_aplicarATodos) {
+    if (_aplicarATodos && _filtroEmpleadoController.text.trim().isEmpty) {
       if (resetPermisos) {
         _permisosSeleccionados = Set<String>.of(permisosEmpleadoCodigos);
       }
       return;
     }
 
-    final bool seleccionValida = _empleados.any(
+    final bool seleccionValida = disponibles.any(
       (EmpleadoGestion empleado) => empleado.id == _empleadoSeleccionadoId,
     );
     if (!seleccionValida) {
-      _empleadoSeleccionadoId = _empleados.first.id;
+      _empleadoSeleccionadoId = disponibles.first.id;
     }
 
     if (resetPermisos) {
@@ -738,6 +832,10 @@ class _GestionEmpleadosPageState extends State<GestionEmpleadosPage> {
   }
 
   Widget _construirPanelEmpleados() {
+    final List<EmpleadoGestion> empleadosVisibles = _empleadosFiltrados;
+    final bool filtroActivo =
+        _filtroEmpleadoController.text.trim().isNotEmpty;
+
     return ClaySurface(
       radius: 18,
       padding: const EdgeInsets.all(14),
@@ -763,14 +861,80 @@ class _GestionEmpleadosPageState extends State<GestionEmpleadosPage> {
             ],
           ),
           const SizedBox(height: 10),
+          if (_empleados.isNotEmpty) ...<Widget>[
+            TextField(
+              controller: _filtroEmpleadoController,
+              decoration: InputDecoration(
+                prefixIcon: const Icon(Icons.search_rounded),
+                labelText: 'Buscar empleado',
+                hintText: 'Filtrar por nombre o usuario...',
+                suffixIcon: filtroActivo
+                    ? IconButton(
+                        icon: const Icon(Icons.clear_rounded),
+                        tooltip: 'Limpiar filtro',
+                        onPressed: () {
+                          _filtroEmpleadoController.clear();
+                        },
+                      )
+                    : null,
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
           if (_empleados.isEmpty)
             const MensajePanel(
               icono: Icons.groups_outlined,
               titulo: 'Sin empleados',
               mensaje: 'Agrega un empleado para asignar permisos.',
             )
-          else
-            ..._empleados.map(
+          else if (empleadosVisibles.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              child: Column(
+                children: <Widget>[
+                  Icon(
+                    Icons.person_search_rounded,
+                    size: 36,
+                    color: context.clay.subtleText,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'No se encontró ningún empleado',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'No hay coincidencias para "${_filtroEmpleadoController.text.trim()}".',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: context.clay.subtleText,
+                        ),
+                  ),
+                  const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    onPressed: () => _filtroEmpleadoController.clear(),
+                    icon: const Icon(Icons.clear_rounded, size: 16),
+                    label: const Text('Limpiar filtro'),
+                  ),
+                ],
+              ),
+            )
+          else ...<Widget>[
+            if (filtroActivo)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  'Mostrando ${empleadosVisibles.length} de ${_empleados.length} empleados',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: context.clay.subtleText,
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+              ),
+            ...empleadosVisibles.map(
               (EmpleadoGestion empleado) => Padding(
                 padding: const EdgeInsets.only(bottom: 9),
                 child: EmpleadoGestionItem(
@@ -786,6 +950,7 @@ class _GestionEmpleadosPageState extends State<GestionEmpleadosPage> {
                 ),
               ),
             ),
+          ],
         ],
       ),
     );
@@ -797,6 +962,8 @@ class _GestionEmpleadosPageState extends State<GestionEmpleadosPage> {
   }) {
     final EmpleadoGestion? empleadoSeleccionado =
         _empleadoPorId(_empleadoSeleccionadoId);
+    final bool filtroActivo =
+        _filtroEmpleadoController.text.trim().isNotEmpty;
     final String destinoPermisos = _aplicarATodos
         ? 'Todos los empleados'
         : empleadoSeleccionado?.nombreCompleto ?? 'Selecciona un empleado';
@@ -836,39 +1003,79 @@ class _GestionEmpleadosPageState extends State<GestionEmpleadosPage> {
             ],
           ),
           const SizedBox(height: 12),
-          SwitchListTile(
-            value: _aplicarATodos,
-            onChanged: _guardando || _empleados.isEmpty
-                ? null
-                : (bool value) {
-                    setState(() {
-                      _aplicarATodos = value;
-                      if (value) {
-                        _permisosSeleccionados = Set<String>.of(
-                          permisosEmpleadoCodigos,
-                        );
-                      } else {
-                        _empleadoSeleccionadoId ??= _empleados.first.id;
-                        _permisosSeleccionados =
-                            _empleadoPorId(_empleadoSeleccionadoId)
-                                    ?.permisos
-                                    .toSet() ??
-                                Set<String>.of(permisosEmpleadoCodigos);
-                      }
-                    });
-                  },
-            title: const Text('Aplicar a todos los empleados'),
-            secondary: const Icon(Icons.groups_rounded),
-            contentPadding: EdgeInsets.zero,
-          ),
-          if (!_aplicarATodos && _empleados.isNotEmpty) ...<Widget>[
+          if (filtroActivo && empleadoSeleccionado != null) ...<Widget>[
+            Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Theme.of(context)
+                    .colorScheme
+                    .primary
+                    .withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: Theme.of(context)
+                      .colorScheme
+                      .primary
+                      .withValues(alpha: 0.25),
+                ),
+              ),
+              child: Row(
+                children: <Widget>[
+                  Icon(
+                    Icons.filter_alt_rounded,
+                    size: 18,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Permisos de: ${empleadoSeleccionado.nombreCompleto}',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          if (!filtroActivo)
+            SwitchListTile(
+              value: _aplicarATodos,
+              onChanged: _guardando || _empleados.isEmpty
+                  ? null
+                  : (bool value) {
+                      setState(() {
+                        _aplicarATodos = value;
+                        if (value) {
+                          _permisosSeleccionados = Set<String>.of(
+                            permisosEmpleadoCodigos,
+                          );
+                        } else {
+                          _empleadoSeleccionadoId ??= _empleados.first.id;
+                          _permisosSeleccionados =
+                              _empleadoPorId(_empleadoSeleccionadoId)
+                                      ?.permisos
+                                      .toSet() ??
+                                  Set<String>.of(permisosEmpleadoCodigos);
+                        }
+                      });
+                    },
+              title: const Text('Aplicar a todos los empleados'),
+              secondary: const Icon(Icons.groups_rounded),
+              contentPadding: EdgeInsets.zero,
+            ),
+          if (!_aplicarATodos && _empleadosFiltrados.isNotEmpty) ...<Widget>[
             const SizedBox(height: 8),
             CobroDropdownField<String>(
               key: ValueKey<String?>(_empleadoSeleccionadoId),
               labelText: 'Empleado',
               prefixIcon: const Icon(Icons.person_rounded),
               value: _empleadoSeleccionadoId,
-              items: _empleados.map((EmpleadoGestion empleado) {
+              items: _empleadosFiltrados.map((EmpleadoGestion empleado) {
                 final String inicial = empleado.nombreCompleto.trim().isNotEmpty
                     ? empleado.nombreCompleto
                         .trim()
@@ -893,6 +1100,13 @@ class _GestionEmpleadosPageState extends State<GestionEmpleadosPage> {
               icono: Icons.lock_open_rounded,
               titulo: 'Permisos pendientes',
               mensaje: 'Cuando agregues empleados podras asignar accesos.',
+            )
+          else if (_empleadosFiltrados.isEmpty)
+            const MensajePanel(
+              icono: Icons.person_off_rounded,
+              titulo: 'Sin empleado seleccionado',
+              mensaje:
+                  'No hay permisos para mostrar porque ningún empleado coincide con la búsqueda.',
             )
           else
             ...permisosEmpleado.map(
@@ -928,6 +1142,17 @@ class _GestionEmpleadosPageState extends State<GestionEmpleadosPage> {
 
   Widget _construirPanelActividad(bool esMovil) {
     final List<ActividadEmpleado> actividades = _actividadesFiltradas;
+    final EmpleadoGestion? empleadoSeleccionado =
+        _empleadoPorId(_empleadoSeleccionadoId);
+    final bool filtroActivo =
+        _filtroEmpleadoController.text.trim().isNotEmpty;
+
+    final String tituloActividad = filtroActivo && empleadoSeleccionado != null
+        ? 'Actividad de ${empleadoSeleccionado.nombreCompleto}'
+        : 'Actividad de los empleados';
+    final String subtituloActividad = filtroActivo && empleadoSeleccionado != null
+        ? 'Mostrando únicamente la actividad de este empleado. $_actividadPeriodoTexto'
+        : _actividadPeriodoTexto;
 
     return ClaySurface(
       radius: 18,
@@ -942,14 +1167,14 @@ class _GestionEmpleadosPageState extends State<GestionEmpleadosPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     Text(
-                      'Actividad de los empleados',
+                      tituloActividad,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.w900,
                           ),
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      _actividadPeriodoTexto,
+                      subtituloActividad,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: context.clay.subtleText,
                             fontWeight: FontWeight.w700,
@@ -984,10 +1209,12 @@ class _GestionEmpleadosPageState extends State<GestionEmpleadosPage> {
               mensaje: 'No hay rutas, creditos o recaudos para mostrar.',
             )
           else if (actividades.isEmpty)
-            const MensajePanel(
+            MensajePanel(
               icono: Icons.search_off_rounded,
               titulo: 'Sin resultados',
-              mensaje: 'No hay empleados que coincidan con el filtro.',
+              mensaje: filtroActivo
+                  ? 'No hay actividad registrada para "${_filtroEmpleadoController.text.trim()}".'
+                  : 'No hay empleados que coincidan con el filtro.',
             )
           else
             ...actividades.map(
@@ -1007,17 +1234,27 @@ class _GestionEmpleadosPageState extends State<GestionEmpleadosPage> {
       runSpacing: 10,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: <Widget>[
-        if (!esMovil)
-          SizedBox(
-            width: 260,
-            child: TextField(
-              controller: _buscarActividadEmpleadoController,
-              decoration: const InputDecoration(
-                prefixIcon: Icon(Icons.search_rounded),
-                labelText: 'Buscar empleado',
-              ),
+        SizedBox(
+          width: esMovil ? double.infinity : 260,
+          child: TextField(
+            controller: _buscarActividadEmpleadoController,
+            decoration: InputDecoration(
+              prefixIcon: const Icon(Icons.search_rounded),
+              labelText: 'Buscar empleado',
+              hintText: 'Filtrar por nombre o usuario...',
+              suffixIcon: _buscarActividadEmpleadoController.text.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear_rounded),
+                      tooltip: 'Limpiar filtro',
+                      onPressed: () {
+                        _buscarActividadEmpleadoController.clear();
+                      },
+                    )
+                  : null,
+              isDense: true,
             ),
           ),
+        ),
         OutlinedButton.icon(
           onPressed: _actividadHoyActiva || _cargandoActividad
               ? null
@@ -1056,7 +1293,7 @@ class _GestionEmpleadosPageState extends State<GestionEmpleadosPage> {
         _empleadoPorId(_empleadoSeleccionadoId);
     final bool habilitado = !_guardando &&
         widget.puedeGestionar &&
-        _empleados.isNotEmpty &&
+        _empleadosFiltrados.isNotEmpty &&
         (_aplicarATodos || empleadoSeleccionado != null);
     final Widget button = FilledButton.icon(
       onPressed: habilitado ? _guardarPermisos : null,

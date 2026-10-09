@@ -37,6 +37,8 @@ export type PaymentReceivedNotification = BaseNotification & {
   proximaCuotaNumero: number | null;
   proximaCuotaValor: number | null;
   proximaCuotaFecha: Date | null;
+  fechaPago?: Date | null;
+  numeroRecibo?: string | null;
 };
 
 export type CreditCompletedNotification = BaseNotification & {

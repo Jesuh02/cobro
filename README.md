@@ -56,7 +56,7 @@ Para el desarrollo local ágil, autónomo y desconectado, se utiliza **PostgreSQ
 
 - **Estandarización y Portabilidad**: El esquema DDL original (`backend/database/cockroach_init_cobrod.sql`) y el modelo unificado Prisma (`tbl_*`) son 100% compatibles tanto con CockroachDB Cloud en producción como con PostgreSQL 15 en Docker local.
 
-- **Sincronización Ágil y Restricciones CHECK**: Se utiliza `npx prisma db push` para mantener sincronizado el esquema. Dado que Prisma no gestiona restricciones `CHECK` de forma nativa en su esquema, el script `backend/prisma/seed.ts` las inyecta de forma idempotente (`gas_monto > 0`, `cre_total > 0`, saldos no negativos, etc.).
+- **Sincronización Ágil y Restricciones CHECK**: Se utiliza `pnpm exec prisma db push` para mantener sincronizado el esquema. Dado que Prisma no gestiona restricciones `CHECK` de forma nativa en su esquema, el script `backend/prisma/seed.ts` las inyecta de forma idempotente (`gas_monto > 0`, `cre_total > 0`, saldos no negativos, etc.).
 
 ---
 
@@ -92,16 +92,16 @@ Si prefieres ejecutar los servicios de forma individual en tu máquina local:
 
 ### 4.1 Backend (NestJS + Prisma)
 
-Requisitos: Node.js 22+ y una instancia de PostgreSQL en ejecución.
+Requisitos: Node.js 22+, pnpm y una instancia de PostgreSQL en ejecución.
 
 ```bash
 cd backend
 cp .env.example .env
-npm install
-npm run prisma:generate
-npx prisma db push
-npm run seed
-npm run start:dev
+pnpm install
+pnpm run prisma:generate
+pnpm exec prisma db push
+pnpm run seed
+pnpm run start:dev
 ```
 
 - La API local quedará disponible en `http://127.0.0.1:3000/api/v1`.
@@ -109,7 +109,7 @@ npm run start:dev
 
 ### 4.2 Frontend (Flutter Web)
 
-Requisitos: Flutter SDK (canal `stable` ^3.6.0) y Google Chrome.
+Requisitos: Flutter SDK (canal `stable` ^3.6.0) y Google Chrome o Brave.
 
 ```bash
 cd frontend

@@ -3,6 +3,15 @@ import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
 import { Transporter } from 'nodemailer';
 
+export type SendEmailInput = {
+  to: string;
+  recipientName: string;
+  subject: string;
+  html: string;
+  text: string;
+  idempotencyKey: string;
+};
+
 @Injectable()
 export class EmailNotificationService {
   private readonly logger = new Logger(EmailNotificationService.name);
@@ -10,139 +19,103 @@ export class EmailNotificationService {
 
   constructor(private readonly config: ConfigService) {}
 
-  async send(input: {
-    to: string;
-    recipientName: string;
-    subject: string;
-    html: string;
-    text: string;
-    idempotencyKey: string;
-  }) {
-    const resendKey = this.config.get<string>('RESEND_API_KEY');
-    const fromEmail = this.config.get<string>('RESEND_FROM_EMAIL');
+  async send(input: SendEmailInput): Promise<void> {
+    const smtp = this.getTransporter();
 
-    if (resendKey && fromEmail) {
-      try {
-        const resendId = await this.sendWithResend(input, resendKey, fromEmail);
-        this.logger.log(
-          `Correo enviado por Resend: ${input.idempotencyKey}; destino=${this.maskEmail(input.to)}; resendId=${resendId}`,
-        );
-        return;
-      } catch (error) {
-        throw new Error(
-          `Resend no pudo enviar ${input.idempotencyKey}; destino=${this.maskEmail(input.to)}; ${this.errorMessage(error)}`,
-        );
-      }
-    }
+    const fromName =
+      this.config.get<string>('SMTP_FROM_NAME') ||
+      this.config.get<string>('NOTIFICATION_BRAND_NAME') ||
+      'Cobro';
 
-    if (this.hasBrevoConfiguration()) {
-      await this.sendWithBrevo(input, fromEmail);
-      return;
-    }
+    const fromEmail =
+      this.config.get<string>('SMTP_FROM_EMAIL') ||
+      this.config.get<string>('SMTP_USER');
 
-    throw new Error(
-      'No hay un proveedor de correo configurado (Resend o Brevo)',
-    );
-  }
-
-  private async sendWithResend(
-    input: {
-      to: string;
-      recipientName: string;
-      subject: string;
-      html: string;
-      text: string;
-      idempotencyKey: string;
-    },
-    apiKey: string,
-    fromEmail: string,
-  ) {
-    const response = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'Idempotency-Key': input.idempotencyKey,
-        'User-Agent': 'cobro-notifications/1.0',
-      },
-      body: JSON.stringify({
-        from: this.sender(fromEmail),
-        to: [input.to],
-        subject: input.subject,
-        html: input.html,
-        text: input.text,
-        reply_to: this.config.get<string>('NOTIFICATION_REPLY_TO') || undefined,
-      }),
-      signal: AbortSignal.timeout(10_000),
-    });
-
-    const body = await this.safeJson(response);
-
-    if (!response.ok) {
+    if (!fromEmail) {
       throw new Error(
-        `Resend respondio ${response.status}: ${JSON.stringify(body).slice(0, 500)}`,
+        'SMTP_FROM_EMAIL o SMTP_USER es obligatorio para enviar correos',
       );
     }
 
-    return this.isRecord(body) && typeof body.id === 'string'
-      ? body.id
-      : 'sin_id';
-  }
+    const replyTo =
+      this.config.get<string>('SMTP_REPLY_TO') ||
+      this.config.get<string>('NOTIFICATION_REPLY_TO') ||
+      undefined;
 
-  private async sendWithBrevo(
-    input: {
-      to: string;
-      recipientName: string;
-      subject: string;
-      html: string;
-      text: string;
-      idempotencyKey: string;
-    },
-    preferredFromEmail: string | undefined,
-  ) {
-    const smtp = this.getTransporter();
-    const fromEmail =
-      this.config.get<string>('BREVO_FROM_EMAIL') ?? preferredFromEmail;
+    // Encabezado From con Alias según RFC 5322 (ej: "Cobro Notificaciones" <micorreo@gmail.com>)
+    const fromHeader = `"${fromName}" <${fromEmail}>`;
 
-    if (!fromEmail) {
-      throw new Error('BREVO_FROM_EMAIL o RESEND_FROM_EMAIL es obligatorio');
+    try {
+      const result: unknown = await smtp.sendMail({
+        from: fromHeader,
+        to: {
+          address: input.to,
+          name: input.recipientName,
+        },
+        subject: input.subject,
+        html: input.html,
+        text: input.text,
+        replyTo,
+        headers: {
+          'X-Notification-Id': input.idempotencyKey,
+        },
+      });
+
+      this.logger.log(
+        `Correo enviado por SMTP: ${input.idempotencyKey}; destino=${this.maskEmail(input.to)}; remitente="${fromName}" <${fromEmail}>; ${this.mailResultSummary(result)}`,
+      );
+    } catch (error) {
+      const errorMsg = this.errorMessage(error);
+      this.logger.error(
+        `Fallo al enviar correo por SMTP: ${input.idempotencyKey}; destino=${this.maskEmail(input.to)}; error=${errorMsg}`,
+      );
+      throw new Error(`SMTP no pudo enviar ${input.idempotencyKey}: ${errorMsg}`);
     }
-
-    const result: unknown = await smtp.sendMail({
-      from: this.sender(fromEmail),
-      to: {
-        address: input.to,
-        name: input.recipientName,
-      },
-      subject: input.subject,
-      html: input.html,
-      text: input.text,
-      replyTo: this.config.get<string>('NOTIFICATION_REPLY_TO') || undefined,
-      headers: {
-        'X-Notification-Id': input.idempotencyKey,
-      },
-    });
-
-    this.logger.log(
-      `Correo enviado por Brevo: ${input.idempotencyKey}; destino=${this.maskEmail(input.to)}; ${this.mailResultSummary(result)}`,
-    );
   }
 
-  private getTransporter() {
+  /**
+   * Verifica la conexión y autenticación con el servidor SMTP (ej: Gmail).
+   */
+  async verifyConnection(): Promise<{ success: boolean; message: string }> {
+    try {
+      const smtp = this.getTransporter();
+      await smtp.verify();
+      return {
+        success: true,
+        message: 'Conexión SMTP verificada y autenticada exitosamente',
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Error al verificar conexión SMTP: ${this.errorMessage(error)}`,
+      };
+    }
+  }
+
+  private getTransporter(): Transporter {
     if (this.transporter) {
       return this.transporter;
     }
 
-    const port = this.config.get<number>('BREVO_SMTP_PORT') ?? 587;
+    const host = this.config.get<string>('SMTP_HOST') || 'smtp.gmail.com';
+    const port = Number(this.config.get<number>('SMTP_PORT') ?? 465);
+    const secure = this.config.get<boolean>('SMTP_SECURE') ?? (port === 465);
+    const user = this.config.get<string>('SMTP_USER');
+    const pass = this.config.get<string>('SMTP_PASSWORD');
+
+    if (!user || !pass) {
+      throw new Error(
+        'No hay credenciales SMTP configuradas (SMTP_USER y SMTP_PASSWORD son obligatorios)',
+      );
+    }
+
     this.transporter = nodemailer.createTransport({
-      host:
-        this.config.get<string>('BREVO_SMTP_HOST') ??
-        'smtp-relay.sendinblue.com',
+      host,
       port,
-      secure: port === 465,
+      secure,
       auth: {
-        user: this.config.getOrThrow<string>('BREVO_SMTP_USER'),
-        pass: this.config.getOrThrow<string>('BREVO_SMTP_PASSWORD'),
+        user,
+        pass,
       },
       connectionTimeout: 10_000,
       greetingTimeout: 10_000,
@@ -154,19 +127,7 @@ export class EmailNotificationService {
     return this.transporter;
   }
 
-  private hasBrevoConfiguration() {
-    return Boolean(
-      this.config.get<string>('BREVO_SMTP_USER') &&
-      this.config.get<string>('BREVO_SMTP_PASSWORD'),
-    );
-  }
-
-  private sender(email: string) {
-    const brand = this.config.get<string>('NOTIFICATION_BRAND_NAME') ?? 'Cobro';
-    return `${brand} <${email}>`;
-  }
-
-  private mailResultSummary(result: unknown) {
+  private mailResultSummary(result: unknown): string {
     if (!this.isRecord(result)) {
       return 'resultado=smtp_aceptado';
     }
@@ -177,25 +138,16 @@ export class EmailNotificationService {
     const rejected = Array.isArray(result.rejected)
       ? result.rejected.length
       : 0;
+    const messageId = typeof result.messageId === 'string' ? result.messageId : 'sin_id';
 
-    return `aceptados=${accepted}; rechazados=${rejected}`;
+    return `messageId=${messageId}; aceptados=${accepted}; rechazados=${rejected}`;
   }
 
   private isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null;
   }
 
-  private async safeJson(response: Response) {
-    const text = await response.text();
-
-    try {
-      return JSON.parse(text) as unknown;
-    } catch {
-      return { raw: text.slice(0, 500) };
-    }
-  }
-
-  private maskEmail(email: string) {
+  private maskEmail(email: string): string {
     const [localPart, domain] = email.split('@');
 
     if (!domain) {
@@ -206,7 +158,8 @@ export class EmailNotificationService {
     return `${visibleLocal}${'*'.repeat(Math.max(localPart.length - 2, 2))}@${domain}`;
   }
 
-  private errorMessage(error: unknown) {
+  private errorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
   }
 }
+

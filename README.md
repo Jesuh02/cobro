@@ -131,7 +131,7 @@ flutter run -d chrome --dart-define=API_BASE_URL=http://127.0.0.1:3000/api/v1
 - **Exportaciones Contables en Excel**: Generación de reportes operativos (Cobros de Ruta, Créditos, Movimientos de Caja Menor) formateados con `exceljs`, visor interactivo previo a la descarga y almacenamiento en Cloudflare R2 con URLs presignadas.
 - **Notificaciones Multicanal**:
   - **WhatsApp**: Conector desacoplado con soporte para **Evolution API v2** (`docker/whatsapp/`, Baileys WebSocket a costo \$0) y conector corporativo con **Meta Cloud API / YCloud**.
-  - **Correo Electrónico**: Integración con **Resend** y respaldo SMTP con **Brevo**.
+  - **Correo Electrónico**: Servidor SMTP con soporte para alias y plantillas HTML dinámicas (Gmail / Nodemailer).
 
 ---
 

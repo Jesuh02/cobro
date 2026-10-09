@@ -20,13 +20,14 @@ type ValidatedConfig = {
   NOTIFICATION_TIME_ZONE: string;
   OSRM_BASE_URL: string;
   OSRM_TIMEOUT_MS: number;
-  RESEND_API_KEY?: string;
-  RESEND_FROM_EMAIL?: string;
-  BREVO_FROM_EMAIL?: string;
-  BREVO_SMTP_HOST: string;
-  BREVO_SMTP_PORT: number;
-  BREVO_SMTP_USER?: string;
-  BREVO_SMTP_PASSWORD?: string;
+  SMTP_HOST: string;
+  SMTP_PORT: number;
+  SMTP_SECURE: boolean;
+  SMTP_USER?: string;
+  SMTP_PASSWORD?: string;
+  SMTP_FROM_NAME: string;
+  SMTP_FROM_EMAIL?: string;
+  SMTP_REPLY_TO?: string;
   R2_ACCESS_KEY_ID?: string;
   R2_ACCOUNT_ID?: string;
   R2_BUCKET_NAME?: string;
@@ -204,26 +205,35 @@ export function validateEnv(rawConfig: RawConfig): ValidatedConfig {
     optional(config.NOTIFICATION_REPLY_TO),
     'NOTIFICATION_REPLY_TO',
   );
-  assertEmailLike(optional(config.RESEND_FROM_EMAIL), 'RESEND_FROM_EMAIL');
-  assertEmailLike(optional(config.BREVO_FROM_EMAIL), 'BREVO_FROM_EMAIL');
+  assertEmailLike(optional(config.SMTP_FROM_EMAIL), 'SMTP_FROM_EMAIL');
+  assertEmailLike(optional(config.SMTP_REPLY_TO), 'SMTP_REPLY_TO');
+  assertEmailLike(optional(config.SMTP_USER), 'SMTP_USER');
   assertSafeHeaderValue(
     config.NOTIFICATION_BRAND_NAME?.trim() || 'Cobro',
     'NOTIFICATION_BRAND_NAME',
     80,
   );
+  assertSafeHeaderValue(
+    config.SMTP_FROM_NAME?.trim() ||
+      config.NOTIFICATION_BRAND_NAME?.trim() ||
+      'Cobro',
+    'SMTP_FROM_NAME',
+    80,
+  );
 
-  const smtpHost =
-    config.BREVO_SMTP_HOST?.trim() || 'smtp-relay.sendinblue.com';
-  assertHostname(smtpHost, 'BREVO_SMTP_HOST');
-  if (
-    nodeEnv === 'production' &&
-    optional(config.BREVO_SMTP_USER) &&
-    !['smtp-relay.brevo.com', 'smtp-relay.sendinblue.com'].includes(
-      smtpHost.toLowerCase(),
-    )
-  ) {
-    throw new Error('BREVO_SMTP_HOST must use an official Brevo SMTP host');
-  }
+  const smtpHost = config.SMTP_HOST?.trim() || 'smtp.gmail.com';
+  assertHostname(smtpHost, 'SMTP_HOST');
+
+  const smtpPort = readOptionalPositiveInteger(
+    config.SMTP_PORT,
+    'SMTP_PORT',
+    465,
+  );
+
+  const smtpSecure =
+    config.SMTP_SECURE !== undefined
+      ? readBoolean(config.SMTP_SECURE, 'SMTP_SECURE', smtpPort === 465)
+      : smtpPort === 465;
 
   return {
     AUTH_TOKEN_SECRET: authTokenSecret,
@@ -256,17 +266,19 @@ export function validateEnv(rawConfig: RawConfig): ValidatedConfig {
       'OSRM_TIMEOUT_MS',
       9000,
     ),
-    RESEND_API_KEY: optional(config.RESEND_API_KEY),
-    RESEND_FROM_EMAIL: optional(config.RESEND_FROM_EMAIL),
-    BREVO_FROM_EMAIL: optional(config.BREVO_FROM_EMAIL),
-    BREVO_SMTP_HOST: smtpHost,
-    BREVO_SMTP_PORT: readOptionalPositiveInteger(
-      config.BREVO_SMTP_PORT,
-      'BREVO_SMTP_PORT',
-      587,
-    ),
-    BREVO_SMTP_USER: optional(config.BREVO_SMTP_USER),
-    BREVO_SMTP_PASSWORD: optional(config.BREVO_SMTP_PASSWORD),
+    SMTP_HOST: smtpHost,
+    SMTP_PORT: smtpPort,
+    SMTP_SECURE: smtpSecure,
+    SMTP_USER: optional(config.SMTP_USER),
+    SMTP_PASSWORD: optional(config.SMTP_PASSWORD),
+    SMTP_FROM_NAME:
+      config.SMTP_FROM_NAME?.trim() ||
+      config.NOTIFICATION_BRAND_NAME?.trim() ||
+      'Cobro',
+    SMTP_FROM_EMAIL:
+      optional(config.SMTP_FROM_EMAIL) || optional(config.SMTP_USER),
+    SMTP_REPLY_TO:
+      optional(config.SMTP_REPLY_TO) || optional(config.NOTIFICATION_REPLY_TO),
     R2_ACCESS_KEY_ID: optional(config.R2_ACCESS_KEY_ID),
     R2_ACCOUNT_ID: optional(config.R2_ACCOUNT_ID),
     R2_BUCKET_NAME: optional(config.R2_BUCKET_NAME),

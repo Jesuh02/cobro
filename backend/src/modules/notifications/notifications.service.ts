@@ -86,6 +86,8 @@ export class NotificationsService {
         SELECT 
           p.id_pag,
           p.pag_monto,
+          p.pag_fecha,
+          p.pag_referencia,
           m.mon_codigo,
           c.id_cre,
           c.cre_total,
@@ -155,6 +157,10 @@ export class NotificationsService {
         proximaCuotaNumero: next ? Number(next.installment.cuo_numero) : null,
         proximaCuotaValor: next?.balance ?? null,
         proximaCuotaFecha: next?.installment.cuo_fecha_vencimiento ?? null,
+        fechaPago: payment.pag_fecha ? new Date(payment.pag_fecha) : new Date(),
+        numeroRecibo:
+          payment.pag_referencia ||
+          `REC-${String(payment.id_pag).slice(0, 8).toUpperCase()}`,
       };
 
       await this.deliver(paymentNotification);

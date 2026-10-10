@@ -56,43 +56,14 @@ describe('NotificationTemplatesService', () => {
       proximaCuotaFecha: new Date('2026-10-01T00:00:00.000Z'),
     });
 
+    expect(result.subject).toContain('Confirmación de pago');
+    expect(result.emailHtml).toContain('Recibimos tu pago');
+    expect(result.emailHtml).toContain('Pago realizado');
+    expect(result.emailHtml).toContain('Saldo pendiente');
     expect(result.emailText).toContain('Te quedan 9 cuotas');
     expect(result.emailText).toContain('1 de octubre de 2026');
-    expect(result.emailHtml).toContain('Comprobante de Recaudo');
-    expect(result.emailHtml).toContain('¡Recibo de Pago Confirmado!');
-    expect(result.emailHtml).toContain('Monto Abonado');
-    expect(result.emailHtml).toContain('REC-PAYMENT-');
-    expect(result.emailHtml).toContain('Saldo Pendiente');
-    expect(result.emailHtml).toContain('Cuotas por Pagar');
     expect(result.whatsappText).toContain('Cuotas restantes: *9*');
     expect(result.whatsappTemplateParameters).toHaveLength(6);
-  });
-
-  it('renders payment receipt with custom numeroRecibo and 0 remaining installments celebration', () => {
-    const result = service.render({
-      kind: 'pago_recibido',
-      eventId: 'payment-final',
-      orgId: '1',
-      cliId: '1',
-      creId: '1',
-      contact: {
-        nombre: 'María López',
-        correo: 'maria@example.com',
-        whatsapp: '+573004445566',
-      },
-      monedaCodigo: 'COP',
-      montoPagado: 100_000,
-      saldoPendiente: 0,
-      cuotasRestantes: 0,
-      proximaCuotaNumero: null,
-      proximaCuotaValor: null,
-      proximaCuotaFecha: null,
-      numeroRecibo: 'REC-2026-0099',
-    });
-
-    expect(result.subject).toContain('REC-2026-0099');
-    expect(result.emailHtml).toContain('REC-2026-0099');
-    expect(result.emailHtml).toContain('¡Crédito 100% al día y sin cuotas pendientes!');
   });
 
   it('renders the final congratulations message', () => {

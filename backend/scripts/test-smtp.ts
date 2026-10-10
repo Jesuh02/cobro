@@ -107,8 +107,6 @@ async function main() {
           proximaCuotaNumero: 3,
           proximaCuotaValor: 50000,
           proximaCuotaFecha: new Date(Date.now() + 86400000 * 7),
-          fechaPago: new Date(),
-          numeroRecibo: `REC-${Date.now().toString().slice(-6)}`,
         });
 
   await emailService.send({

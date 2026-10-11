@@ -178,12 +178,15 @@ class _DialogoUnificarCreditoContentState
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: <Widget>[
-                        Text(
-                          'Nuevo Total Consolidado',
-                          style: theme.textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w800,
+                        Expanded(
+                          child: Text(
+                            'Nuevo Total Consolidado',
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w800,
+                            ),
                           ),
                         ),
+                        const SizedBox(width: 8),
                         Text(
                           formatMoney(totalUnificado),
                           style: theme.textTheme.titleMedium?.copyWith(

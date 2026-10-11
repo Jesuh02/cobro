@@ -78,7 +78,6 @@ class _HomePageState extends State<HomePage> {
   static const int _pageSize = 40;
   static const String _todasLasCajasFiltro = todasLasCajasFiltro;
   static const int _indiceCredito = 2;
-  static const int _indiceGestionEmpleados = 5;
   static const List<_DestinoMenu> _destinosMenuBase = <_DestinoMenu>[
     _DestinoMenu(
       icono: Icons.home_outlined,
@@ -164,6 +163,8 @@ class _HomePageState extends State<HomePage> {
   final Set<String> _cuotasEnPago = <String>{};
   final Set<String> _cobrosConPagoInstantaneo = <String>{};
   String? _error;
+  _DestinoMenu? _destinoConError;
+  Timer? _errorTimer;
   OverlayEntry? _mensajeOverlay;
   Timer? _mensajeTimer;
   Timer? _refrescoTimer;
@@ -240,6 +241,7 @@ class _HomePageState extends State<HomePage> {
   @override
   void dispose() {
     _mensajeTimer?.cancel();
+    _errorTimer?.cancel();
     _refrescoTimer?.cancel();
     _filtrosListasTimer?.cancel();
     _offlineSyncTimer?.cancel();
@@ -364,6 +366,8 @@ class _HomePageState extends State<HomePage> {
                     _sincronizarAccionesOffline();
                   case _AccionSesion.gestionEmpleados:
                     _abrirGestionEmpleados();
+                  case _AccionSesion.papelera:
+                    _abrirPapelera();
                   case _AccionSesion.cerrarSesion:
                     _cerrarSesion();
                 }
@@ -407,6 +411,17 @@ class _HomePageState extends State<HomePage> {
                           Icon(Icons.manage_accounts_rounded),
                           SizedBox(width: 12),
                           Text('Gestion de empleado'),
+                        ],
+                      ),
+                    ),
+                  if (!usuarioSesion.esSuperAdmin && _puedeVerPapelera)
+                    const PopupMenuItem<_AccionSesion>(
+                      value: _AccionSesion.papelera,
+                      child: Row(
+                        children: <Widget>[
+                          Icon(Icons.auto_delete_rounded),
+                          SizedBox(width: 12),
+                          Text('Papelera'),
                         ],
                       ),
                     ),
@@ -736,6 +751,18 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
+    if (_error != null) {
+      _errorTimer?.cancel();
+      _errorTimer = Timer(const Duration(seconds: 3), () {
+        if (mounted) {
+          setState(() {
+            _error = null;
+            _destinoConError = null;
+          });
+        }
+      });
+    }
+
     setState(() => _seccionActual = index);
     if (destino == _destinoPapelera) {
       unawaited(_cargarPapelera());
@@ -797,7 +824,7 @@ class _HomePageState extends State<HomePage> {
       onRestaurar: _restaurarItemPapelera,
       onEliminarDefinitivo: _purgarItemPapelera,
       esAdministrador: _usuarioSesion?.esAdministrador ?? false,
-      error: _error,
+      error: _errorParaDestino(_destinoPapelera),
     );
   }
 
@@ -845,15 +872,20 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _restaurarItemPapelera(PapeleraItem item) async {
+    final bool esCredito = item.tipo == 'CREDITO';
     final bool? confirmado = await showDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) {
         return AlertDialog(
-          title: const Text('¿Restaurar cliente?'),
+          title: Text(esCredito ? '¿Restaurar crédito?' : '¿Restaurar cliente?'),
           content: Text(
-            'Se reactivará a "${item.cliente.nombreCompleto}"'
-            '${item.credito != null ? ' junto con su crédito activo' : ''}'
-            '${item.ruta != null ? ' y se vinculará nuevamente a su ruta (${item.ruta!.nombre})' : ''}.',
+            esCredito
+                ? 'Se reactivará el crédito de "${item.cliente.nombreCompleto}"'
+                    '${item.credito != null ? ' (Monto: ${formatMoney(item.credito!.total)})' : ''}'
+                    ' y volverá a estar disponible en cobranza y rutas.'
+                : 'Se reactivará a "${item.cliente.nombreCompleto}"'
+                    '${item.credito != null ? ' junto con su crédito activo' : ''}'
+                    '${item.ruta != null ? ' y se vinculará nuevamente a su ruta (${item.ruta!.nombre})' : ''}.',
           ),
           actions: <Widget>[
             TextButton(
@@ -888,7 +920,11 @@ class _HomePageState extends State<HomePage> {
     });
 
     if (exito) {
-      _mostrarMensaje('Cliente restaurado exitosamente');
+      _mostrarMensaje(
+        esCredito
+            ? 'Crédito restaurado exitosamente'
+            : 'Cliente restaurado exitosamente',
+      );
       if (!_puedeVerPapelera && mounted) {
         setState(() => _seccionActual = 0);
       }
@@ -900,14 +936,18 @@ class _HomePageState extends State<HomePage> {
       _mostrarMensaje('Solo los administradores pueden eliminar definitivamente');
       return;
     }
+    final bool esCredito = item.tipo == 'CREDITO';
     final bool? confirmado = await showDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) {
         return AlertDialog(
           title: const Text('¿Eliminar definitivamente?'),
           content: Text(
-            '¿Está seguro de eliminar de forma permanente a "${item.cliente.nombreCompleto}"?\n\n'
-            'Esta acción destruirá el registro si no tiene pagos históricos vinculados y no se podrá deshacer.',
+            esCredito
+                ? '¿Está seguro de eliminar de forma permanente este crédito de "${item.cliente.nombreCompleto}"?\n\n'
+                    'Esta acción destruirá el registro si no tiene pagos históricos vinculados y no se podrá deshacer.'
+                : '¿Está seguro de eliminar de forma permanente a "${item.cliente.nombreCompleto}"?\n\n'
+                    'Esta acción destruirá el registro si no tiene pagos históricos vinculados y no se podrá deshacer.',
           ),
           actions: <Widget>[
             TextButton(
@@ -937,7 +977,11 @@ class _HomePageState extends State<HomePage> {
     });
 
     if (exito) {
-      _mostrarMensaje('Registro purgado definitivamente');
+      _mostrarMensaje(
+        esCredito
+            ? 'Crédito purgado definitivamente'
+            : 'Registro purgado definitivamente',
+      );
     }
   }
 
@@ -1029,7 +1073,7 @@ class _HomePageState extends State<HomePage> {
       onVerInactivos: () =>
           _mostrarCreditosInicio(FiltroEstadoCredito.inactivos),
       onVerAtrasados: _mostrarAtrasadosInicio,
-      error: _error,
+      error: _errorParaDestino(_destinosMenuBase[0]),
       onRefresh: _cargar,
     );
   }
@@ -1141,7 +1185,7 @@ class _HomePageState extends State<HomePage> {
       guardando: _guardando,
       exportando: _exportando,
       hayFiltrosRuta: _hayFiltrosRuta,
-      error: _error,
+      error: _errorParaDestino(_destinosMenuBase[1]),
       roadRouter: _roadRouter,
       onRefresh: _cargar,
       onRutaChanged: (String? rutaId) {
@@ -1193,7 +1237,7 @@ class _HomePageState extends State<HomePage> {
       puedeModificarCreditos: _puedeModificarCreditos,
       puedeEliminarCreditos: _puedeEliminarCreditos,
       guardando: _guardando,
-      error: _error,
+      error: _errorParaDestino(_destinosMenuBase[2]),
       onRefresh: _cargar,
       onNearEnd: _cargarMasCreditosSiHaceFalta,
       onRefinanciarGeneral: _abrirSeleccionRefinanciacion,
@@ -1242,7 +1286,7 @@ class _HomePageState extends State<HomePage> {
       puedeEliminarCreditos: _puedeEliminarCreditos,
       esAdministrador: _usuarioSesion?.esAdministrador ?? false,
       guardando: _guardando,
-      error: _error,
+      error: _errorParaDestino(_destinosMenuBase[3]),
       onRefresh: _cargar,
       onNearEnd: _cargarMasMovimientosCajaSiHaceFalta,
       onCerrarCajaMenor: _confirmarCerrarCajaMenorSeleccionada,
@@ -1298,7 +1342,7 @@ class _HomePageState extends State<HomePage> {
       onCrearCliente: _abrirCrearClienteConCredito,
       onModificarCliente: _abrirModificarCliente,
       onEliminarCliente: _confirmarEliminarCliente,
-      error: _error,
+      error: _errorParaDestino(_destinosMenuBase[4]),
       guardando: _guardando,
     );
   }
@@ -2410,7 +2454,22 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
-    _seleccionarSeccion(_indiceGestionEmpleados);
+    final int index = _destinosMenuActual.indexOf(_destinoGestionEmpleados);
+    if (index != -1) {
+      _seleccionarSeccion(index);
+    }
+  }
+
+  Future<void> _abrirPapelera() async {
+    if (!_puedeVerPapelera) {
+      _mostrarMensaje('No tienes permiso para ver la papelera');
+      return;
+    }
+
+    final int index = _destinosMenuActual.indexOf(_destinoPapelera);
+    if (index != -1) {
+      _seleccionarSeccion(index);
+    }
   }
 
   Future<List<EmpleadoGestion>> _obtenerEmpleadosGestion() async {
@@ -2935,7 +2994,24 @@ class _HomePageState extends State<HomePage> {
       },
       onRestaurarCreditoLocal: _guardarCreditoLocal,
       onMarcarAccionOfflinePendiente: _marcarAccionOfflinePendiente,
-      onRecargarEnSegundoPlano: _recargarEnSegundoPlano,
+      onRecargarEnSegundoPlano: ({
+        bool catalogos = true,
+        bool clientes = true,
+        bool cobrosRuta = true,
+        bool creditos = true,
+        bool movimientosCaja = true,
+        bool presupuesto = true,
+      }) {
+        _recargarEnSegundoPlano(
+          catalogos: catalogos,
+          clientes: clientes,
+          cobrosRuta: cobrosRuta,
+          creditos: creditos,
+          movimientosCaja: movimientosCaja,
+          presupuesto: presupuesto,
+        );
+        unawaited(_cargarPapelera());
+      },
     );
   }
 
@@ -3346,7 +3422,7 @@ class _HomePageState extends State<HomePage> {
       return true;
     } catch (error) {
       if (mounted) {
-        setState(() => _error = _mensajeError(error));
+        _establecerError(_mensajeError(error));
         _mostrarMensaje(_mensajeError(error));
       }
       return false;
@@ -3490,6 +3566,44 @@ class _HomePageState extends State<HomePage> {
     }
 
     return resultado;
+  }
+
+  void _establecerError(
+    String? mensaje, {
+    _DestinoMenu? destino,
+    Duration duracion = const Duration(seconds: 5),
+  }) {
+    _errorTimer?.cancel();
+    if (!mounted) {
+      return;
+    }
+
+    final List<_DestinoMenu> destinos = _destinosMenuActual;
+    final _DestinoMenu? destinoActivo = destino ??
+        (_seccionActual < destinos.length ? destinos[_seccionActual] : null);
+
+    setState(() {
+      _error = mensaje;
+      _destinoConError = mensaje != null ? destinoActivo : null;
+    });
+
+    if (mensaje != null) {
+      _errorTimer = Timer(duracion, () {
+        if (mounted) {
+          setState(() {
+            _error = null;
+            _destinoConError = null;
+          });
+        }
+      });
+    }
+  }
+
+  String? _errorParaDestino(_DestinoMenu destino) {
+    if (_error != null && _destinoConError == destino) {
+      return _error;
+    }
+    return null;
   }
 
   void _refrescar() {
@@ -3664,6 +3778,7 @@ enum _AccionSesion {
   cambiarTema,
   sincronizarPendientes,
   gestionEmpleados,
+  papelera,
   cerrarSesion,
 }
 

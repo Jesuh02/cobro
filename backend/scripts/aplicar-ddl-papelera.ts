@@ -43,8 +43,7 @@ async function main() {
       rut_id UUID REFERENCES public.tbl_rutas (id_rut) ON DELETE SET NULL,
       pap_fecha TIMESTAMPTZ NOT NULL DEFAULT now(),
       pap_motivo VARCHAR(255),
-      pap_datos JSONB DEFAULT '{}',
-      CONSTRAINT ux_tbl_papelera_cliente UNIQUE (cli_id)
+      pap_datos JSONB DEFAULT '{}'
     );
   `);
 

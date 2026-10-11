@@ -1248,6 +1248,7 @@ Future<void> mostrarDialogoEliminarCredito({
   required void Function({
     bool catalogos,
     bool presupuesto,
+    bool clientes,
     bool cobrosRuta,
     bool creditos,
     bool movimientosCaja,
@@ -1258,14 +1259,17 @@ Future<void> mostrarDialogoEliminarCredito({
     return;
   }
 
+  final bool esActivo = credito.estado.codigo.toUpperCase() == 'ACTIVO';
+  final String mensajeConfirmacion = esActivo
+      ? 'Este credito se encuentra activo, ¿Seguro desea eliminarlo?'
+      : '¿Seguro que deseas eliminar este crédito?';
+
   final bool? confirmado = await showDialog<bool>(
     context: context,
     builder: (BuildContext dialogContext) {
       return AlertDialog(
-        title: const Text('¿Seguro que quieres eliminar?'),
-        content: Text(
-          'Se eliminara el credito de "${credito.cliente}" y la caja quedara como estaba antes de hacer el credito.',
-        ),
+        title: Text(esActivo ? 'Crédito activo' : 'Eliminar crédito'),
+        content: Text(mensajeConfirmacion),
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
@@ -1308,6 +1312,6 @@ Future<void> mostrarDialogoEliminarCredito({
   });
 
   if (eliminado) {
-    mostrarMensaje('Credito eliminado');
+    mostrarMensaje('Crédito eliminado');
   }
 }

@@ -2908,6 +2908,10 @@ class _HomePageState extends State<HomePage> {
             _creditos = _creditos
                 .where((CreditoRegistro item) => item.id != id)
                 .toList(growable: false);
+            // El cliente permanece intacto; solo se retira el crédito de los cobros de ruta
+            _cobrosRuta = _cobrosRuta
+                .where((CobroRuta item) => item.id != id)
+                .toList(growable: false);
           });
         }
       },

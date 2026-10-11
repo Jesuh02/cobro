@@ -36,6 +36,7 @@ import '../../routes/data/api_road_router.dart';
 import '../../routes/data/device_location_service.dart';
 import '../../routes/presentation/desktop_collection_route.dart';
 import '../../papelera/presentation/papelera_view.dart';
+import '../../papelera/presentation/dialogs/unificar_credito_dialog.dart';
 
 part 'dashboard_charts.dart';
 
@@ -873,6 +874,43 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _restaurarItemPapelera(PapeleraItem item) async {
     final bool esCredito = item.tipo == 'CREDITO';
+
+    // Verificar si el cliente ya posee un crédito activo
+    final CreditoRegistro? creditoActivo = _creditos
+        .where((CreditoRegistro c) => c.clienteId == item.cliente.id && c.activo)
+        .firstOrNull;
+
+    if (creditoActivo != null && (esCredito || item.credito != null)) {
+      final bool? unificado = await mostrarDialogoUnificarCreditoPapelera(
+        context: context,
+        item: item,
+        creditoActivo: creditoActivo,
+        onConfirmarUnificar: (String frecuenciaCodigo) async {
+          await _apiClient.postObject(
+            '/papelera/${item.id}/unificar-refinanciar',
+            <String, dynamic>{
+              'frecuenciaCodigo': frecuenciaCodigo,
+            },
+          );
+          await _cargarPapelera();
+          _recargarEnSegundoPlano(
+            clientes: true,
+            creditos: true,
+            cobrosRuta: true,
+            movimientosCaja: true,
+          );
+        },
+      );
+
+      if (unificado == true) {
+        _mostrarMensaje('Crédito unificado y refinanciado exitosamente');
+        if (!_puedeVerPapelera && mounted) {
+          setState(() => _seccionActual = 0);
+        }
+      }
+      return;
+    }
+
     final bool? confirmado = await showDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) {

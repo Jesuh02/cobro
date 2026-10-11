@@ -81,6 +81,10 @@ class PapeleraCredito {
     required this.totalPagar,
     required this.saldoPendiente,
     required this.monedaCodigo,
+    this.frecuencia = 'DIARIO',
+    this.tasaInteres = 0.0,
+    this.fechaInicio,
+    this.fechaFin,
   });
 
   factory PapeleraCredito.fromJson(Map<String, dynamic> json) {
@@ -90,6 +94,14 @@ class PapeleraCredito {
       totalPagar: parseJsonDouble(json['totalPagar']),
       saldoPendiente: parseJsonDouble(json['saldoPendiente']),
       monedaCodigo: json['monedaCodigo'] as String? ?? 'COP',
+      frecuencia: (json['frecuencia'] as String?)?.toUpperCase() ?? 'DIARIO',
+      tasaInteres: parseJsonDouble(json['tasaInteres']),
+      fechaInicio: json['fechaInicio'] != null
+          ? DateTime.tryParse(json['fechaInicio'] as String)
+          : null,
+      fechaFin: json['fechaFin'] != null
+          ? DateTime.tryParse(json['fechaFin'] as String)
+          : null,
     );
   }
 
@@ -98,6 +110,10 @@ class PapeleraCredito {
   final double totalPagar;
   final double saldoPendiente;
   final String monedaCodigo;
+  final String frecuencia;
+  final double tasaInteres;
+  final DateTime? fechaInicio;
+  final DateTime? fechaFin;
 }
 
 class PapeleraRuta {

@@ -102,10 +102,14 @@ class _PapeleraItemCard extends StatelessWidget {
             children: <Widget>[
               CircleAvatar(
                 radius: 22,
-                backgroundColor: Colors.redAccent.withValues(alpha: 0.12),
-                child: const Icon(
-                  Icons.delete_outline_rounded,
-                  color: Colors.redAccent,
+                backgroundColor: item.tipo == 'CREDITO'
+                    ? Colors.orange.withValues(alpha: 0.12)
+                    : Colors.redAccent.withValues(alpha: 0.12),
+                child: Icon(
+                  item.tipo == 'CREDITO'
+                      ? Icons.receipt_long_rounded
+                      : Icons.delete_outline_rounded,
+                  color: item.tipo == 'CREDITO' ? Colors.orange : Colors.redAccent,
                   size: 24,
                 ),
               ),
@@ -114,11 +118,39 @@ class _PapeleraItemCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    Text(
-                      item.cliente.nombreCompleto,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w900,
-                      ),
+                    Row(
+                      children: <Widget>[
+                        Expanded(
+                          child: Text(
+                            item.cliente.nombreCompleto,
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: item.tipo == 'CREDITO'
+                                ? Colors.orange.withValues(alpha: 0.12)
+                                : Colors.redAccent.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            item.tipo == 'CREDITO' ? 'Crédito' : 'Cliente',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: item.tipo == 'CREDITO'
+                                  ? Colors.orange.shade800
+                                  : Colors.redAccent,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                     if ((item.cliente.negocio ?? '').isNotEmpty) ...<Widget>[
                       const SizedBox(height: 2),
@@ -177,7 +209,9 @@ class _PapeleraItemCard extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
                         Text(
-                          'Crédito activo suspendido en cadena',
+                          item.tipo == 'CREDITO'
+                              ? 'Crédito eliminado'
+                              : 'Crédito activo suspendido en cadena',
                           style: theme.textTheme.labelMedium?.copyWith(
                             fontWeight: FontWeight.w800,
                             color: Colors.amber.shade900,

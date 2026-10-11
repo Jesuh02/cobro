@@ -6,6 +6,7 @@ class PapeleraItem {
     required this.fecha,
     required this.cliente,
     required this.eliminadoPor,
+    this.tipo = 'CLIENTE',
     this.motivo,
     this.credito,
     this.ruta,
@@ -15,6 +16,7 @@ class PapeleraItem {
     return PapeleraItem(
       id: json['id'] as String,
       fecha: DateTime.parse(json['fecha'] as String),
+      tipo: json['tipo'] as String? ?? 'CLIENTE',
       motivo: json['motivo'] as String?,
       cliente: PapeleraCliente.fromJson(
         json['cliente'] as Map<String, dynamic>,
@@ -35,6 +37,7 @@ class PapeleraItem {
 
   final String id;
   final DateTime fecha;
+  final String tipo;
   final String? motivo;
   final PapeleraCliente cliente;
   final PapeleraCredito? credito;

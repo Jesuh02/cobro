@@ -47,6 +47,7 @@ const String _permisoRefinanciarCreditos = permisoRefinanciarCreditos;
 const String _permisoModificarCreditos = permisoModificarCreditos;
 const String _permisoEliminarCreditos = permisoEliminarCreditos;
 const String _permisoModificarClientes = permisoModificarClientes;
+const String _permisoEliminarClientes = permisoEliminarClientes;
 const String _permisoAgregarCuota = permisoAgregarCuota;
 const String _permisoModificarMovimientos = permisoModificarMovimientos;
 const String _permisoEliminarMovimientos = permisoEliminarMovimientos;
@@ -221,7 +222,7 @@ class _HomePageState extends State<HomePage> {
     if (_puedeVerEmpleados) {
       destinos.add(_destinoGestionEmpleados);
     }
-    if (_usuarioSesion?.esAdministrador ?? false) {
+    if (_puedeVerPapelera) {
       destinos.add(_destinoPapelera);
     }
     return destinos;
@@ -726,8 +727,8 @@ class _HomePageState extends State<HomePage> {
       _mostrarMensaje('No tienes permiso para ver empleados');
       return;
     }
-    if (destino == _destinoPapelera && !(_usuarioSesion?.esAdministrador ?? false)) {
-      _mostrarMensaje('Solo los administradores pueden ver la papelera');
+    if (destino == _destinoPapelera && !_puedeVerPapelera) {
+      _mostrarMensaje('No tienes permiso para ver la papelera');
       return;
     }
 
@@ -772,7 +773,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _construirPapelera(BuildContext context) {
-    if (!(_usuarioSesion?.esAdministrador ?? false)) {
+    if (!_puedeVerPapelera) {
       return Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(18),
@@ -781,7 +782,7 @@ class _HomePageState extends State<HomePage> {
             child: const EstadoVacio(
               icono: Icons.lock_outline_rounded,
               titulo: 'Acceso restringido',
-              mensaje: 'Solo los administradores pueden gestionar la papelera.',
+              mensaje: 'No tienes acceso a la papelera.',
             ),
           ),
         ),
@@ -795,6 +796,7 @@ class _HomePageState extends State<HomePage> {
       onRefresh: _cargarPapelera,
       onRestaurar: _restaurarItemPapelera,
       onEliminarDefinitivo: _purgarItemPapelera,
+      esAdministrador: _usuarioSesion?.esAdministrador ?? false,
       error: _error,
     );
   }
@@ -819,7 +821,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _cargarPapelera() async {
-    if (!(_usuarioSesion?.esAdministrador ?? false)) {
+    if (_usuarioSesion == null || _usuarioSesion!.esSuperAdmin) {
       return;
     }
     setState(() => _cargandoPapelera = true);
@@ -887,10 +889,17 @@ class _HomePageState extends State<HomePage> {
 
     if (exito) {
       _mostrarMensaje('Cliente restaurado exitosamente');
+      if (!_puedeVerPapelera && mounted) {
+        setState(() => _seccionActual = 0);
+      }
     }
   }
 
   Future<void> _purgarItemPapelera(PapeleraItem item) async {
+    if (!(_usuarioSesion?.esAdministrador ?? false)) {
+      _mostrarMensaje('Solo los administradores pueden eliminar definitivamente');
+      return;
+    }
     final bool? confirmado = await showDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) {
@@ -948,6 +957,13 @@ class _HomePageState extends State<HomePage> {
       _usuarioSesion?.puede(_permisoEliminarCreditos) ?? false;
   bool get _puedeModificarClientes =>
       _usuarioSesion?.puede(_permisoModificarClientes) ?? false;
+  bool get _puedeEliminarClientes =>
+      _usuarioSesion?.esAdministrador == true ||
+      (_usuarioSesion?.puede(_permisoEliminarClientes) ?? false);
+  bool get _puedeVerPapelera =>
+      (_usuarioSesion?.esAdministrador ?? false) ||
+      _puedeEliminarClientes ||
+      _itemsPapelera.isNotEmpty;
   bool get _puedeAgregarCuota =>
       _usuarioSesion?.puede(_permisoAgregarCuota) ?? false;
   bool get _puedeModificarMovimientos =>
@@ -1276,6 +1292,7 @@ class _HomePageState extends State<HomePage> {
       sinClientesRegistrados: _clientes.isEmpty,
       esAdministrador: _usuarioSesion?.esAdministrador ?? false,
       puedeModificar: _puedeModificarClientes,
+      puedeEliminar: _puedeEliminarClientes,
       buscarController: _buscarClienteController,
       onRefresh: _cargar,
       onCrearCliente: _abrirCrearClienteConCredito,
@@ -1888,6 +1905,7 @@ class _HomePageState extends State<HomePage> {
         _ajustarSelecciones();
       });
       unawaited(_sincronizarAccionesOffline());
+      unawaited(_cargarPapelera());
     } catch (error, stackTrace) {
       if (!mounted || cargaActual != _cargaSerial) {
         return;
@@ -3035,16 +3053,14 @@ class _HomePageState extends State<HomePage> {
     await mostrarDialogoEliminarCliente(
       context: context,
       cliente: cliente,
-      esAdministrador: _usuarioSesion?.esAdministrador ?? false,
+      puedeEliminar: _puedeEliminarClientes,
       apiClient: _apiClient,
       mostrarMensaje: _mostrarMensaje,
       ejecutarAccion: _ejecutarAccion,
       onClienteEliminado: _eliminarClienteLocal,
       onRecargarEnSegundoPlano: () {
         _recargarEnSegundoPlano(clientes: true, creditos: true, cobrosRuta: true);
-        if (_usuarioSesion?.esAdministrador ?? false) {
-          unawaited(_cargarPapelera());
-        }
+        unawaited(_cargarPapelera());
       },
       tieneCreditoActivo: tieneCreditoActivo,
     );

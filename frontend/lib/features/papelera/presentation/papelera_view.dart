@@ -14,6 +14,7 @@ class PapeleraView extends StatelessWidget {
     required this.onRefresh,
     required this.onRestaurar,
     required this.onEliminarDefinitivo,
+    this.esAdministrador = true,
     this.error,
   });
 
@@ -23,14 +24,16 @@ class PapeleraView extends StatelessWidget {
   final Future<void> Function() onRefresh;
   final ValueChanged<PapeleraItem> onRestaurar;
   final ValueChanged<PapeleraItem> onEliminarDefinitivo;
+  final bool esAdministrador;
   final String? error;
 
   @override
   Widget build(BuildContext context) {
     return Pagina(
       titulo: 'Papelera',
-      subtitulo:
-          'Historial de clientes y créditos suspendidos. Solo administradores pueden restaurar o purgar.',
+      subtitulo: esAdministrador
+          ? 'Historial de clientes y créditos suspendidos. Solo administradores pueden purgar definitivamente.'
+          : 'Historial de clientes y créditos que has enviado a la papelera. Puedes restaurarlos en cualquier momento.',
       error: error,
       onRefresh: onRefresh,
       children: <Widget>[
@@ -57,6 +60,7 @@ class PapeleraView extends StatelessWidget {
                 item: item,
                 onRestaurar: () => onRestaurar(item),
                 onEliminarDefinitivo: () => onEliminarDefinitivo(item),
+                esAdministrador: esAdministrador,
               ),
             ),
           ),
@@ -70,11 +74,13 @@ class _PapeleraItemCard extends StatelessWidget {
     required this.item,
     required this.onRestaurar,
     required this.onEliminarDefinitivo,
+    required this.esAdministrador,
   });
 
   final PapeleraItem item;
   final VoidCallback onRestaurar;
   final VoidCallback onEliminarDefinitivo;
+  final bool esAdministrador;
 
   @override
   Widget build(BuildContext context) {
@@ -211,22 +217,23 @@ class _PapeleraItemCard extends StatelessWidget {
                   icono: Icons.alt_route_rounded,
                   texto: 'Ruta: ${item.ruta!.nombre}',
                 ),
-              // Opción de purga definitiva
-              TextButton.icon(
-                onPressed: onEliminarDefinitivo,
-                icon: const Icon(
-                  Icons.delete_forever_rounded,
-                  size: 16,
-                  color: Colors.redAccent,
-                ),
-                label: const Text(
-                  'Purgar',
-                  style: TextStyle(
+              // Opción de purga definitiva (solo administradores)
+              if (esAdministrador)
+                TextButton.icon(
+                  onPressed: onEliminarDefinitivo,
+                  icon: const Icon(
+                    Icons.delete_forever_rounded,
+                    size: 16,
                     color: Colors.redAccent,
-                    fontSize: 12,
+                  ),
+                  label: const Text(
+                    'Purgar',
+                    style: TextStyle(
+                      color: Colors.redAccent,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
-              ),
             ],
           ),
         ],

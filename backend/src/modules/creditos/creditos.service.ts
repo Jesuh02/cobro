@@ -1673,7 +1673,7 @@ export class CreditosService {
     creditoId: string,
     usuario: AuthenticatedUser,
   ) {
-    await this.prisma.$transaction(
+    const resultado = await this.prisma.$transaction(
       async (tx) => {
         const orgScope = await this.tenantScope.obtenerScopeOrganizacionTbl(
           usuario,
@@ -1681,9 +1681,20 @@ export class CreditosService {
         );
 
         const [credito] = await tx.$queryRaw<
-          Array<{ id: string; org_id: string }>
+          Array<{
+            id: string;
+            cli_id: string;
+            cre_estado: string;
+            cre_total: Prisma.Decimal;
+            org_id: string;
+          }>
         >(Prisma.sql`
-          SELECT cr.id_cre::text AS id, cl.org_id::text AS org_id
+          SELECT
+            cr.id_cre::text AS id,
+            cr.cli_id::text AS cli_id,
+            cr.cre_estado::text AS cre_estado,
+            cr.cre_total,
+            cl.org_id::text AS org_id
           FROM public.tbl_creditos cr
           JOIN public.tbl_clientes cl ON cl.id_cli = cr.cli_id
           WHERE cr.id_cre = ${creditoId}::uuid
@@ -1707,13 +1718,24 @@ export class CreditosService {
           `,
         );
 
+        // Si tiene pagos registrados, no se puede hacer DELETE físico por integridad contable;
+        // se anula para retirarlo de la ruta activa y de cobranza, manteniendo el cliente intacto.
         if (Number(pagos?.count ?? 0) > 0) {
-          throw DomainError.conflict(
-            'No se puede eliminar un credito con pagos registrados',
-            'CREDITO_CON_PAGOS_NO_ELIMINABLE',
-          );
+          await tx.$executeRaw(Prisma.sql`
+            UPDATE public.tbl_creditos
+            SET cre_estado = 'ANULADO'::public.credito_estado_enum
+            WHERE id_cre = ${creditoId}::uuid
+          `);
+
+          return {
+            ok: true,
+            anulado: true,
+            creditoId: credito.id,
+            mensaje: 'Credito anulado y retirado de la ruta',
+          };
         }
 
+        // Si no tiene pagos, se revierten los movimientos de caja y se elimina el crédito
         const movimientos = await tx.$queryRaw<
           Array<{ id: string; monto: Prisma.Decimal; sca_id: string | null }>
         >(Prisma.sql`
@@ -1749,12 +1771,19 @@ export class CreditosService {
           DELETE FROM public.tbl_creditos
           WHERE id_cre = ${creditoId}::uuid
         `);
+
+        return {
+          ok: true,
+          eliminado: true,
+          creditoId: credito.id,
+          mensaje: 'Credito eliminado y retirado de la ruta',
+        };
       },
       { maxWait: 10_000, timeout: 20_000 },
     );
 
     this.invalidarCacheLecturas();
-    return { ok: true };
+    return resultado;
   }
 
   // ==========================================

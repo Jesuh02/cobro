@@ -48,11 +48,12 @@ class _DialogoUnificarCreditoContentState
   void initState() {
     super.initState();
     // Preseleccionar por defecto la frecuencia del crédito activo vigente
-    _frecuenciaSeleccionada =
+    final String codigo =
+        widget.creditoActivo.frecuenciaPago.codigo.trim().toUpperCase();
+    final String nombre =
         widget.creditoActivo.frecuenciaPago.nombre.trim().toUpperCase();
-    if (_frecuenciaSeleccionada.isEmpty) {
-      _frecuenciaSeleccionada = 'DIARIO';
-    }
+    _frecuenciaSeleccionada =
+        codigo.isNotEmpty ? codigo : (nombre.isNotEmpty ? nombre : 'DIARIO');
   }
 
   @override
@@ -64,10 +65,13 @@ class _DialogoUnificarCreditoContentState
     final double principalActivo = widget.creditoActivo.valorPrincipal;
     final double totalUnificado = principalActivo + saldoPapelera;
 
-    final String frecPapelera =
-        widget.item.credito?.frecuencia.toUpperCase() ?? 'DIARIO';
-    final String frecActiva =
-        widget.creditoActivo.frecuenciaPago.nombre.toUpperCase();
+    final String frecActiva = widget.creditoActivo.frecuenciaPago.nombre.trim().toUpperCase().isNotEmpty
+        ? widget.creditoActivo.frecuenciaPago.nombre.trim().toUpperCase()
+        : 'DIARIO';
+    final String frecPapelera = (widget.item.credito?.frecuencia.trim().toUpperCase() ?? '').isNotEmpty
+        ? widget.item.credito!.frecuencia.trim().toUpperCase()
+        : frecActiva;
+    final bool frecuenciasDifieren = frecActiva != frecPapelera;
 
     return AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -199,62 +203,41 @@ class _DialogoUnificarCreditoContentState
                   ],
                 ),
               ),
-              const SizedBox(height: 18),
 
-              // Selector de frecuencia (Diario vs Semanal)
-              Text(
-                'Frecuencia de cobro resultante:',
-                style: theme.textTheme.labelMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                child: SegmentedButton<String>(
-                  segments: const <ButtonSegment<String>>[
-                    ButtonSegment<String>(
-                      value: 'DIARIO',
-                      icon: Icon(Icons.calendar_view_day_rounded, size: 16),
-                      label: Text('Diario'),
-                    ),
-                    ButtonSegment<String>(
-                      value: 'SEMANAL',
-                      icon: Icon(Icons.calendar_view_week_rounded, size: 16),
-                      label: Text('Semanal'),
-                    ),
-                  ],
-                  selected: <String>{_frecuenciaSeleccionada},
-                  onSelectionChanged: (Set<String> seleccion) {
-                    setState(() {
-                      _frecuenciaSeleccionada = seleccion.first;
-                    });
-                  },
-                ),
-              ),
-              const SizedBox(height: 12),
-
-              // Nota de reinicio de plazo (Opción B)
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Icon(
-                    Icons.check_circle_outline_rounded,
-                    size: 16,
-                    color: theme.colorScheme.primary,
+              // Selector de frecuencia (solo si las frecuencias difieren)
+              if (frecuenciasDifieren) ...<Widget>[
+                const SizedBox(height: 18),
+                Text(
+                  'Frecuencia de cobro resultante:',
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
                   ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      'El plazo se reinicia a partir de hoy con la frecuencia elegida (Opción B). No se descuenta efectivo de la caja menor.',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                        fontSize: 11,
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: SegmentedButton<String>(
+                    segments: <ButtonSegment<String>>[
+                      ButtonSegment<String>(
+                        value: frecActiva,
+                        icon: Icon(_iconoFrecuencia(frecActiva), size: 16),
+                        label: Text(_formatearNombreFrecuencia(frecActiva)),
                       ),
-                    ),
+                      ButtonSegment<String>(
+                        value: frecPapelera,
+                        icon: Icon(_iconoFrecuencia(frecPapelera), size: 16),
+                        label: Text(_formatearNombreFrecuencia(frecPapelera)),
+                      ),
+                    ],
+                    selected: <String>{_frecuenciaSeleccionada},
+                    onSelectionChanged: (Set<String> seleccion) {
+                      setState(() {
+                        _frecuenciaSeleccionada = seleccion.first;
+                      });
+                    },
                   ),
-                ],
-              ),
+                ),
+              ],
             ],
           ),
         ),
@@ -354,5 +337,40 @@ class _FilaDesglose extends StatelessWidget {
         ),
       ],
     );
+  }
+}
+
+IconData _iconoFrecuencia(String frecuencia) {
+  switch (frecuencia.toUpperCase()) {
+    case 'DIARIO':
+      return Icons.calendar_view_day_rounded;
+    case 'SEMANAL':
+      return Icons.calendar_view_week_rounded;
+    case 'QUINCENAL':
+      return Icons.date_range_rounded;
+    case 'MENSUAL':
+      return Icons.calendar_month_rounded;
+    default:
+      return Icons.schedule_rounded;
+  }
+}
+
+String _formatearNombreFrecuencia(String frecuencia) {
+  final String normalizada = frecuencia.trim().toUpperCase();
+  switch (normalizada) {
+    case 'DIARIO':
+      return 'Diario';
+    case 'SEMANAL':
+      return 'Semanal';
+    case 'QUINCENAL':
+      return 'Quincenal';
+    case 'MENSUAL':
+      return 'Mensual';
+    default:
+      if (normalizada.isEmpty) {
+        return '';
+      }
+      return normalizada[0].toUpperCase() +
+          normalizada.substring(1).toLowerCase();
   }
 }

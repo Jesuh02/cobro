@@ -57,6 +57,10 @@ const List<PermisoEmpleadoDef> permisosEmpleado = <PermisoEmpleadoDef>[
     nombre: 'Modificar clientes',
   ),
   PermisoEmpleadoDef(
+    codigo: permisoEliminarClientes,
+    nombre: 'Eliminar clientes',
+  ),
+  PermisoEmpleadoDef(
     codigo: permisoAgregarCuota,
     nombre: 'Agregar cuota',
   ),

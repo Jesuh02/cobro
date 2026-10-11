@@ -416,7 +416,7 @@ class _DialogoModificarClienteContentState
 Future<void> mostrarDialogoEliminarCliente({
   required BuildContext context,
   required Cliente cliente,
-  required bool esAdministrador,
+  required bool puedeEliminar,
   required ApiClient apiClient,
   required void Function(String) mostrarMensaje,
   required Future<bool> Function(Future<void> Function()) ejecutarAccion,
@@ -424,8 +424,8 @@ Future<void> mostrarDialogoEliminarCliente({
   required void Function() onRecargarEnSegundoPlano,
   bool tieneCreditoActivo = false,
 }) async {
-  if (!esAdministrador) {
-    mostrarMensaje('Solo los administradores pueden enviar clientes a la papelera');
+  if (!puedeEliminar) {
+    mostrarMensaje('No tienes permiso para eliminar clientes');
     return;
   }
 

@@ -59,12 +59,17 @@ export class PapeleraService {
     query: ListarPapeleraQueryDto,
     usuario: AuthenticatedUser,
   ) {
-    this.asegurarAdministrador(usuario);
     const scope = await this.tenantScope.obtenerScopeOrganizacionTbl(usuario);
+    const esAdmin = this.tenantScope.esAdministrador(usuario);
 
     const conditions: Prisma.Sql[] = [
       Prisma.sql`p.org_id = ${scope.organizacionId}::uuid`,
     ];
+
+    // Si no es administrador, solo puede ver lo que él mismo eliminó
+    if (!esAdmin) {
+      conditions.push(Prisma.sql`p.usu_id = ${scope.usuarioId}::uuid`);
+    }
 
     if (query.search && query.search.trim()) {
       const pattern = `%${query.search.trim().toLowerCase()}%`;
@@ -159,8 +164,8 @@ export class PapeleraService {
   }
 
   async restaurarCliente(papeleraId: string, usuario: AuthenticatedUser) {
-    this.asegurarAdministrador(usuario);
     const scope = await this.tenantScope.obtenerScopeOrganizacionTbl(usuario);
+    const esAdmin = this.tenantScope.esAdministrador(usuario);
 
     return this.prisma.$transaction(async (tx) => {
       const rows = await tx.$queryRaw<
@@ -179,13 +184,14 @@ export class PapeleraService {
         FROM public.tbl_papelera
         WHERE id_pap = ${papeleraId}::uuid
           AND org_id = ${scope.organizacionId}::uuid
+          ${esAdmin ? Prisma.sql`` : Prisma.sql`AND usu_id = ${scope.usuarioId}::uuid`}
         FOR UPDATE
       `);
 
       const papelera = rows[0];
       if (!papelera) {
         throw DomainError.notFound(
-          'Registro de papelera no encontrado',
+          'Registro de papelera no encontrado o no autorizado',
           'PAPELERA_NO_ENCONTRADO',
         );
       }

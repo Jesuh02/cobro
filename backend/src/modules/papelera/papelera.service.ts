@@ -6,7 +6,11 @@ import { TenantScopeService } from '../../common/tenancy/tenant-scope.service';
 import { InMemoryCacheService } from '../../common/cache/in-memory-cache.service';
 import { DomainError } from '../../common/domain/domain-error';
 import { AuthenticatedUser } from '../auth/auth.types';
-import { ListarPapeleraQueryDto } from './dto';
+import { ListarPapeleraQueryDto, UnificarCreditoPapeleraDto } from './dto';
+import {
+  calcularPlanPendiente,
+  redondear,
+} from '../creditos/creditos-amortizacion.util';
 
 export interface PapeleraItemRow {
   id_pap: string;
@@ -25,6 +29,10 @@ export interface PapeleraItemRow {
   cre_total: Prisma.Decimal | null;
   cre_total_pagar: Prisma.Decimal | null;
   cre_saldo: Prisma.Decimal | null;
+  cre_tasa_interes: Prisma.Decimal | null;
+  cre_fecha_inicio: Date | null;
+  cre_fecha_fin: Date | null;
+  frecuencia_codigo: string | null;
   moneda_codigo: string | null;
   // Ruta
   rut_id: string | null;
@@ -100,6 +108,10 @@ export class PapeleraService {
         cr.id_cre::text AS cre_id,
         cr.cre_total,
         cr.cre_total_pagar,
+        cr.cre_tasa_interes,
+        cr.cre_fecha_inicio,
+        cr.cre_fecha_fin,
+        pc.pcr_frecuencia::text AS frecuencia_codigo,
         GREATEST(
           cr.cre_total_pagar - COALESCE(abonos.total_pagado, 0),
           0
@@ -116,6 +128,7 @@ export class PapeleraService {
       JOIN public.tbl_usuarios u ON u.id_usu = p.usu_id
       JOIN public.tbl_personas u_per ON u_per.id_per = u.persona_id
       LEFT JOIN public.tbl_creditos cr ON cr.id_cre = p.cre_id
+      LEFT JOIN public.tbl_productos_creditos pc ON pc.id_pcr = cr.pcr_id
       LEFT JOIN public.tbl_monedas m ON m.id_mon = cr.mon_id
       LEFT JOIN public.tbl_rutas r ON r.id_rut = p.rut_id
       LEFT JOIN LATERAL (
@@ -150,6 +163,10 @@ export class PapeleraService {
             totalPagar: Number(r.cre_total_pagar ?? 0),
             saldoPendiente: Number(r.cre_saldo ?? 0),
             monedaCodigo: r.moneda_codigo ?? 'COP',
+            frecuencia: r.frecuencia_codigo ?? 'DIARIO',
+            tasaInteres: Number(r.cre_tasa_interes ?? 0),
+            fechaInicio: r.cre_fecha_inicio ? r.cre_fecha_inicio.toISOString() : null,
+            fechaFin: r.cre_fecha_fin ? r.cre_fecha_fin.toISOString() : null,
           }
         : null,
       ruta: r.rut_id
@@ -242,6 +259,23 @@ export class PapeleraService {
 
         // 1. Reactivar crédito a ACTIVO
         if (papelera.cre_id) {
+          const [creditoActivo] = await tx.$queryRaw<
+            Array<{ id_cre: string }>
+          >(Prisma.sql`
+            SELECT id_cre::text
+            FROM public.tbl_creditos
+            WHERE cli_id = ${papelera.cli_id}::uuid
+              AND UPPER(cre_estado::text) = 'ACTIVO'
+            LIMIT 1
+          `);
+
+          if (creditoActivo) {
+            throw DomainError.conflict(
+              'El cliente ya posee un crédito activo. Debe unificarlo para restaurar este crédito.',
+              'CLIENTE_YA_TIENE_CREDITO_ACTIVO',
+            );
+          }
+
           await tx.$executeRaw(Prisma.sql`
             UPDATE public.tbl_creditos
             SET cre_estado = 'ACTIVO'::public.credito_estado_enum
@@ -292,6 +326,23 @@ export class PapeleraService {
 
       // 2. Reactivar crédito activo si este registro tenía un crédito vinculado en cadena
       if (papelera.cre_id) {
+        const [creditoActivo] = await tx.$queryRaw<
+          Array<{ id_cre: string }>
+        >(Prisma.sql`
+          SELECT id_cre::text
+          FROM public.tbl_creditos
+          WHERE cli_id = ${papelera.cli_id}::uuid
+            AND UPPER(cre_estado::text) = 'ACTIVO'
+          LIMIT 1
+        `);
+
+        if (creditoActivo) {
+          throw DomainError.conflict(
+            'El cliente ya posee un crédito activo. Debe unificarlo para restaurar este crédito.',
+            'CLIENTE_YA_TIENE_CREDITO_ACTIVO',
+          );
+        }
+
         await tx.$executeRaw(Prisma.sql`
           UPDATE public.tbl_creditos
           SET cre_estado = 'ACTIVO'::public.credito_estado_enum
@@ -499,5 +550,411 @@ export class PapeleraService {
         mensaje: 'Registro purgado definitivamente',
       };
     });
+  }
+
+  private decimal(valor: number, decimales = 2): Prisma.Decimal {
+    return new Prisma.Decimal(valor.toFixed(decimales));
+  }
+
+  private decimalANumero(valor?: Prisma.Decimal | number | null): number {
+    if (valor === null || valor === undefined) return 0;
+    return typeof valor === 'number' ? valor : Number(valor);
+  }
+
+  async unificarYRefinanciarCredito(
+    papeleraId: string,
+    dto: UnificarCreditoPapeleraDto,
+    usuario: AuthenticatedUser,
+  ) {
+    return this.unificarYRefinanciarCreditoTbl(papeleraId, dto, usuario);
+  }
+
+  private async unificarYRefinanciarCreditoTbl(
+    papeleraId: string,
+    dto: UnificarCreditoPapeleraDto,
+    usuario: AuthenticatedUser,
+  ) {
+    const resultado = await this.prisma.$transaction(async (tx) => {
+      const scope = await this.tenantScope.obtenerScopeOrganizacionTbl(
+        usuario,
+        tx,
+      );
+
+      // 1. Obtener registro de papelera
+      const [papelera] = await tx.$queryRaw<
+        Array<{
+          id_pap: string;
+          cli_id: string;
+          cre_id: string | null;
+          rut_id: string | null;
+          usu_id: string;
+          pap_datos: unknown;
+        }>
+      >(Prisma.sql`
+        SELECT
+          id_pap::text,
+          cli_id::text,
+          cre_id::text,
+          rut_id::text,
+          usu_id::text,
+          pap_datos
+        FROM public.tbl_papelera
+        WHERE id_pap = ${papeleraId}::uuid
+          AND org_id = ${scope.organizacionId}::uuid
+        FOR UPDATE
+      `);
+
+      if (!papelera) {
+        throw DomainError.notFound(
+          'Registro de papelera no encontrado',
+          'PAPELERA_NO_ENCONTRADO',
+        );
+      }
+
+      if (!papelera.cre_id) {
+        throw DomainError.validation(
+          'El registro de papelera no contiene un crédito para unificar',
+          'PAPELERA_SIN_CREDITO',
+        );
+      }
+
+      // Validar permisos
+      const esAdmin = this.tenantScope.esAdministrador(usuario);
+      const esCreador = papelera.usu_id === scope.usuarioId;
+      if (!esAdmin && !esCreador) {
+        throw new ForbiddenException(
+          'No tienes permiso para unificar este registro',
+        );
+      }
+
+      // 2. Obtener el crédito de la papelera
+      const [creditoPapelera] = await tx.$queryRaw<
+        Array<{
+          id_cre: string;
+          cli_id: string;
+          cre_total: Prisma.Decimal;
+          cre_tasa_interes: Prisma.Decimal;
+          cre_total_pagar: Prisma.Decimal;
+          cre_estado: string;
+          mon_id: string;
+          pcr_id: string;
+          frecuencia_codigo: string;
+        }>
+      >(Prisma.sql`
+        SELECT
+          cr.id_cre::text,
+          cr.cli_id::text,
+          cr.cre_total,
+          cr.cre_tasa_interes,
+          cr.cre_total_pagar,
+          cr.cre_estado::text,
+          cr.mon_id::text,
+          cr.pcr_id::text,
+          pc.pcr_frecuencia::text AS frecuencia_codigo
+        FROM public.tbl_creditos cr
+        JOIN public.tbl_productos_creditos pc ON pc.id_pcr = cr.pcr_id
+        WHERE cr.id_cre = ${papelera.cre_id}::uuid
+        FOR UPDATE
+      `);
+
+      if (!creditoPapelera) {
+        throw DomainError.notFound(
+          'El crédito de la papelera no existe en base de datos',
+          'CREDITO_PAPELERA_NO_ENCONTRADO',
+        );
+      }
+
+      // Abonos previos al crédito de la papelera
+      const [abonosPapelera] = await tx.$queryRaw<
+        Array<{ capital_abonado: Prisma.Decimal; total_pagado: Prisma.Decimal }>
+      >(Prisma.sql`
+        SELECT
+          COALESCE(SUM(cp.cpa_capital), 0) AS capital_abonado,
+          COALESCE(SUM(cp.cpa_total), 0) AS total_pagado
+        FROM public.tbl_cuotas cu
+        JOIN public.tbl_cuotas_pagos cp ON cp.cuo_id = cu.id_cuo
+        WHERE cu.cre_id = ${papelera.cre_id}::uuid
+      `);
+
+      let capAbonadoPap = this.decimalANumero(abonosPapelera?.capital_abonado);
+      const totalPagadoPap = this.decimalANumero(abonosPapelera?.total_pagado);
+      if (capAbonadoPap === 0 && totalPagadoPap > 0) {
+        capAbonadoPap = totalPagadoPap;
+      }
+      const principalPapelera = this.decimalANumero(creditoPapelera.cre_total);
+      const capitalPendientePapelera = redondear(
+        Math.max(0, principalPapelera - capAbonadoPap),
+        2,
+      );
+
+      // 3. Obtener el crédito ACTIVO del cliente
+      const [creditoActivo] = await tx.$queryRaw<
+        Array<{
+          id_cre: string;
+          cli_id: string;
+          cre_total: Prisma.Decimal;
+          cre_tasa_interes: Prisma.Decimal;
+          cre_total_pagar: Prisma.Decimal;
+          cre_estado: string;
+          mon_id: string;
+          pcr_id: string;
+          frecuencia_codigo: string;
+          decimales: number | bigint;
+        }>
+      >(Prisma.sql`
+        SELECT
+          cr.id_cre::text,
+          cr.cli_id::text,
+          cr.cre_total,
+          cr.cre_tasa_interes,
+          cr.cre_total_pagar,
+          cr.cre_estado::text,
+          cr.mon_id::text,
+          cr.pcr_id::text,
+          pc.pcr_frecuencia::text AS frecuencia_codigo,
+          m.mon_decimales AS decimales
+        FROM public.tbl_creditos cr
+        JOIN public.tbl_productos_creditos pc ON pc.id_pcr = cr.pcr_id
+        JOIN public.tbl_monedas m ON m.id_mon = cr.mon_id
+        WHERE cr.cli_id = ${papelera.cli_id}::uuid
+          AND UPPER(cr.cre_estado::text) = 'ACTIVO'
+        FOR UPDATE OF cr
+        LIMIT 1
+      `);
+
+      if (!creditoActivo) {
+        throw DomainError.conflict(
+          'El cliente no tiene un crédito activo con el cual unificar',
+          'CLIENTE_SIN_CREDITO_ACTIVO',
+        );
+      }
+
+      if (creditoActivo.mon_id !== creditoPapelera.mon_id) {
+        throw DomainError.conflict(
+          'No se pueden unificar créditos con diferente moneda',
+          'MONEDAS_INCOMPATIBLES',
+        );
+      }
+
+      const decimales = Number(creditoActivo.decimales ?? 2);
+
+      // 4. Determinar la frecuencia seleccionada (Diario, Semanal, etc.)
+      const frecuenciaDeseada = (
+        dto.frecuenciaCodigo?.trim().toUpperCase() ||
+        creditoActivo.frecuencia_codigo
+      );
+
+      const [producto] = await tx.$queryRaw<
+        Array<{ id: string; dias_intervalo: number; pcr_frecuencia: string }>
+      >(Prisma.sql`
+        SELECT
+          pc.id_pcr::text AS id,
+          CASE pc.pcr_frecuencia::text
+            WHEN 'SEMANAL' THEN 7
+            WHEN 'QUINCENAL' THEN 15
+            WHEN 'MENSUAL' THEN 30
+            ELSE 1
+          END AS dias_intervalo,
+          pc.pcr_frecuencia::text AS pcr_frecuencia
+        FROM public.tbl_productos_creditos pc
+        WHERE pc.pcr_frecuencia::text = ${frecuenciaDeseada}
+        ORDER BY (pc.pcr_frecuencia::text = ${frecuenciaDeseada}) DESC
+        LIMIT 1
+      `);
+
+      if (!producto) {
+        throw DomainError.notFound(
+          'Frecuencia de pago no encontrada',
+          'FRECUENCIA_NO_ENCONTRADA',
+        );
+      }
+
+      // 5. Cuotas y abonos del crédito ACTIVO
+      const cuotasActivas = await tx.$queryRaw<
+        Array<{
+          id: string;
+          numero: number | bigint;
+          valor: Prisma.Decimal;
+          total_pagado: Prisma.Decimal;
+          estado: string;
+        }>
+      >(Prisma.sql`
+        SELECT
+          cu.id_cuo::text AS id,
+          cu.cuo_numero::int AS numero,
+          cu.cuo_valor AS valor,
+          cu.cuo_total_pagado AS total_pagado,
+          UPPER(cu.cuo_estado::text) AS estado
+        FROM public.tbl_cuotas cu
+        WHERE cu.cre_id = ${creditoActivo.id_cre}::uuid
+        ORDER BY cu.cuo_numero ASC
+      `);
+
+      const [abonosActivo] = await tx.$queryRaw<
+        Array<{ capital_abonado: Prisma.Decimal; interes_abonado: Prisma.Decimal }>
+      >(Prisma.sql`
+        SELECT
+          COALESCE(SUM(cp.cpa_capital), 0) AS capital_abonado,
+          COALESCE(SUM(cp.cpa_interes), 0) AS interes_abonado
+        FROM public.tbl_cuotas cu
+        JOIN public.tbl_cuotas_pagos cp ON cp.cuo_id = cu.id_cuo
+        WHERE cu.cre_id = ${creditoActivo.id_cre}::uuid
+      `);
+
+      let capAbonadoAct = this.decimalANumero(abonosActivo?.capital_abonado);
+      let intAbonadoAct = this.decimalANumero(abonosActivo?.interes_abonado);
+      const totalAbonadoAct = cuotasActivas.reduce(
+        (acc, c) => acc + this.decimalANumero(c.total_pagado),
+        0,
+      );
+      if (capAbonadoAct === 0 && intAbonadoAct === 0 && totalAbonadoAct > 0) {
+        capAbonadoAct = totalAbonadoAct;
+      }
+
+      const ultimoNumeroCuota = cuotasActivas.reduce(
+        (max, c) => Math.max(max, Number(c.numero)),
+        0,
+      );
+
+      // 6. Nuevo capital consolidado y cálculo del plan reiniciado (Opción B)
+      const principalActivo = this.decimalANumero(creditoActivo.cre_total);
+      const valorNuevo = redondear(
+        principalActivo + capitalPendientePapelera,
+        decimales,
+      );
+      const porcentajeInteres = this.decimalANumero(
+        creditoActivo.cre_tasa_interes,
+      );
+
+      let plazoDias = dto.plazoDias;
+      if (!plazoDias || plazoDias <= 0) {
+        if (producto.pcr_frecuencia === 'SEMANAL') {
+          plazoDias = 28;
+        } else if (producto.pcr_frecuencia === 'QUINCENAL') {
+          plazoDias = 30;
+        } else if (producto.pcr_frecuencia === 'MENSUAL') {
+          plazoDias = 30;
+        } else {
+          plazoDias = 30;
+        }
+      }
+
+      const fechaInicio = new Date();
+
+      const totalNuevo = redondear(
+        valorNuevo + valorNuevo * (porcentajeInteres / 100),
+        decimales,
+      );
+      const interesNuevo = redondear(totalNuevo - valorNuevo, decimales);
+      const capitalPendiente = redondear(
+        Math.max(0, valorNuevo - capAbonadoAct),
+        decimales,
+      );
+      const interesPendiente = redondear(
+        Math.max(0, interesNuevo - intAbonadoAct),
+        decimales,
+      );
+
+      const planPendiente = calcularPlanPendiente({
+        fechaInicio,
+        valorCapital: capitalPendiente,
+        valorInteres: interesPendiente,
+        plazoDias,
+        diasIntervalo: Number(producto.dias_intervalo),
+        omitirDomingos: true,
+        decimales,
+      });
+
+      // 7. En el crédito ACTIVO: anular cuotas pendientes no pagadas
+      await tx.$executeRaw(Prisma.sql`
+        UPDATE public.tbl_cuotas
+        SET cuo_estado = 'ANULADA'::public.cuota_estado_enum
+        WHERE cre_id = ${creditoActivo.id_cre}::uuid
+          AND UPPER(cuo_estado::text) != 'PAGADA'
+          AND cuo_total_pagado < cuo_valor
+      `);
+
+      // 8. Insertar nuevas cuotas reiniciadas
+      for (let i = 0; i < planPendiente.cuotas.length; i++) {
+        const cuota = planPendiente.cuotas[i];
+        await tx.$executeRaw(Prisma.sql`
+          INSERT INTO public.tbl_cuotas (
+            cuo_numero,
+            cuo_valor,
+            cuo_total_pagado,
+            cuo_estado,
+            cuo_fecha_vencimiento,
+            cre_id
+          )
+          VALUES (
+            ${ultimoNumeroCuota + i + 1},
+            ${this.decimal(cuota.valorCapital + cuota.valorInteres, decimales)},
+            0,
+            'PENDIENTE'::public.cuota_estado_enum,
+            ${cuota.fechaVencimiento}::date,
+            ${creditoActivo.id_cre}::uuid
+          )
+        `);
+      }
+
+      // 9. Actualizar crédito ACTIVO con nuevos totales y producto/frecuencia
+      await tx.$executeRaw(Prisma.sql`
+        UPDATE public.tbl_creditos
+        SET
+          cre_total = ${this.decimal(valorNuevo, decimales)},
+          cre_tasa_interes = ${this.decimal(porcentajeInteres, 4)},
+          cre_interes_total = ${this.decimal(interesNuevo, decimales)},
+          cre_total_pagar = ${this.decimal(totalNuevo, decimales)},
+          cre_fecha_inicio = ${fechaInicio}::date,
+          cre_fecha_fin = ${planPendiente.fechaMaxima}::date,
+          pcr_id = ${producto.id}::uuid,
+          cre_estado = 'ACTIVO'::public.credito_estado_enum,
+          cre_observacion = CONCAT(
+            COALESCE(cre_observacion, ''),
+            ' [Unificado con deuda de papelera ', ${papelera.cre_id}::text, ']'
+          )
+        WHERE id_cre = ${creditoActivo.id_cre}::uuid
+      `);
+
+      // 10. En el crédito de la PAPELERA: anular cuotas y marcar como ANULADO
+      await tx.$executeRaw(Prisma.sql`
+        UPDATE public.tbl_cuotas
+        SET cuo_estado = 'ANULADA'::public.cuota_estado_enum
+        WHERE cre_id = ${papelera.cre_id}::uuid
+          AND UPPER(cuo_estado::text) != 'PAGADA'
+      `);
+
+      await tx.$executeRaw(Prisma.sql`
+        UPDATE public.tbl_creditos
+        SET
+          cre_estado = 'ANULADO'::public.credito_estado_enum,
+          cre_observacion = CONCAT(
+            COALESCE(cre_observacion, ''),
+            ' [Unificado y refinanciado en crédito ', ${creditoActivo.id_cre}::text, ']'
+          )
+        WHERE id_cre = ${papelera.cre_id}::uuid
+      `);
+
+      // 11. Eliminar la entrada de tbl_papelera
+      await tx.$executeRaw(Prisma.sql`
+        DELETE FROM public.tbl_papelera
+        WHERE id_pap = ${papeleraId}::uuid
+      `);
+
+      return {
+        ok: true,
+        mensaje: 'Crédito unificado y refinanciado exitosamente',
+        creditoActivoId: creditoActivo.id_cre,
+        creditoPapeleraId: papelera.cre_id,
+        valorNuevo,
+        frecuencia: producto.pcr_frecuencia,
+        numeroCuotas: planPendiente.numeroCuotas,
+        valorCuota: planPendiente.valorCuota,
+        fechaFin: planPendiente.fechaMaxima,
+      };
+    });
+
+    this.invalidarCaches();
+    return resultado;
   }
 }

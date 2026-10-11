@@ -452,7 +452,7 @@ export class ClientesService {
   }
 
   async eliminarClienteTbl(clienteId: string, usuario: AuthenticatedUser) {
-    this.asegurarAdministrador(usuario);
+    this.asegurarPermiso(usuario, 'ELIMINAR_CLIENTES');
     const scope = await this.tenantScope.obtenerScopeOrganizacionTbl(usuario);
 
     const resultado = await this.prisma.$transaction(async (tx) => {

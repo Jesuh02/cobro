@@ -486,11 +486,12 @@ export class ClientesService {
         );
       }
 
-      // 1. Verificar si ya está en papelera
+      // 1. Verificar si ya está en papelera como cliente
       const enPapelera = await tx.$queryRaw<Array<{ id_pap: string }>>(Prisma.sql`
         SELECT id_pap::text
         FROM public.tbl_papelera
         WHERE cli_id::text = ${clienteId}
+          AND (pap_datos->>'tipo' IS NULL OR pap_datos->>'tipo' != 'CREDITO')
       `);
       if (enPapelera.length > 0) {
         throw DomainError.conflict(
@@ -534,6 +535,7 @@ export class ClientesService {
 
       // 4. Registrar en tbl_papelera
       const datosJson = JSON.stringify({
+        tipo: 'CLIENTE',
         creditoActivoId: creditoActivo?.id ?? null,
         creditoEstadoPrevio: creditoActivo?.estado ?? null,
         creditoTotal: creditoActivo ? Number(creditoActivo.total) : null,

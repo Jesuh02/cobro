@@ -132,6 +132,9 @@ export class PapeleraService {
       id: r.id_pap,
       fecha: r.pap_fecha.toISOString(),
       motivo: r.pap_motivo,
+      tipo:
+        (r.pap_datos as { tipo?: string } | null)?.tipo ??
+        (r.cre_id ? 'CREDITO' : 'CLIENTE'),
       cliente: {
         id: r.cli_id,
         nombreCompleto: r.cliente_nombre,
@@ -174,17 +177,19 @@ export class PapeleraService {
           cli_id: string;
           cre_id: string | null;
           rut_id: string | null;
+          pap_datos: unknown;
         }>
       >(Prisma.sql`
         SELECT
-          id_pap::text,
-          cli_id::text,
-          cre_id::text,
-          rut_id::text
-        FROM public.tbl_papelera
-        WHERE id_pap = ${papeleraId}::uuid
+          p.id_pap::text,
+          p.cli_id::text,
+          p.cre_id::text,
+          p.rut_id::text,
+          p.pap_datos
+        FROM public.tbl_papelera p
+        WHERE p.id_pap = ${papeleraId}::uuid
           AND org_id = ${scope.organizacionId}::uuid
-          ${esAdmin ? Prisma.sql`` : Prisma.sql`AND usu_id = ${scope.usuarioId}::uuid`}
+          ${esAdmin ? Prisma.sql`` : Prisma.sql`AND p.usu_id = ${scope.usuarioId}::uuid`}
         FOR UPDATE
       `);
 
@@ -196,6 +201,87 @@ export class PapeleraService {
         );
       }
 
+      const datos = papelera.pap_datos as { tipo?: string } | null;
+      const esSoloCredito = datos?.tipo === 'CREDITO';
+
+      if (esSoloCredito) {
+        // Validar si el cliente asociado está activo y no se encuentra en la papelera
+        const [cliente] = await tx.$queryRaw<
+          Array<{ id_cli: string; cli_activo: boolean }>
+        >(Prisma.sql`
+          SELECT id_cli::text, cli_activo
+          FROM public.tbl_clientes
+          WHERE id_cli = ${papelera.cli_id}::uuid
+            AND org_id = ${scope.organizacionId}::uuid
+        `);
+
+        if (!cliente) {
+          throw DomainError.notFound(
+            'El cliente asociado a este crédito no existe',
+            'CLIENTE_NO_ENCONTRADO',
+          );
+        }
+
+        const clienteEnPapelera = await tx.$queryRaw<
+          Array<{ id_pap: string }>
+        >(Prisma.sql`
+          SELECT id_pap::text
+          FROM public.tbl_papelera
+          WHERE cli_id = ${papelera.cli_id}::uuid
+            AND id_pap != ${papelera.id_pap}::uuid
+            AND (pap_datos->>'tipo' IS NULL OR pap_datos->>'tipo' = 'CLIENTE')
+          LIMIT 1
+        `);
+
+        if (!cliente.cli_activo || clienteEnPapelera.length > 0) {
+          throw DomainError.conflict(
+            'No se puede restaurar el crédito porque su cliente asociado se encuentra en la papelera. Primero debe restaurar al cliente.',
+            'CLIENTE_ELIMINADO_RESTAURAR_PRIMERO',
+          );
+        }
+
+        // 1. Reactivar crédito a ACTIVO
+        if (papelera.cre_id) {
+          await tx.$executeRaw(Prisma.sql`
+            UPDATE public.tbl_creditos
+            SET cre_estado = 'ACTIVO'::public.credito_estado_enum
+            WHERE id_cre = ${papelera.cre_id}::uuid
+          `);
+        }
+
+        // 2. Restaurar ruta si existía
+        if (papelera.rut_id) {
+          await tx.$executeRaw(Prisma.sql`
+            INSERT INTO public.tbl_rutas_clientes (rut_id, cli_id, rcl_activo, rcl_creacion)
+            VALUES (
+              ${papelera.rut_id}::uuid,
+              ${papelera.cli_id}::uuid,
+              true,
+              NOW()
+            )
+            ON CONFLICT (rut_id, cli_id) DO UPDATE
+            SET rcl_activo = true
+          `);
+        }
+
+        // 3. Eliminar registro del crédito de tbl_papelera
+        await tx.$executeRaw(Prisma.sql`
+          DELETE FROM public.tbl_papelera
+          WHERE id_pap = ${papeleraId}::uuid
+        `);
+
+        this.invalidarCaches();
+
+        return {
+          ok: true,
+          mensaje: 'Crédito restaurado exitosamente',
+          creditoId: papelera.cre_id,
+          clienteId: papelera.cli_id,
+          rutaId: papelera.rut_id,
+        };
+      }
+
+      // Si es restauración de un CLIENTE:
       // 1. Reactivar cliente
       await tx.$executeRaw(Prisma.sql`
         UPDATE public.tbl_clientes
@@ -204,7 +290,7 @@ export class PapeleraService {
           AND org_id = ${scope.organizacionId}::uuid
       `);
 
-      // 2. Reactivar crédito activo si existía
+      // 2. Reactivar crédito activo si este registro tenía un crédito vinculado en cadena
       if (papelera.cre_id) {
         await tx.$executeRaw(Prisma.sql`
           UPDATE public.tbl_creditos
@@ -255,13 +341,17 @@ export class PapeleraService {
         Array<{
           id_pap: string;
           cli_id: string;
+          cre_id: string | null;
           persona_id: string;
+          pap_datos: unknown;
         }>
       >(Prisma.sql`
         SELECT
           p.id_pap::text,
           p.cli_id::text,
-          c.cli_persona::text AS persona_id
+          p.cre_id::text,
+          c.cli_persona::text AS persona_id,
+          p.pap_datos
         FROM public.tbl_papelera p
         JOIN public.tbl_clientes c ON c.id_cli = p.cli_id
         WHERE p.id_pap = ${papeleraId}::uuid
@@ -275,6 +365,78 @@ export class PapeleraService {
           'Registro de papelera no encontrado',
           'PAPELERA_NO_ENCONTRADO',
         );
+      }
+
+      const datos = registro.pap_datos as { tipo?: string } | null;
+      const esSoloCredito = datos?.tipo === 'CREDITO';
+
+      if (esSoloCredito && registro.cre_id) {
+        // Verificar si este crédito específico tiene pagos registrados
+        const pagosCheck = await tx.$queryRaw<Array<{ count: number }>>(Prisma.sql`
+          SELECT COUNT(pa.id_pag)::int AS count
+          FROM public.tbl_cuotas cu
+          JOIN public.tbl_cuotas_pagos cp ON cp.cuo_id = cu.id_cuo
+          JOIN public.tbl_pagos pa ON pa.id_pag = cp.pagos_id
+          WHERE cu.cre_id = ${registro.cre_id}::uuid
+        `);
+
+        if ((pagosCheck[0]?.count ?? 0) > 0) {
+          throw DomainError.conflict(
+            'No se puede eliminar definitivamente un crédito con pagos registrados en el historial contable',
+            'CREDITO_CON_PAGOS_NO_PURGABLE',
+          );
+        }
+
+        // 1. Eliminar de papelera
+        await tx.$executeRaw(Prisma.sql`
+          DELETE FROM public.tbl_papelera
+          WHERE id_pap = ${papeleraId}::uuid
+        `);
+
+        // 2. Revertir movimientos de caja si existían
+        const movimientos = await tx.$queryRaw<
+          Array<{ id: string; monto: Prisma.Decimal; sca_id: string | null }>
+        >(Prisma.sql`
+          SELECT
+            id_mca::text AS id,
+            mca_monto AS monto,
+            sca_id::text AS sca_id
+          FROM public.tbl_movimientos_cajas
+          WHERE mca_referencia_id = ${registro.cre_id}::uuid
+            AND mca_referencia_tipo::text = 'CREDITO'
+        `);
+
+        for (const mov of movimientos) {
+          if (mov.sca_id) {
+            await tx.$executeRaw(Prisma.sql`
+              UPDATE public.tbl_sesiones_cajas
+              SET sca_total_gasto = GREATEST(sca_total_gasto - ${mov.monto}, 0)
+              WHERE id_sca = ${mov.sca_id}::uuid
+            `);
+          }
+          await tx.$executeRaw(Prisma.sql`
+            DELETE FROM public.tbl_movimientos_cajas
+            WHERE id_mca = ${mov.id}::uuid
+          `);
+        }
+
+        // 3. Eliminar cuotas y crédito (el cliente activo permanece intacto)
+        await tx.$executeRaw(Prisma.sql`
+          DELETE FROM public.tbl_cuotas
+          WHERE cre_id = ${registro.cre_id}::uuid
+        `);
+
+        await tx.$executeRaw(Prisma.sql`
+          DELETE FROM public.tbl_creditos
+          WHERE id_cre = ${registro.cre_id}::uuid
+        `);
+
+        this.invalidarCaches();
+
+        return {
+          ok: true,
+          mensaje: 'Crédito purgado definitivamente',
+        };
       }
 
       // Verificar si tiene pagos registrados

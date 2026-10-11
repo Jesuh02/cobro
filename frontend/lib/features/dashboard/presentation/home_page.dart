@@ -35,6 +35,7 @@ import '../../rutas/presentation/ruta_cobro_view.dart';
 import '../../routes/data/api_road_router.dart';
 import '../../routes/data/device_location_service.dart';
 import '../../routes/presentation/desktop_collection_route.dart';
+import '../../papelera/presentation/papelera_view.dart';
 
 part 'dashboard_charts.dart';
 
@@ -109,6 +110,11 @@ class _HomePageState extends State<HomePage> {
     iconoSeleccionado: Icons.manage_accounts_rounded,
     etiqueta: 'Empleado',
   );
+  static const _DestinoMenu _destinoPapelera = _DestinoMenu(
+    icono: Icons.auto_delete_outlined,
+    iconoSeleccionado: Icons.auto_delete_rounded,
+    etiqueta: 'Papelera',
+  );
 
   final TextEditingController _buscarRutaController = TextEditingController();
   final TextEditingController _buscarCajaInicioController =
@@ -118,9 +124,14 @@ class _HomePageState extends State<HomePage> {
   final TextEditingController _buscarCajaController = TextEditingController();
   final TextEditingController _buscarClienteController =
       TextEditingController();
+  final TextEditingController _buscarPapeleraController =
+      TextEditingController();
   final TextEditingController _loginUsuarioController = TextEditingController();
   final TextEditingController _loginContrasenaController =
       TextEditingController();
+
+  List<PapeleraItem> _itemsPapelera = const <PapeleraItem>[];
+  bool _cargandoPapelera = false;
 
   SesionUsuario? _usuarioSesion;
   Catalogos? _catalogos;
@@ -182,6 +193,7 @@ class _HomePageState extends State<HomePage> {
     _buscarCreditoController.addListener(_programarRecargaListasPesadas);
     _buscarCajaController.addListener(_programarRecargaListasPesadas);
     _buscarClienteController.addListener(_refrescar);
+    _buscarPapeleraController.addListener(_refrescar);
     unawaited(_cargarAccionesPendientesOffline());
     unawaited(_restaurarSesionGuardada());
     _refrescoTimer = Timer.periodic(
@@ -203,13 +215,16 @@ class _HomePageState extends State<HomePage> {
   }
 
   List<_DestinoMenu> get _destinosMenuActual {
+    final List<_DestinoMenu> destinos = <_DestinoMenu>[
+      ..._destinosMenuBase,
+    ];
     if (_puedeVerEmpleados) {
-      return <_DestinoMenu>[
-        ..._destinosMenuBase,
-        _destinoGestionEmpleados,
-      ];
+      destinos.add(_destinoGestionEmpleados);
     }
-    return _destinosMenuBase;
+    if (_usuarioSesion?.esAdministrador ?? false) {
+      destinos.add(_destinoPapelera);
+    }
+    return destinos;
   }
 
   @override
@@ -236,6 +251,7 @@ class _HomePageState extends State<HomePage> {
     _buscarCreditoController.dispose();
     _buscarCajaController.dispose();
     _buscarClienteController.dispose();
+    _buscarPapeleraController.dispose();
     _loginUsuarioController.dispose();
     _loginContrasenaController.dispose();
     super.dispose();
@@ -650,6 +666,24 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _construirVistaActual(BuildContext context) {
+    final List<_DestinoMenu> destinos = _destinosMenuActual;
+    final _DestinoMenu destinoActual = _seccionActual < destinos.length
+        ? destinos[_seccionActual]
+        : destinos.first;
+
+    if (destinoActual == _destinoPapelera) {
+      return KeyedSubtree(
+        key: const ValueKey<String>('papelera'),
+        child: _construirPapelera(context),
+      );
+    }
+    if (destinoActual == _destinoGestionEmpleados) {
+      return KeyedSubtree(
+        key: const ValueKey<String>('gestion-empleados'),
+        child: _construirGestionEmpleados(context),
+      );
+    }
+
     switch (_seccionActual) {
       case 0:
         return KeyedSubtree(
@@ -676,11 +710,6 @@ class _HomePageState extends State<HomePage> {
           key: const ValueKey<String>('clientes'),
           child: _construirClientes(context),
         );
-      case _indiceGestionEmpleados:
-        return KeyedSubtree(
-          key: const ValueKey<String>('gestion-empleados'),
-          child: _construirGestionEmpleados(context),
-        );
       default:
         return KeyedSubtree(
           key: const ValueKey<String>('inicio'),
@@ -690,8 +719,15 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _seleccionarSeccion(int index) {
-    if (index == _indiceGestionEmpleados && !_puedeVerEmpleados) {
+    final List<_DestinoMenu> destinos = _destinosMenuActual;
+    final _DestinoMenu? destino = index < destinos.length ? destinos[index] : null;
+
+    if (destino == _destinoGestionEmpleados && !_puedeVerEmpleados) {
       _mostrarMensaje('No tienes permiso para ver empleados');
+      return;
+    }
+    if (destino == _destinoPapelera && !(_usuarioSesion?.esAdministrador ?? false)) {
+      _mostrarMensaje('Solo los administradores pueden ver la papelera');
       return;
     }
 
@@ -700,6 +736,9 @@ class _HomePageState extends State<HomePage> {
     }
 
     setState(() => _seccionActual = index);
+    if (destino == _destinoPapelera) {
+      unawaited(_cargarPapelera());
+    }
   }
 
   Widget _construirGestionEmpleados(BuildContext context) {
@@ -730,6 +769,167 @@ class _HomePageState extends State<HomePage> {
       mensajeError: _mensajeError,
       mostrarMensaje: _mostrarMensaje,
     );
+  }
+
+  Widget _construirPapelera(BuildContext context) {
+    if (!(_usuarioSesion?.esAdministrador ?? false)) {
+      return Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(18),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 460),
+            child: const EstadoVacio(
+              icono: Icons.lock_outline_rounded,
+              titulo: 'Acceso restringido',
+              mensaje: 'Solo los administradores pueden gestionar la papelera.',
+            ),
+          ),
+        ),
+      );
+    }
+
+    return PapeleraView(
+      buscarController: _buscarPapeleraController,
+      items: _filtrarItemsPapelera(),
+      cargando: _cargandoPapelera,
+      onRefresh: _cargarPapelera,
+      onRestaurar: _restaurarItemPapelera,
+      onEliminarDefinitivo: _purgarItemPapelera,
+      error: _error,
+    );
+  }
+
+  List<PapeleraItem> _filtrarItemsPapelera() {
+    final String query = _buscarPapeleraController.text.trim().toLowerCase();
+    if (query.isEmpty) {
+      return _itemsPapelera;
+    }
+    return _itemsPapelera.where((PapeleraItem item) {
+      final String cliente = item.cliente.nombreCompleto.toLowerCase();
+      final String documento = item.cliente.documento.toLowerCase();
+      final String negocio = (item.cliente.negocio ?? '').toLowerCase();
+      final String ruta = (item.ruta?.nombre ?? '').toLowerCase();
+      final String usuario = item.eliminadoPor.nombreCompleto.toLowerCase();
+      return cliente.contains(query) ||
+          documento.contains(query) ||
+          negocio.contains(query) ||
+          ruta.contains(query) ||
+          usuario.contains(query);
+    }).toList(growable: false);
+  }
+
+  Future<void> _cargarPapelera() async {
+    if (!(_usuarioSesion?.esAdministrador ?? false)) {
+      return;
+    }
+    setState(() => _cargandoPapelera = true);
+    try {
+      final List<dynamic> datos = await _apiClient.getList('/papelera');
+      if (mounted) {
+        setState(() {
+          _itemsPapelera = datos
+              .map((dynamic item) =>
+                  PapeleraItem.fromJson(item as Map<String, dynamic>),)
+              .toList(growable: false);
+          _cargandoPapelera = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _cargandoPapelera = false);
+        _mostrarMensaje('Error al consultar los registros de la papelera');
+      }
+    }
+  }
+
+  Future<void> _restaurarItemPapelera(PapeleraItem item) async {
+    final bool? confirmado = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('¿Restaurar cliente?'),
+          content: Text(
+            'Se reactivará a "${item.cliente.nombreCompleto}"'
+            '${item.credito != null ? ' junto con su crédito activo' : ''}'
+            '${item.ruta != null ? ' y se vinculará nuevamente a su ruta (${item.ruta!.nombre})' : ''}.',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              icon: const Icon(Icons.restore_rounded),
+              label: const Text('Restaurar'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmado != true) {
+      return;
+    }
+
+    final bool exito = await _ejecutarAccion(() async {
+      await _apiClient.postObject(
+        '/papelera/${item.id}/restaurar',
+        const <String, dynamic>{},
+      );
+      await _cargarPapelera();
+      _recargarEnSegundoPlano(
+        clientes: true,
+        creditos: true,
+        cobrosRuta: true,
+      );
+    });
+
+    if (exito) {
+      _mostrarMensaje('Cliente restaurado exitosamente');
+    }
+  }
+
+  Future<void> _purgarItemPapelera(PapeleraItem item) async {
+    final bool? confirmado = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('¿Eliminar definitivamente?'),
+          content: Text(
+            '¿Está seguro de eliminar de forma permanente a "${item.cliente.nombreCompleto}"?\n\n'
+            'Esta acción destruirá el registro si no tiene pagos históricos vinculados y no se podrá deshacer.',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.redAccent,
+              ),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              icon: const Icon(Icons.delete_forever_rounded),
+              label: const Text('Purgar'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmado != true) {
+      return;
+    }
+
+    final bool exito = await _ejecutarAccion(() async {
+      await _apiClient.deleteObject('/papelera/${item.id}');
+      await _cargarPapelera();
+    });
+
+    if (exito) {
+      _mostrarMensaje('Registro purgado definitivamente');
+    }
   }
 
   bool get _puedeVerEmpleados =>
@@ -1980,7 +2180,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Map<String, String?> _queryMovimientosCaja(
-      {required int offset, int? limit}) {
+      {required int offset, int? limit,}) {
     final String search = _buscarCajaController.text.trim();
     return <String, String?>{
       'limit': (limit ?? _pageSize).toString(),
@@ -2821,6 +3021,13 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _confirmarEliminarCliente(Cliente cliente) async {
+    final bool tieneCreditoActivo = _creditos.any(
+      (CreditoRegistro c) =>
+          c.clienteId == cliente.id &&
+          c.estado.codigo.toUpperCase() == 'ACTIVO' &&
+          c.saldo > 0,
+    );
+
     await mostrarDialogoEliminarCliente(
       context: context,
       cliente: cliente,
@@ -2829,7 +3036,13 @@ class _HomePageState extends State<HomePage> {
       mostrarMensaje: _mostrarMensaje,
       ejecutarAccion: _ejecutarAccion,
       onClienteEliminado: _eliminarClienteLocal,
-      onRecargarEnSegundoPlano: () => _recargarEnSegundoPlano(clientes: true),
+      onRecargarEnSegundoPlano: () {
+        _recargarEnSegundoPlano(clientes: true, creditos: true, cobrosRuta: true);
+        if (_usuarioSesion?.esAdministrador ?? false) {
+          unawaited(_cargarPapelera());
+        }
+      },
+      tieneCreditoActivo: tieneCreditoActivo,
     );
   }
 

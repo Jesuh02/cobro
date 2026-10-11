@@ -422,9 +422,10 @@ Future<void> mostrarDialogoEliminarCliente({
   required Future<bool> Function(Future<void> Function()) ejecutarAccion,
   required void Function(String) onClienteEliminado,
   required void Function() onRecargarEnSegundoPlano,
+  bool tieneCreditoActivo = false,
 }) async {
   if (!esAdministrador) {
-    mostrarMensaje('Solo los administradores pueden eliminar clientes');
+    mostrarMensaje('Solo los administradores pueden enviar clientes a la papelera');
     return;
   }
 
@@ -432,9 +433,11 @@ Future<void> mostrarDialogoEliminarCliente({
     context: context,
     builder: (BuildContext dialogContext) {
       return AlertDialog(
-        title: const Text('Seguro que quieres eliminar?'),
+        title: const Text('¿Enviar a la papelera?'),
         content: Text(
-          'Se eliminara "${cliente.nombreCompleto}". No se puede eliminar si tiene creditos o pagos registrados.',
+          tieneCreditoActivo
+              ? 'Este cliente tiene un credito activo, ¿Seguro que desea borrarlo? Se moverá a la papelera junto con sus créditos y se removerá de la ruta.'
+              : 'Se enviará a "${cliente.nombreCompleto}" a la papelera. Podrá ser restaurado posteriormente desde la sección Papelera.',
         ),
         actions: <Widget>[
           TextButton(
@@ -444,7 +447,7 @@ Future<void> mostrarDialogoEliminarCliente({
           FilledButton.icon(
             onPressed: () => Navigator.of(dialogContext).pop(true),
             icon: const Icon(Icons.delete_outline_rounded),
-            label: const Text('Eliminar'),
+            label: const Text('Enviar a papelera'),
           ),
         ],
       );
@@ -462,7 +465,11 @@ Future<void> mostrarDialogoEliminarCliente({
   });
 
   if (eliminado) {
-    mostrarMensaje('Cliente eliminado');
+    mostrarMensaje(
+      tieneCreditoActivo
+          ? 'Cliente y crédito activo enviados a la papelera'
+          : 'Cliente enviado a la papelera',
+    );
   }
 }
 

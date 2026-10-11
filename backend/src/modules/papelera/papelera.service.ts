@@ -654,7 +654,7 @@ export class PapeleraService {
         FROM public.tbl_creditos cr
         JOIN public.tbl_productos_creditos pc ON pc.id_pcr = cr.pcr_id
         WHERE cr.id_cre = ${papelera.cre_id}::uuid
-        FOR UPDATE
+        FOR UPDATE OF cr
       `);
 
       if (!creditoPapelera) {
@@ -874,9 +874,18 @@ export class PapeleraService {
           AND cuo_total_pagado < cuo_valor
       `);
 
-      // 8. Insertar nuevas cuotas reiniciadas
-      for (let i = 0; i < planPendiente.cuotas.length; i++) {
-        const cuota = planPendiente.cuotas[i];
+      // 8. Insertar nuevas cuotas reiniciadas (en batch atómico para alto rendimiento)
+      if (planPendiente.cuotas.length > 0) {
+        const cuotaValues = planPendiente.cuotas.map(
+          (cuota, i) => Prisma.sql`(
+            ${ultimoNumeroCuota + i + 1},
+            ${this.decimal(cuota.valorCapital + cuota.valorInteres, decimales)},
+            0,
+            'PENDIENTE'::public.cuota_estado_enum,
+            ${cuota.fechaVencimiento}::date,
+            ${creditoActivo.id_cre}::uuid
+          )`,
+        );
         await tx.$executeRaw(Prisma.sql`
           INSERT INTO public.tbl_cuotas (
             cuo_numero,
@@ -886,14 +895,7 @@ export class PapeleraService {
             cuo_fecha_vencimiento,
             cre_id
           )
-          VALUES (
-            ${ultimoNumeroCuota + i + 1},
-            ${this.decimal(cuota.valorCapital + cuota.valorInteres, decimales)},
-            0,
-            'PENDIENTE'::public.cuota_estado_enum,
-            ${cuota.fechaVencimiento}::date,
-            ${creditoActivo.id_cre}::uuid
-          )
+          VALUES ${Prisma.join(cuotaValues, ', ')}
         `);
       }
 
@@ -908,11 +910,7 @@ export class PapeleraService {
           cre_fecha_inicio = ${fechaInicio}::date,
           cre_fecha_fin = ${planPendiente.fechaMaxima}::date,
           pcr_id = ${producto.id}::uuid,
-          cre_estado = 'ACTIVO'::public.credito_estado_enum,
-          cre_observacion = CONCAT(
-            COALESCE(cre_observacion, ''),
-            ' [Unificado con deuda de papelera ', ${papelera.cre_id}::text, ']'
-          )
+          cre_estado = 'ACTIVO'::public.credito_estado_enum
         WHERE id_cre = ${creditoActivo.id_cre}::uuid
       `);
 
@@ -927,11 +925,7 @@ export class PapeleraService {
       await tx.$executeRaw(Prisma.sql`
         UPDATE public.tbl_creditos
         SET
-          cre_estado = 'ANULADO'::public.credito_estado_enum,
-          cre_observacion = CONCAT(
-            COALESCE(cre_observacion, ''),
-            ' [Unificado y refinanciado en crédito ', ${creditoActivo.id_cre}::text, ']'
-          )
+          cre_estado = 'ANULADO'::public.credito_estado_enum
         WHERE id_cre = ${papelera.cre_id}::uuid
       `);
 
@@ -952,7 +946,9 @@ export class PapeleraService {
         valorCuota: planPendiente.valorCuota,
         fechaFin: planPendiente.fechaMaxima,
       };
-    });
+    },
+    { maxWait: 10_000, timeout: 20_000 },
+  );
 
     this.invalidarCaches();
     return resultado;

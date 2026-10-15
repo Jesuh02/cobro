@@ -481,6 +481,8 @@ export class CreditosService {
     const estado = query.estado ?? 'todos';
     const conditions: Prisma.Sql[] = [
       Prisma.sql`cl.org_id = ${scope.organizacionId}::uuid`,
+      Prisma.sql`UPPER(cr.cre_estado::text) != 'ANULADO'`,
+      Prisma.sql`cr.id_cre NOT IN (SELECT p.cre_id FROM public.tbl_papelera p WHERE p.cre_id IS NOT NULL)`,
     ];
 
     if (!this.puedeVerDatosOrganizacion(usuario)) {
@@ -692,6 +694,8 @@ export class CreditosService {
     const search = this.normalizarTextoOpcional(query.search);
     const conditions: Prisma.Sql[] = [
       Prisma.sql`cl.org_id = ${scope.organizacionId}::uuid`,
+      Prisma.sql`UPPER(cr.cre_estado::text) != 'ANULADO'`,
+      Prisma.sql`cr.id_cre NOT IN (SELECT p.cre_id FROM public.tbl_papelera p WHERE p.cre_id IS NOT NULL)`,
     ];
     const fechaConditions: Prisma.Sql[] = [Prisma.sql`1 = 1`];
 
@@ -1673,7 +1677,7 @@ export class CreditosService {
     creditoId: string,
     usuario: AuthenticatedUser,
   ) {
-    await this.prisma.$transaction(
+    const resultado = await this.prisma.$transaction(
       async (tx) => {
         const orgScope = await this.tenantScope.obtenerScopeOrganizacionTbl(
           usuario,
@@ -1681,9 +1685,20 @@ export class CreditosService {
         );
 
         const [credito] = await tx.$queryRaw<
-          Array<{ id: string; org_id: string }>
+          Array<{
+            id: string;
+            cli_id: string;
+            cre_estado: string;
+            cre_total: Prisma.Decimal;
+            org_id: string;
+          }>
         >(Prisma.sql`
-          SELECT cr.id_cre::text AS id, cl.org_id::text AS org_id
+          SELECT
+            cr.id_cre::text AS id,
+            cr.cli_id::text AS cli_id,
+            cr.cre_estado::text AS cre_estado,
+            cr.cre_total,
+            cl.org_id::text AS org_id
           FROM public.tbl_creditos cr
           JOIN public.tbl_clientes cl ON cl.id_cli = cr.cli_id
           WHERE cr.id_cre = ${creditoId}::uuid
@@ -1698,63 +1713,80 @@ export class CreditosService {
           );
         }
 
-        const [pagos] = await tx.$queryRaw<Array<{ count: number | bigint }>>(
-          Prisma.sql`
-            SELECT COUNT(cp.id_cpa) AS count
-            FROM public.tbl_cuotas cu
-            JOIN public.tbl_cuotas_pagos cp ON cp.cuo_id = cu.id_cuo
-            WHERE cu.cre_id = ${creditoId}::uuid
-          `,
-        );
-
-        if (Number(pagos?.count ?? 0) > 0) {
+        // 1. Verificar si ya está en papelera
+        const enPapelera = await tx.$queryRaw<Array<{ id_pap: string }>>(Prisma.sql`
+          SELECT id_pap::text
+          FROM public.tbl_papelera
+          WHERE cre_id = ${creditoId}::uuid
+        `);
+        if (enPapelera.length > 0) {
           throw DomainError.conflict(
-            'No se puede eliminar un credito con pagos registrados',
-            'CREDITO_CON_PAGOS_NO_ELIMINABLE',
+            'Este crédito ya se encuentra en la papelera',
+            'CREDITO_YA_EN_PAPELERA',
           );
         }
 
-        const movimientos = await tx.$queryRaw<
-          Array<{ id: string; monto: Prisma.Decimal; sca_id: string | null }>
+        // 2. Localizar ruta si el cliente tiene una asignada
+        const rutasCliente = await tx.$queryRaw<
+          Array<{ rut_id: string }>
         >(Prisma.sql`
-          SELECT
-            id_mca::text AS id,
-            mca_monto AS monto,
-            sca_id::text AS sca_id
-          FROM public.tbl_movimientos_cajas
-          WHERE mca_referencia_id = ${creditoId}::uuid
-            AND mca_referencia_tipo::text = 'CREDITO'
+          SELECT rc.rut_id::text
+          FROM public.tbl_rutas_clientes rc
+          WHERE rc.cli_id = ${credito.cli_id}::uuid
+          LIMIT 1
         `);
+        const rutaId = rutasCliente[0]?.rut_id ?? null;
 
-        for (const mov of movimientos) {
-          if (mov.sca_id) {
-            await tx.$executeRaw(Prisma.sql`
-              UPDATE public.tbl_sesiones_cajas
-              SET sca_total_gasto = GREATEST(sca_total_gasto - ${mov.monto}, 0)
-              WHERE id_sca = ${mov.sca_id}::uuid
-            `);
-          }
-          await tx.$executeRaw(Prisma.sql`
-            DELETE FROM public.tbl_movimientos_cajas
-            WHERE id_mca = ${mov.id}::uuid
-          `);
-        }
-
+        // 3. Anular crédito para suspenderlo de cobranza y cuotas activas
         await tx.$executeRaw(Prisma.sql`
-          DELETE FROM public.tbl_cuotas
-          WHERE cre_id = ${creditoId}::uuid
-        `);
-
-        await tx.$executeRaw(Prisma.sql`
-          DELETE FROM public.tbl_creditos
+          UPDATE public.tbl_creditos
+          SET cre_estado = 'ANULADO'::public.credito_estado_enum
           WHERE id_cre = ${creditoId}::uuid
         `);
+
+        // 4. Registrar en tbl_papelera
+        const datosJson = JSON.stringify({
+          tipo: 'CREDITO',
+          creditoId: credito.id,
+          estadoPrevio: credito.cre_estado,
+          total: Number(credito.cre_total),
+          rutaId: rutaId,
+        });
+
+        await tx.$executeRaw(Prisma.sql`
+          INSERT INTO public.tbl_papelera (
+            org_id,
+            usu_id,
+            cli_id,
+            cre_id,
+            rut_id,
+            pap_fecha,
+            pap_motivo,
+            pap_datos
+          ) VALUES (
+            ${orgScope.organizacionId}::uuid,
+            ${orgScope.usuarioId}::uuid,
+            ${credito.cli_id}::uuid,
+            ${credito.id}::uuid,
+            ${rutaId ? Prisma.sql`${rutaId}::uuid` : Prisma.sql`NULL`},
+            NOW(),
+            'Crédito eliminado',
+            ${datosJson}::jsonb
+          )
+        `);
+
+        return {
+          ok: true,
+          eliminado: true,
+          creditoId: credito.id,
+          mensaje: 'Crédito eliminado y enviado a la papelera',
+        };
       },
       { maxWait: 10_000, timeout: 20_000 },
     );
 
     this.invalidarCacheLecturas();
-    return { ok: true };
+    return resultado;
   }
 
   // ==========================================

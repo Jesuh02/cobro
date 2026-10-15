@@ -1076,7 +1076,9 @@ Future<http.Response> _responderApi(http.Request request) async {
     });
   }
 
-  if (path.endsWith('/clientes') || path.endsWith('/cobros/ruta')) {
+  if (path.endsWith('/clientes') ||
+      path.endsWith('/cobros/ruta') ||
+      path.endsWith('/papelera')) {
     return _jsonResponse(<dynamic>[]);
   }
 

@@ -1343,7 +1343,7 @@ export class AuthService {
 
       await tx.$executeRaw(Prisma.sql`
         INSERT INTO public.tbl_recursos (nom, rec_orden, rec_interface)
-        VALUES ('MODIFICAR_CLIENTES', 75, 'WEB')
+        VALUES ('MODIFICAR_CLIENTES', 75, 'WEB'), ('ELIMINAR_CLIENTES', 76, 'WEB')
         ON CONFLICT (rec_interface, nom) DO NOTHING
       `);
 

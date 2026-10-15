@@ -15,6 +15,7 @@ class ClienteItem extends StatelessWidget {
     required this.cliente,
     required this.esAdministrador,
     this.puedeModificar = false,
+    this.puedeEliminar = false,
     required this.onModificar,
     required this.onEliminar,
   });
@@ -22,6 +23,7 @@ class ClienteItem extends StatelessWidget {
   final Cliente cliente;
   final bool esAdministrador;
   final bool puedeModificar;
+  final bool puedeEliminar;
   final VoidCallback onModificar;
   final VoidCallback onEliminar;
 
@@ -97,7 +99,7 @@ class ClienteItem extends StatelessWidget {
                   fontWeight: FontWeight.w900,
                 ),
           ),
-          if (esAdministrador || puedeModificar) ...<Widget>[
+          if (esAdministrador || puedeModificar || puedeEliminar) ...<Widget>[
             const SizedBox(width: 4),
             PopupMenuButton<AccionCliente>(
               tooltip: 'Acciones',
@@ -114,7 +116,7 @@ class ClienteItem extends StatelessWidget {
                 return <PopupMenuEntry<AccionCliente>>[
                   if (esAdministrador || puedeModificar)
                     const PopupMenuItem<AccionCliente>(
-                      value: AccionCliente.modificar,
+                       value: AccionCliente.modificar,
                       child: Row(
                         children: <Widget>[
                           Icon(Icons.edit_outlined),
@@ -123,7 +125,7 @@ class ClienteItem extends StatelessWidget {
                         ],
                       ),
                     ),
-                  if (esAdministrador)
+                  if (esAdministrador || puedeEliminar)
                     const PopupMenuItem<AccionCliente>(
                       value: AccionCliente.eliminar,
                       child: Row(

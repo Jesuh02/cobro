@@ -65,36 +65,35 @@ async function poblarCatalogosSistema() {
   `;
 
   // 3. Recursos
-  const countRecursos = await prisma.$queryRaw<Array<{count: bigint}>>`SELECT count(*) FROM public.tbl_recursos`;
-  if (Number(countRecursos[0].count) === 0) {
-    await prisma.$executeRaw`
-      INSERT INTO public.tbl_recursos (nom, rec_orden, rec_interface)
-      VALUES
-        ('VER_EMPLEADOS', 10, 'WEB'),
-        ('CREAR_CAJA_MENOR', 20, 'WEB'),
-        ('REGISTRAR_FLUJO_CAJA', 30, 'WEB'),
-        ('CREAR_CREDITOS', 40, 'WEB'),
-        ('REFINANCIAR_CREDITOS', 50, 'WEB'),
-        ('MODIFICAR_CREDITOS', 60, 'WEB'),
-        ('ELIMINAR_CREDITOS', 70, 'WEB'),
-        ('MODIFICAR_CLIENTES', 75, 'WEB'),
-        ('AGREGAR_CUOTA', 80, 'WEB'),
-        ('MODIFICAR_MOVIMIENTOS', 90, 'WEB'),
-        ('ELIMINAR_MOVIMIENTOS', 100, 'WEB');
-    `;
-  }
+  await prisma.$executeRaw`
+    INSERT INTO public.tbl_recursos (nom, rec_orden, rec_interface)
+    VALUES
+      ('VER_EMPLEADOS', 10, 'WEB'),
+      ('CREAR_CAJA_MENOR', 20, 'WEB'),
+      ('REGISTRAR_FLUJO_CAJA', 30, 'WEB'),
+      ('CREAR_CREDITOS', 40, 'WEB'),
+      ('REFINANCIAR_CREDITOS', 50, 'WEB'),
+      ('MODIFICAR_CREDITOS', 60, 'WEB'),
+      ('ELIMINAR_CREDITOS', 70, 'WEB'),
+      ('MODIFICAR_CLIENTES', 75, 'WEB'),
+      ('ELIMINAR_CLIENTES', 76, 'WEB'),
+      ('AGREGAR_CUOTA', 80, 'WEB'),
+      ('MODIFICAR_MOVIMIENTOS', 90, 'WEB'),
+      ('ELIMINAR_MOVIMIENTOS', 100, 'WEB'),
+      ('VER_PAPELERA', 110, 'WEB')
+    ON CONFLICT (rec_interface, nom) DO UPDATE SET rec_orden = EXCLUDED.rec_orden;
+  `;
 
   // 4. Roles Recursos
-  const countRolRecurso = await prisma.$queryRaw<Array<{count: bigint}>>`SELECT count(*) FROM public.tbl_roles_recursos`;
-  if (Number(countRolRecurso[0].count) === 0) {
-    await prisma.$executeRaw`
-      INSERT INTO public.tbl_roles_recursos (rol_id, rec_id)
-      SELECT rol.id_rol, recurso.id_rec
-      FROM public.tbl_roles rol
-      JOIN public.tbl_recursos recurso ON recurso.rec_interface = 'WEB'
-      WHERE rol.rol_tip = 'ADMINISTRADOR'
-        AND recurso.nom IN ('VER_EMPLEADOS', 'CREAR_CAJA_MENOR', 'REGISTRAR_FLUJO_CAJA', 'CREAR_CREDITOS', 'REFINANCIAR_CREDITOS', 'MODIFICAR_CREDITOS', 'ELIMINAR_CREDITOS', 'MODIFICAR_CLIENTES', 'AGREGAR_CUOTA', 'MODIFICAR_MOVIMIENTOS', 'ELIMINAR_MOVIMIENTOS')
-    `;
+  await prisma.$executeRaw`
+    INSERT INTO public.tbl_roles_recursos (rol_id, rec_id)
+    SELECT rol.id_rol, recurso.id_rec
+    FROM public.tbl_roles rol
+    JOIN public.tbl_recursos recurso ON recurso.rec_interface = 'WEB'
+    WHERE rol.rol_tip = 'ADMINISTRADOR'
+      AND recurso.nom IN ('VER_EMPLEADOS', 'CREAR_CAJA_MENOR', 'REGISTRAR_FLUJO_CAJA', 'CREAR_CREDITOS', 'REFINANCIAR_CREDITOS', 'MODIFICAR_CREDITOS', 'ELIMINAR_CREDITOS', 'MODIFICAR_CLIENTES', 'ELIMINAR_CLIENTES', 'AGREGAR_CUOTA', 'MODIFICAR_MOVIMIENTOS', 'ELIMINAR_MOVIMIENTOS', 'VER_PAPELERA')
+    ON CONFLICT (rec_id, rol_id) DO NOTHING;
+  `;
     await prisma.$executeRaw`
       INSERT INTO public.tbl_roles_recursos (rol_id, rec_id)
       SELECT rol.id_rol, recurso.id_rec
@@ -110,7 +109,6 @@ async function poblarCatalogosSistema() {
       WHERE rol.rol_tip = 'COBRADOR'
         AND recurso.nom IN ('CREAR_CAJA_MENOR', 'REGISTRAR_FLUJO_CAJA', 'CREAR_CREDITOS', 'REFINANCIAR_CREDITOS', 'MODIFICAR_CREDITOS', 'ELIMINAR_CREDITOS', 'AGREGAR_CUOTA', 'MODIFICAR_MOVIMIENTOS', 'ELIMINAR_MOVIMIENTOS')
     `;
-  }
 
   // 5. Productos Creditos
   await prisma.$executeRaw`

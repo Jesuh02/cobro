@@ -72,6 +72,7 @@ export class ClientesService {
     const search = this.normalizarTextoOpcional(query.search);
     const conditions: Prisma.Sql[] = [
       Prisma.sql`c.org_id = ${scope.organizacionId}::uuid`,
+      Prisma.sql`c.cli_activo = true`,
     ];
 
     if (!this.tenantScope.puedeVerDatosOrganizacion(usuario)) {
@@ -451,10 +452,10 @@ export class ClientesService {
   }
 
   async eliminarClienteTbl(clienteId: string, usuario: AuthenticatedUser) {
-    this.asegurarAdministrador(usuario);
+    this.asegurarPermiso(usuario, 'ELIMINAR_CLIENTES');
     const scope = await this.tenantScope.obtenerScopeOrganizacionTbl(usuario);
 
-    await this.prisma.$transaction(async (tx) => {
+    const resultado = await this.prisma.$transaction(async (tx) => {
       const rows = await tx.$queryRaw<ClienteTblDetalleRow[]>(Prisma.sql`
         SELECT
           c.id_cli::text AS id,
@@ -485,50 +486,122 @@ export class ClientesService {
         );
       }
 
-      const relaciones = await tx.$queryRaw<
-        Array<{ creditos: number; pagos: number }>
-      >(Prisma.sql`
-        SELECT
-          COUNT(DISTINCT cr.id_cre)::int AS creditos,
-          COUNT(DISTINCT pa.id_pag)::int AS pagos
-        FROM public.tbl_clientes c
-        LEFT JOIN public.tbl_creditos cr ON cr.cli_id = c.id_cli
-        LEFT JOIN public.tbl_cuotas cu ON cu.cre_id = cr.id_cre
-        LEFT JOIN public.tbl_cuotas_pagos cp ON cp.cuo_id = cu.id_cuo
-        LEFT JOIN public.tbl_pagos pa ON pa.id_pag = cp.pagos_id
-        WHERE c.id_cli::text = ${clienteId}
-          AND c.org_id = ${scope.organizacionId}::uuid
+      // 1. Verificar si ya está en papelera como cliente
+      const enPapelera = await tx.$queryRaw<Array<{ id_pap: string }>>(Prisma.sql`
+        SELECT id_pap::text
+        FROM public.tbl_papelera
+        WHERE cli_id::text = ${clienteId}
+          AND (pap_datos->>'tipo' IS NULL OR pap_datos->>'tipo' != 'CREDITO')
       `);
-      const conteo = relaciones[0];
-
-      if ((conteo?.creditos ?? 0) > 0 || (conteo?.pagos ?? 0) > 0) {
+      if (enPapelera.length > 0) {
         throw DomainError.conflict(
-          'No se puede eliminar un cliente con creditos o pagos registrados',
-          'CLIENTE_CON_MOVIMIENTOS_NO_ELIMINABLE',
+          'Este cliente ya se encuentra en la papelera',
+          'CLIENTE_YA_EN_PAPELERA',
         );
       }
 
-      
-      await tx.$executeRaw(Prisma.sql`
-        DELETE FROM public.tbl_rutas_clientes
-        USING public.tbl_rutas r
-        WHERE tbl_rutas_clientes.rut_id = r.id_rut
-          AND tbl_rutas_clientes.cli_id::text = ${clienteId}
-          AND r.org_id = ${scope.organizacionId}::uuid
+      // 2. Localizar crédito activo si lo tiene
+      const creditosActivos = await tx.$queryRaw<
+        Array<{ id: string; estado: string; total: Prisma.Decimal }>
+      >(Prisma.sql`
+        SELECT
+          id_cre::text AS id,
+          cre_estado::text AS estado,
+          cre_total AS total
+        FROM public.tbl_creditos
+        WHERE cli_id::text = ${clienteId}
+          AND UPPER(cre_estado::text) = 'ACTIVO'
+        ORDER BY cre_fecha_inicio DESC
+        LIMIT 1
       `);
+      const creditoActivo = creditosActivos[0];
+
+      // 3. Localizar ruta actual si la tiene
+      const rutasCliente = await tx.$queryRaw<
+        Array<{ rut_id: string; rcl_activo: boolean; ruta_nombre: string }>
+      >(Prisma.sql`
+        SELECT
+          rc.rut_id::text,
+          rc.rcl_activo,
+          r.rut_nombre
+        FROM public.tbl_rutas_clientes rc
+        JOIN public.tbl_rutas r ON r.id_rut = rc.rut_id
+        WHERE rc.cli_id::text = ${clienteId}
+          AND r.org_id = ${scope.organizacionId}::uuid
+        ORDER BY rc.rcl_activo DESC
+        LIMIT 1
+      `);
+      const rutaCliente = rutasCliente[0];
+
+      // 4. Registrar en tbl_papelera
+      const datosJson = JSON.stringify({
+        tipo: 'CLIENTE',
+        creditoActivoId: creditoActivo?.id ?? null,
+        creditoEstadoPrevio: creditoActivo?.estado ?? null,
+        creditoTotal: creditoActivo ? Number(creditoActivo.total) : null,
+        rutaPreviaId: rutaCliente?.rut_id ?? null,
+        rutaNombre: rutaCliente?.ruta_nombre ?? null,
+      });
+
       await tx.$executeRaw(Prisma.sql`
-        DELETE FROM public.tbl_clientes
+        INSERT INTO public.tbl_papelera (
+          org_id,
+          usu_id,
+          cli_id,
+          cre_id,
+          rut_id,
+          pap_fecha,
+          pap_motivo,
+          pap_datos
+        ) VALUES (
+          ${scope.organizacionId}::uuid,
+          ${scope.usuarioId}::uuid,
+          ${clienteId}::uuid,
+          ${creditoActivo ? Prisma.sql`${creditoActivo.id}::uuid` : Prisma.sql`NULL`},
+          ${rutaCliente ? Prisma.sql`${rutaCliente.rut_id}::uuid` : Prisma.sql`NULL`},
+          NOW(),
+          'Eliminado por administrador',
+          ${datosJson}::jsonb
+        )
+      `);
+
+      // 5. Desactivar cliente (soft delete)
+      await tx.$executeRaw(Prisma.sql`
+        UPDATE public.tbl_clientes
+        SET cli_activo = false
         WHERE id_cli::text = ${clienteId}
           AND org_id = ${scope.organizacionId}::uuid
       `);
+
+      // 6. Suspender crédito activo (para no cobrar en la calle mientras esté en papelera)
+      if (creditoActivo) {
+        await tx.$executeRaw(Prisma.sql`
+          UPDATE public.tbl_creditos
+          SET cre_estado = 'ANULADO'::public.credito_estado_enum
+          WHERE id_cre::text = ${creditoActivo.id}
+        `);
+      }
+
+      // 7. Desactivar de la ruta
       await tx.$executeRaw(Prisma.sql`
-        DELETE FROM public.tbl_personas
-        WHERE id_per::text = ${cliente.persona_id}
+        UPDATE public.tbl_rutas_clientes
+        SET rcl_activo = false
+        WHERE cli_id::text = ${clienteId}
       `);
+
+      return {
+        ok: true,
+        enviadoPapelera: true,
+        clienteId,
+        creditoActivo: !!creditoActivo,
+        mensaje: creditoActivo
+          ? 'Cliente y crédito activo enviados a la papelera'
+          : 'Cliente enviado a la papelera',
+      };
     });
 
     this.invalidarCacheLecturas();
-    return { ok: true };
+    return resultado;
   }
 
   async actualizarUbicacionCliente(

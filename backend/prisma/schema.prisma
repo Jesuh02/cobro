@@ -41,6 +41,7 @@ model TblUsuario {
   sesionesCajas   TblSesionCaja[]
   persona         TblPersona               @relation(fields: [personaId], references: [idPer])
   organizaciones  TblUsuarioOrganizacion[]
+  papelera        TblPapelera[]
 
   @@map("tbl_usuarios")
   @@schema("public")
@@ -48,7 +49,7 @@ model TblUsuario {
 
 model TblRol {
   idRol          String                   @id @default(dbgenerated("gen_random_uuid()")) @map("id_rol") @db.Uuid
-  tipo           String                   @unique @map("rol_tip")
+  tipo           rol_tipo_enum            @unique @map("rol_tip")
   nivel          BigInt                   @map("rol_nivel")
   creacion       DateTime                 @default(now()) @map("rol_creacion") @db.Timestamptz(6)
   recursos       TblRolRecurso[]
@@ -63,7 +64,7 @@ model TblRecurso {
   nombre    String          @map("nom")
   icono     String?         @map("rec_icono")
   orden     BigInt          @default(0) @map("rec_orden")
-  interface String          @default("WEB") @map("rec_interface")
+  interface recurso_interface_enum @default(WEB) @map("rec_interface")
   roles     TblRolRecurso[]
 
   @@unique([interface, nombre], map: "ux_tbl_recursos_interface_nombre")
@@ -103,6 +104,7 @@ model TblOrganizacion {
   rutas                   TblRuta[]
   usuarios                TblUsuarioOrganizacion[]
   tbl_wompi_transacciones tbl_wompi_transacciones[]
+  papelera                TblPapelera[]
 
   @@index([activo, accesoHasta], map: "ix_tbl_organizaciones_acceso")
   @@map("tbl_organizaciones")
@@ -136,6 +138,7 @@ model TblCliente {
   creditos           TblCredito[]
   tbl_notificaciones tbl_notificaciones[]
   rutas              TblRutaCliente[]
+  papelera           TblPapelera?
 
   @@unique([orgId, personaId], map: "ux_tbl_clientes_org_persona")
   @@unique([orgId, referencia], map: "ux_tbl_clientes_org_referencia")
@@ -154,6 +157,7 @@ model TblRuta {
   organizacion TblOrganizacion  @relation(fields: [orgId], references: [idOrg])
   usuario      TblUsuario       @relation(fields: [usuId], references: [idUsu])
   clientes     TblRutaCliente[]
+  papelera     TblPapelera[]
 
   @@unique([orgId, nombre], map: "ux_tbl_rutas_org_nombre")
   @@index([usuId], map: "ix_tbl_rutas_usuario")
@@ -289,6 +293,7 @@ model TblCredito {
   usuario            TblUsuario           @relation(fields: [usuId], references: [idUsu])
   cuotas             TblCuota[]
   tbl_notificaciones tbl_notificaciones[]
+  papelera           TblPapelera[]
 
   @@index([cliId, estado], map: "ix_tbl_creditos_cliente_estado")
   @@index([usuId, estado], map: "ix_tbl_creditos_usuario_estado")
@@ -316,7 +321,7 @@ model TblCuota {
 model TblMedioPago {
   idMed            String    @id @default(dbgenerated("gen_random_uuid()")) @map("id_med") @db.Uuid
   nombre           String    @unique @map("med_nombre")
-  tipo             String    @unique @map("med_tipo")
+  tipo             medio_pago_tipo_enum @unique @map("med_tipo")
   proveedor        String?   @map("med_proveedor")
   referenciaCuenta String?   @map("med_referencia_cuenta")
   titular          String?   @map("med_titular")
@@ -430,6 +435,29 @@ model tbl_wompi_transacciones {
 
   @@index([org_id, wtr_creacion(sort: Desc)], map: "ix_tbl_wompi_transacciones_org_creacion")
   @@index([wtr_estado], map: "ix_tbl_wompi_transacciones_estado")
+  @@schema("public")
+}
+
+model TblPapelera {
+  idPap        String          @id @default(dbgenerated("gen_random_uuid()")) @map("id_pap") @db.Uuid
+  orgId        String          @map("org_id") @db.Uuid
+  usuId        String          @map("usu_id") @db.Uuid
+  cliId        String          @unique(map: "ux_tbl_papelera_cliente") @map("cli_id") @db.Uuid
+  creId        String?         @map("cre_id") @db.Uuid
+  rutId        String?         @map("rut_id") @db.Uuid
+  fecha        DateTime        @default(now()) @map("pap_fecha") @db.Timestamptz(6)
+  motivo       String?         @map("pap_motivo")
+  datos        Json?           @default("{}") @map("pap_datos")
+  cliente      TblCliente      @relation(fields: [cliId], references: [idCli], onDelete: Cascade)
+  credito      TblCredito?     @relation(fields: [creId], references: [idCre], onDelete: SetNull)
+  organizacion TblOrganizacion @relation(fields: [orgId], references: [idOrg], onDelete: Cascade)
+  ruta         TblRuta?        @relation(fields: [rutId], references: [idRut], onDelete: SetNull)
+  usuario      TblUsuario      @relation(fields: [usuId], references: [idUsu])
+
+  @@index([orgId, fecha(sort: Desc)], map: "ix_tbl_papelera_org_fecha")
+  @@index([cliId], map: "ix_tbl_papelera_cliente")
+  @@index([creId], map: "ix_tbl_papelera_credito")
+  @@map("tbl_papelera")
   @@schema("public")
 }
 

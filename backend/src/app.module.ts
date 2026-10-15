@@ -17,6 +17,7 @@ import { ExportacionesModule } from './modules/exportaciones/exportaciones.modul
 import { HealthModule } from './modules/health/health.module';
 import { PresupuestoModule } from './modules/presupuesto/presupuesto.module';
 import { RutasModule } from './modules/rutas/rutas.module';
+import { PapeleraModule } from './modules/papelera/papelera.module';
 
 @Module({
   imports: [
@@ -60,6 +61,7 @@ import { RutasModule } from './modules/rutas/rutas.module';
     CajaMenorModule,
     CreditosModule,
     PresupuestoModule,
+    PapeleraModule,
   ],
   providers: [
     {

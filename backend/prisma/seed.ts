@@ -79,9 +79,17 @@ async function poblarCatalogosSistema() {
       ('ELIMINAR_CLIENTES', 76, 'WEB'),
       ('AGREGAR_CUOTA', 80, 'WEB'),
       ('MODIFICAR_MOVIMIENTOS', 90, 'WEB'),
-      ('ELIMINAR_MOVIMIENTOS', 100, 'WEB'),
-      ('VER_PAPELERA', 110, 'WEB')
+      ('VER_PAPELERA', 100, 'WEB')
     ON CONFLICT (rec_interface, nom) DO UPDATE SET rec_orden = EXCLUDED.rec_orden;
+  `;
+
+  // Limpieza de permisos eliminados del sistema
+  await prisma.$executeRaw`
+    DELETE FROM public.tbl_roles_recursos
+    WHERE rec_id IN (SELECT id_rec FROM public.tbl_recursos WHERE nom = 'ELIMINAR_MOVIMIENTOS');
+  `;
+  await prisma.$executeRaw`
+    DELETE FROM public.tbl_recursos WHERE nom = 'ELIMINAR_MOVIMIENTOS';
   `;
 
   // 4. Roles Recursos
@@ -91,7 +99,7 @@ async function poblarCatalogosSistema() {
     FROM public.tbl_roles rol
     JOIN public.tbl_recursos recurso ON recurso.rec_interface = 'WEB'
     WHERE rol.rol_tip = 'ADMINISTRADOR'
-      AND recurso.nom IN ('VER_EMPLEADOS', 'CREAR_CAJA_MENOR', 'REGISTRAR_FLUJO_CAJA', 'CREAR_CREDITOS', 'REFINANCIAR_CREDITOS', 'MODIFICAR_CREDITOS', 'ELIMINAR_CREDITOS', 'MODIFICAR_CLIENTES', 'ELIMINAR_CLIENTES', 'AGREGAR_CUOTA', 'MODIFICAR_MOVIMIENTOS', 'ELIMINAR_MOVIMIENTOS', 'VER_PAPELERA')
+      AND recurso.nom IN ('VER_EMPLEADOS', 'CREAR_CAJA_MENOR', 'REGISTRAR_FLUJO_CAJA', 'CREAR_CREDITOS', 'REFINANCIAR_CREDITOS', 'MODIFICAR_CREDITOS', 'ELIMINAR_CREDITOS', 'MODIFICAR_CLIENTES', 'ELIMINAR_CLIENTES', 'AGREGAR_CUOTA', 'MODIFICAR_MOVIMIENTOS', 'VER_PAPELERA')
     ON CONFLICT (rec_id, rol_id) DO NOTHING;
   `;
     await prisma.$executeRaw`
@@ -107,7 +115,7 @@ async function poblarCatalogosSistema() {
       FROM public.tbl_roles rol
       JOIN public.tbl_recursos recurso ON recurso.rec_interface = 'WEB'
       WHERE rol.rol_tip = 'COBRADOR'
-        AND recurso.nom IN ('CREAR_CAJA_MENOR', 'REGISTRAR_FLUJO_CAJA', 'CREAR_CREDITOS', 'REFINANCIAR_CREDITOS', 'MODIFICAR_CREDITOS', 'ELIMINAR_CREDITOS', 'AGREGAR_CUOTA', 'MODIFICAR_MOVIMIENTOS', 'ELIMINAR_MOVIMIENTOS')
+        AND recurso.nom IN ('CREAR_CAJA_MENOR', 'REGISTRAR_FLUJO_CAJA', 'CREAR_CREDITOS', 'REFINANCIAR_CREDITOS', 'MODIFICAR_CREDITOS', 'ELIMINAR_CREDITOS', 'AGREGAR_CUOTA', 'MODIFICAR_MOVIMIENTOS')
     `;
 
   // 5. Productos Creditos

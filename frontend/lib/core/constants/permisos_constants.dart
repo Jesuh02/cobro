@@ -9,7 +9,6 @@ const String permisoModificarClientes = 'MODIFICAR_CLIENTES';
 const String permisoEliminarClientes = 'ELIMINAR_CLIENTES';
 const String permisoAgregarCuota = 'AGREGAR_CUOTA';
 const String permisoModificarMovimientos = 'MODIFICAR_MOVIMIENTOS';
-const String permisoEliminarMovimientos = 'ELIMINAR_MOVIMIENTOS';
 
 const List<String> permisosEmpleadoCodigos = <String>[
   permisoVerEmpleados,
@@ -23,5 +22,4 @@ const List<String> permisosEmpleadoCodigos = <String>[
   permisoEliminarClientes,
   permisoAgregarCuota,
   permisoModificarMovimientos,
-  permisoEliminarMovimientos,
 ];

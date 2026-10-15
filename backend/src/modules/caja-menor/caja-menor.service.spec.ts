@@ -487,29 +487,19 @@ describe('CajaMenorService', () => {
     expect(executeRaw).toHaveBeenCalled();
   });
 
-  it('deletes a movement and reverts session totals in tbl mode', async () => {
-    const queryRaw = jest
-      .fn<Promise<unknown[]>, [unknown]>()
-      .mockResolvedValueOnce([
-        {
-          id: 'b0a2cfeb-d3fb-464a-85d0-d88ce74d2847',
-          tipo: 'GASTO',
-          monto: '50.00',
-          referencia_id: null,
-          referencia_tipo: null,
-          sesion_id: 'ses-1',
-          org_id: '10',
-        },
-      ]);
-    const executeRaw = jest.fn().mockResolvedValue(1);
+  it('rejects deleting a movement even for administrators', async () => {
+    const queryRaw = jest.fn();
+    const executeRaw = jest.fn();
     const service = createService(queryRaw, executeRaw);
 
-    const result = await service.eliminarMovimientoCaja(
-      'b0a2cfeb-d3fb-464a-85d0-d88ce74d2847',
-      usuario('7', ['ADMINISTRADOR']),
-    );
+    await expect(
+      service.eliminarMovimientoCaja(
+        'b0a2cfeb-d3fb-464a-85d0-d88ce74d2847',
+        usuario('7', ['ADMINISTRADOR']),
+      ),
+    ).rejects.toThrow('No se permite eliminar movimientos de caja menor');
 
-    expect(result.ok).toBe(true);
-    expect(executeRaw).toHaveBeenCalled();
+    expect(queryRaw).not.toHaveBeenCalled();
+    expect(executeRaw).not.toHaveBeenCalled();
   });
 });

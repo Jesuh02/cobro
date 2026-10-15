@@ -57,11 +57,6 @@ export const permisosEmpleado = [
     nombre: 'Modificar movimientos',
     rolNombre: 'Permiso modificar movimientos',
   },
-  {
-    codigo: 'ELIMINAR_MOVIMIENTOS',
-    nombre: 'Eliminar movimientos',
-    rolNombre: 'Permiso eliminar movimientos',
-  },
 ] as const;
 
 export type PermisoEmpleadoCodigo = (typeof permisosEmpleado)[number]['codigo'];

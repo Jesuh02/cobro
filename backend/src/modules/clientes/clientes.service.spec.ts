@@ -135,6 +135,55 @@ describe('ClientesService', () => {
     });
   });
 
+  it('rejects creating client if cedula exists and is in papelera', async () => {
+    const queryRaw = jest
+      .fn()
+      .mockResolvedValueOnce([{ existe: true, en_papelera: true }]);
+
+    const tx = {
+      $queryRaw: queryRaw,
+    };
+
+    const prisma = {
+      $transaction: async (cb: (t: unknown) => Promise<unknown>) => cb(tx),
+    };
+
+    const tenantScope = {
+      obtenerScopeOrganizacionTbl: jest.fn().mockResolvedValue({
+        usuarioId: 'u-1',
+        organizacionId: 'org-1',
+      }),
+    };
+
+    const service = new ClientesService(
+      prisma as never,
+      tenantScope as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(
+      service.crearCliente(
+        {
+          nombreCompleto: 'Maria Perez',
+          cedula: '987654',
+          direccion: 'Carrera 5',
+          telefono: '3119876543',
+        },
+        {
+          usuarioId: 'u-1',
+          usuario: 'admin',
+          organizacionId: 'org-1',
+          roles: ['ADMINISTRADOR'],
+          permisos: [],
+        },
+      ),
+    ).rejects.toMatchObject({
+      message: 'Ya existe este cliente, restaurelo de la papelera',
+      code: 'CLIENTE_EN_PAPELERA',
+    });
+  });
+
   it('creates client in tbl schema and links route', async () => {
     const queryRaw = jest
       .fn()

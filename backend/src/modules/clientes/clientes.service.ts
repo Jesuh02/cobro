@@ -161,19 +161,35 @@ export class ClientesService {
         );
 
         if (input.cedula) {
-          const [duplicado] = await tx.$queryRaw<Array<{ existe: boolean }>>(
+          const [duplicado] = await tx.$queryRaw<
+            Array<{ existe?: boolean; en_papelera?: boolean }>
+          >(
             Prisma.sql`
-              SELECT EXISTS (
-                SELECT 1
-                FROM public.tbl_clientes c
-                JOIN public.tbl_personas p ON p.id_per = c.cli_persona
-                WHERE p.per_documento = ${input.cedula}
-                  AND c.org_id = ${scope.organizacionId}::uuid
-              ) AS existe
+              SELECT
+                TRUE AS existe,
+                (NOT c.cli_activo OR EXISTS (
+                  SELECT 1
+                  FROM public.tbl_papelera pap
+                  WHERE pap.cli_id = c.id_cli
+                    AND (pap.pap_datos->>'tipo' IS NULL OR pap.pap_datos->>'tipo' = 'CLIENTE')
+                )) AS en_papelera
+              FROM public.tbl_clientes c
+              JOIN public.tbl_personas p ON p.id_per = c.cli_persona
+              WHERE p.per_documento = ${input.cedula}
+                AND c.org_id = ${scope.organizacionId}::uuid
+              ORDER BY (c.cli_activo = true) DESC
+              LIMIT 1
             `,
           );
 
-          if (duplicado?.existe) {
+          if (duplicado && duplicado.existe !== false) {
+            if (duplicado.en_papelera) {
+              throw DomainError.conflict(
+                'Ya existe este cliente, restaurelo de la papelera',
+                'CLIENTE_EN_PAPELERA',
+              );
+            }
+
             throw DomainError.conflict(
               'Ya existe un cliente con esta cedula',
               'CEDULA_YA_REGISTRADA',
@@ -369,20 +385,36 @@ export class ClientesService {
             ? null
             : this.decimalANumero(actual.longitud));
         if (cedulaFinal !== actual.cedula) {
-          const duplicados = await tx.$queryRaw<Array<{ existe: boolean }>>(
+          const duplicados = await tx.$queryRaw<
+            Array<{ existe?: boolean; en_papelera?: boolean }>
+          >(
             Prisma.sql`
-              SELECT EXISTS (
-                SELECT 1
-                FROM public.tbl_clientes c
-                JOIN public.tbl_personas p ON p.id_per = c.cli_persona
-                WHERE p.per_documento = ${cedulaFinal}
-                  AND c.org_id = ${scope.organizacionId}::uuid
-                  AND c.id_cli::text <> ${clienteId}
-              ) AS existe
+              SELECT
+                TRUE AS existe,
+                (NOT c.cli_activo OR EXISTS (
+                  SELECT 1
+                  FROM public.tbl_papelera pap
+                  WHERE pap.cli_id = c.id_cli
+                    AND (pap.pap_datos->>'tipo' IS NULL OR pap.pap_datos->>'tipo' = 'CLIENTE')
+                )) AS en_papelera
+              FROM public.tbl_clientes c
+              JOIN public.tbl_personas p ON p.id_per = c.cli_persona
+              WHERE p.per_documento = ${cedulaFinal}
+                AND c.org_id = ${scope.organizacionId}::uuid
+                AND c.id_cli::text <> ${clienteId}
+              ORDER BY (c.cli_activo = true) DESC
+              LIMIT 1
             `,
           );
 
-          if (duplicados[0]?.existe) {
+          if (duplicados[0] && duplicados[0].existe !== false) {
+            if (duplicados[0].en_papelera) {
+              throw DomainError.conflict(
+                'Ya existe este cliente, restaurelo de la papelera',
+                'CLIENTE_EN_PAPELERA',
+              );
+            }
+
             throw DomainError.conflict(
               'Ya existe un cliente con esta cedula',
               'CEDULA_YA_REGISTRADA',

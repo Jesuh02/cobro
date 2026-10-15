@@ -631,6 +631,47 @@ describe('CajaMenorService', () => {
     ).rejects.toThrow('Solo un administrador puede modificar un movimiento de apertura');
   });
 
+  it('allows employee to see movements in their assigned caja even if created by admin', async () => {
+    const queryRaw = jest
+      .fn<Promise<unknown[]>, [unknown]>()
+      .mockResolvedValueOnce([
+        {
+          id: 'mov-b0a2cfeb-d3fb-464a-85d0-d88ce74d2847',
+          caja_menor_id: 'caj-1',
+          caja_menor: 'Caja Principal',
+          cliente: null,
+          cliente_identificacion: null,
+          tipo_codigo: 'APERTURA',
+          tipo_nombre: 'Apertura',
+          naturaleza: 'E',
+          usuario_id: '7',
+          usuario: 'admin',
+          nombres: 'Admin',
+          apellidos: 'Principal',
+          correo: 'admin@example.com',
+          telefono: '1234567',
+          fecha_movimiento: new Date('2026-09-01T00:00:00.000Z'),
+          monto: '2000.00',
+          motivo: 'Apertura',
+          referencia_tabla: null,
+          referencia_id: null,
+          creado_en: new Date('2026-09-01T00:00:00.000Z'),
+          sesion_usuario_id: '8',
+        },
+      ]);
+    const service = createService(queryRaw);
+
+    const result = (await service.listarMovimientosCaja(
+      {},
+      usuario('8', ['COBRADOR']),
+    )) as Array<{ id: string; monto: number; usuario: { usuario: string } }>;
+
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('mov-b0a2cfeb-d3fb-464a-85d0-d88ce74d2847');
+    expect(result[0].monto).toBe(2000);
+    expect(result[0].usuario.usuario).toBe('admin');
+  });
+
   it('rejects deleting a movement even for administrators', async () => {
     const queryRaw = jest.fn();
     const executeRaw = jest.fn();

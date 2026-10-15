@@ -100,6 +100,7 @@ type MovimientoCajaTblRow = {
   referencia_tabla: string | null;
   referencia_id: string | null;
   creado_en: Date;
+  sesion_usuario_id?: string | null;
 };
 
 const uuidPattern =
@@ -967,7 +968,9 @@ export class CajaMenorService implements OnModuleInit {
     }
 
     if (!this.puedeVerDatosOrganizacion(usuario)) {
-      conditions.push(Prisma.sql`usuario_id = ${scope.usuarioId}`);
+      conditions.push(
+        Prisma.sql`(usuario_id = ${scope.usuarioId} OR sesion_usuario_id = ${scope.usuarioId})`,
+      );
     }
 
     if (search) {
@@ -1038,13 +1041,21 @@ export class CajaMenorService implements OnModuleInit {
           END AS motivo,
           m.mca_referencia_tipo::text AS referencia_tabla,
           m.mca_referencia_id::text AS referencia_id,
-          m.mca_creacion AS creado_en
+          m.mca_creacion AS creado_en,
+          COALESCE(sc.usu_id::text, caja_resp.usuario_id) AS sesion_usuario_id
         FROM public.tbl_movimientos_cajas m
         JOIN public.tbl_organizaciones o ON o.id_org = m.org_id
         JOIN public.tbl_usuarios tu ON tu.id_usu = m.usu_id
         JOIN public.tbl_personas p ON p.id_per = tu.persona_id
         LEFT JOIN public.tbl_sesiones_cajas sc ON sc.id_sca = m.sca_id
         LEFT JOIN public.tbl_cajas c ON c.id_caj = sc.caj_id
+        LEFT JOIN LATERAL (
+          SELECT sca.usu_id::text AS usuario_id
+          FROM public.tbl_sesiones_cajas sca
+          WHERE sca.caj_id = COALESCE(sc.caj_id, c.id_caj)
+          ORDER BY (sca.sca_estado::text = 'ABIERTA') DESC, sca.sca_fecha_apertura DESC, sca.id_sca DESC
+          LIMIT 1
+        ) caja_resp ON TRUE
         LEFT JOIN LATERAL (
           SELECT
             TRIM(CONCAT_WS(' ', per.per_primer_nombre, per.per_apellido)) AS cliente,
@@ -1089,7 +1100,8 @@ export class CajaMenorService implements OnModuleInit {
           CONCAT('Pago del usuario ', TRIM(CONCAT_WS(' ', per.per_primer_nombre, per.per_apellido))),
           'pago',
           pa.id_pag::text,
-          pa.pag_fecha
+          pa.pag_fecha,
+          NULL::text AS sesion_usuario_id
         FROM (
           SELECT DISTINCT ON (pa.id_pag)
             pa.id_pag,
@@ -1152,12 +1164,20 @@ export class CajaMenorService implements OnModuleInit {
           cg.cga_nombre,
           'gasto',
           g.id_gas::text,
-          g.gas_fecha
+          g.gas_fecha,
+          sc_gasto.usuario_id AS sesion_usuario_id
         FROM public.tbl_gastos g
         JOIN public.tbl_cajas c ON c.id_caj = g.caj_id
         JOIN public.tbl_categorias_gastos cg ON cg.id_cga = g.cga_id
         JOIN public.tbl_usuarios tu ON tu.id_usu = g.usu_id
         JOIN public.tbl_personas p ON p.id_per = tu.persona_id
+        LEFT JOIN LATERAL (
+          SELECT sca.usu_id::text AS usuario_id
+          FROM public.tbl_sesiones_cajas sca
+          WHERE sca.caj_id = c.id_caj
+          ORDER BY (sca.sca_estado::text = 'ABIERTA') DESC, sca.sca_fecha_apertura DESC, sca.id_sca DESC
+          LIMIT 1
+        ) sc_gasto ON TRUE
       )
       SELECT *
       FROM base

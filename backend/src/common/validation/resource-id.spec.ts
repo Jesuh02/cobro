@@ -19,11 +19,14 @@ describe('ResourceIdPipe', () => {
     },
   );
 
-  it('allows validated payment identifiers only when requested', () => {
-    const paymentPipe = new ResourceIdPipe(true);
-    const value = 'pago-8d3f8c14-276f-4fd4-a55c-63fe4c179cca';
+  it('allows validated payment and movement identifiers only when requested', () => {
+    const prefixedPipe = new ResourceIdPipe(true);
+    const pagoValue = 'pago-8d3f8c14-276f-4fd4-a55c-63fe4c179cca';
+    const movValue = 'mov-8d3f8c14-276f-4fd4-a55c-63fe4c179cca';
 
-    expect(paymentPipe.transform(value)).toBe(value);
-    expect(() => pipe.transform(value)).toThrow(BadRequestException);
+    expect(prefixedPipe.transform(pagoValue)).toBe(pagoValue);
+    expect(prefixedPipe.transform(movValue)).toBe(movValue);
+    expect(() => pipe.transform(pagoValue)).toThrow(BadRequestException);
+    expect(() => pipe.transform(movValue)).toThrow(BadRequestException);
   });
 });

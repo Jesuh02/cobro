@@ -7,8 +7,8 @@ export function resourceIdMessage() {
   return 'El identificador debe ser un UUID o un entero positivo valido';
 }
 
-const paymentResourceIdPattern = new RegExp(
-  `^pago-(?:${resourceIdPattern.source.slice(1, -1)})$`,
+const prefixedResourceIdPattern = new RegExp(
+  `^(?:pago|mov)-(?:${resourceIdPattern.source.slice(1, -1)})$`,
   'i',
 );
 
@@ -20,7 +20,7 @@ export class ResourceIdPipe implements PipeTransform<unknown, string> {
       typeof value !== 'string' ||
       value.length > 64 ||
       (!resourceIdPattern.test(value) &&
-        !(this.allowPaymentPrefix && paymentResourceIdPattern.test(value)))
+        !(this.allowPaymentPrefix && prefixedResourceIdPattern.test(value)))
     ) {
       throw new BadRequestException('Identificador no valido');
     }

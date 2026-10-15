@@ -487,6 +487,150 @@ describe('CajaMenorService', () => {
     expect(executeRaw).toHaveBeenCalled();
   });
 
+  it('allows administrator to update APERTURA movement when session is ABIERTA', async () => {
+    const queryRaw = jest
+      .fn<Promise<unknown[]>, [unknown]>()
+      .mockResolvedValueOnce([
+        {
+          id: 'b0a2cfeb-d3fb-464a-85d0-d88ce74d2847',
+          tipo: 'APERTURA',
+          monto: '1000.00',
+          referencia_id: null,
+          referencia_tipo: null,
+          sesion_id: 'ses-1',
+          org_id: '10',
+          caja_id: 'caj-1',
+          sesion_estado: 'ABIERTA',
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          caja_menor_id: 'caj-1',
+          caja_menor: 'Caja Principal',
+          activa: true,
+          org_id: '10',
+          sesion_id: 'ses-1',
+          fecha_cierre: null,
+          usuario_id: '7',
+          usuario: 'admin',
+          nombres: 'Admin',
+          apellidos: 'Principal',
+          correo: 'admin@example.com',
+          telefono: '1234567',
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: 'mov-b0a2cfeb-d3fb-464a-85d0-d88ce74d2847',
+          caja_menor_id: 'caj-1',
+          caja_menor: 'Caja Principal',
+          cliente: null,
+          cliente_identificacion: null,
+          tipo_codigo: 'APERTURA',
+          tipo_nombre: 'Apertura',
+          naturaleza: 'E',
+          usuario_id: '7',
+          usuario: 'admin',
+          nombres: 'Admin',
+          apellidos: 'Principal',
+          correo: 'admin@example.com',
+          telefono: '1234567',
+          fecha_movimiento: new Date('2026-09-01T00:00:00.000Z'),
+          monto: '2000.00',
+          motivo: 'Apertura modificada',
+          referencia_tabla: null,
+          referencia_id: null,
+          creado_en: new Date('2026-09-01T00:00:00.000Z'),
+        },
+      ]);
+    const executeRaw = jest.fn().mockResolvedValue(1);
+    const service = createService(queryRaw, executeRaw);
+
+    const result = await service.actualizarMovimientoCaja(
+      'b0a2cfeb-d3fb-464a-85d0-d88ce74d2847',
+      {
+        cajaMenorId: 'caj-1',
+        tipoMovimientoCodigo: 'APERTURA',
+        fechaMovimiento: '2026-09-01T00:00:00.000Z',
+        monto: 2000,
+        motivo: 'Apertura modificada',
+      },
+      usuario('7', ['ADMINISTRADOR']),
+    );
+
+    expect(result.id).toBe('mov-b0a2cfeb-d3fb-464a-85d0-d88ce74d2847');
+    expect(result.monto).toBe(2000);
+    expect(executeRaw).toHaveBeenCalled();
+  });
+
+  it('rejects updating APERTURA movement if session is CERRADA', async () => {
+    const queryRaw = jest
+      .fn<Promise<unknown[]>, [unknown]>()
+      .mockResolvedValueOnce([
+        {
+          id: 'b0a2cfeb-d3fb-464a-85d0-d88ce74d2847',
+          tipo: 'APERTURA',
+          monto: '1000.00',
+          referencia_id: null,
+          referencia_tipo: null,
+          sesion_id: 'ses-1',
+          org_id: '10',
+          caja_id: 'caj-1',
+          sesion_estado: 'CERRADA',
+        },
+      ]);
+    const executeRaw = jest.fn().mockResolvedValue(1);
+    const service = createService(queryRaw, executeRaw);
+
+    await expect(
+      service.actualizarMovimientoCaja(
+        'b0a2cfeb-d3fb-464a-85d0-d88ce74d2847',
+        {
+          cajaMenorId: 'caj-1',
+          tipoMovimientoCodigo: 'APERTURA',
+          fechaMovimiento: '2026-09-01T00:00:00.000Z',
+          monto: 2000,
+          motivo: 'Apertura modificada',
+        },
+        usuario('7', ['ADMINISTRADOR']),
+      ),
+    ).rejects.toThrow('No se puede modificar la apertura de una sesion de caja cerrada');
+  });
+
+  it('rejects non-administrator from updating APERTURA movement', async () => {
+    const queryRaw = jest
+      .fn<Promise<unknown[]>, [unknown]>()
+      .mockResolvedValueOnce([
+        {
+          id: 'b0a2cfeb-d3fb-464a-85d0-d88ce74d2847',
+          tipo: 'APERTURA',
+          monto: '1000.00',
+          referencia_id: null,
+          referencia_tipo: null,
+          sesion_id: 'ses-1',
+          org_id: '10',
+          caja_id: 'caj-1',
+          sesion_estado: 'ABIERTA',
+        },
+      ]);
+    const executeRaw = jest.fn().mockResolvedValue(1);
+    const service = createService(queryRaw, executeRaw);
+
+    await expect(
+      service.actualizarMovimientoCaja(
+        'b0a2cfeb-d3fb-464a-85d0-d88ce74d2847',
+        {
+          cajaMenorId: 'caj-1',
+          tipoMovimientoCodigo: 'APERTURA',
+          fechaMovimiento: '2026-09-01T00:00:00.000Z',
+          monto: 2000,
+          motivo: 'Apertura modificada',
+        },
+        usuario('8', ['COBRADOR'], ['MODIFICAR_MOVIMIENTOS']),
+      ),
+    ).rejects.toThrow('Solo un administrador puede modificar un movimiento de apertura');
+  });
+
   it('rejects deleting a movement even for administrators', async () => {
     const queryRaw = jest.fn();
     const executeRaw = jest.fn();

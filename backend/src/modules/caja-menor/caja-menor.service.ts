@@ -1463,17 +1463,6 @@ export class CajaMenorService implements OnModuleInit {
       );
     }
 
-    if (
-      ['APERTURA', 'CIERRE', 'RECAUDO', 'DESEMBOLSO_CREDITO'].includes(
-        tipo.codigo,
-      )
-    ) {
-      throw DomainError.conflict(
-        'No se puede cambiar el movimiento a este tipo reservado',
-        'TIPO_MOVIMIENTO_RESERVADO',
-      );
-    }
-
     const fechaMovimiento = this.parsearFechaMovimiento(
       dto.fechaMovimiento,
       'fechaMovimiento',
@@ -1496,6 +1485,8 @@ export class CajaMenorService implements OnModuleInit {
           referencia_tipo: string | null;
           sesion_id: string | null;
           org_id: string;
+          caja_id: string | null;
+          sesion_estado: string | null;
         }>
       >(Prisma.sql`
         SELECT
@@ -1505,8 +1496,11 @@ export class CajaMenorService implements OnModuleInit {
           m.mca_referencia_id::text AS referencia_id,
           m.mca_referencia_tipo::text AS referencia_tipo,
           m.sca_id::text AS sesion_id,
-          m.org_id::text AS org_id
+          m.org_id::text AS org_id,
+          sc.caj_id::text AS caja_id,
+          sc.sca_estado::text AS sesion_estado
         FROM public.tbl_movimientos_cajas m
+        LEFT JOIN public.tbl_sesiones_cajas sc ON sc.id_sca = m.sca_id
         WHERE m.id_mca = ${idLimpio}::uuid
           AND m.org_id = ${scope.organizacionId}::uuid
         LIMIT 1
@@ -1534,11 +1528,53 @@ export class CajaMenorService implements OnModuleInit {
           'DESEMBOLSO_CREDITO_TIPO_NO_EDITABLE',
         );
       }
-      if (['APERTURA', 'CIERRE'].includes(actual.tipo)) {
+      if (actual.tipo === 'CIERRE') {
         throw DomainError.conflict(
-          'No se pueden modificar aperturas o cierres de caja',
+          'No se pueden modificar cierres de caja',
           'SESION_CAJA_NO_EDITABLE',
         );
+      }
+
+      if (actual.tipo === 'APERTURA') {
+        if (!this.esAdministrador(usuario)) {
+          throw DomainError.conflict(
+            'Solo un administrador puede modificar un movimiento de apertura',
+            'APERTURA_SOLO_ADMINISTRADOR',
+          );
+        }
+        if (actual.sesion_estado && actual.sesion_estado !== 'ABIERTA') {
+          throw DomainError.conflict(
+            'No se puede modificar la apertura de una sesion de caja cerrada. Solo se permite mientras la sesion este abierta.',
+            'SESION_CAJA_CERRADA',
+          );
+        }
+        if (tipo.codigo !== 'APERTURA') {
+          throw DomainError.conflict(
+            'No se puede cambiar el tipo de un movimiento de apertura',
+            'TIPO_APERTURA_INMUTABLE',
+          );
+        }
+        if (
+          actual.caja_id &&
+          dto.cajaMenorId &&
+          actual.caja_id !== dto.cajaMenorId
+        ) {
+          throw DomainError.conflict(
+            'No se puede reasignar la caja menor de una apertura',
+            'CAJA_APERTURA_INMUTABLE',
+          );
+        }
+      } else {
+        if (
+          ['APERTURA', 'CIERRE', 'RECAUDO', 'DESEMBOLSO_CREDITO'].includes(
+            tipo.codigo,
+          )
+        ) {
+          throw DomainError.conflict(
+            'No se puede cambiar el movimiento a este tipo reservado',
+            'TIPO_MOVIMIENTO_RESERVADO',
+          );
+        }
       }
 
       const oldMonto = this.decimalANumero(actual.monto);
@@ -1613,7 +1649,10 @@ export class CajaMenorService implements OnModuleInit {
         );
       }
 
-      const targetSesionId = caja.sesion_id ?? actual.sesion_id;
+      const targetSesionId =
+        actual.tipo === 'APERTURA'
+          ? actual.sesion_id
+          : (caja.sesion_id ?? actual.sesion_id);
 
       if (targetSesionId) {
         await tx.$executeRaw(Prisma.sql`

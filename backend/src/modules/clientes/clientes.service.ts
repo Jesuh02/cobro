@@ -197,6 +197,53 @@ export class ClientesService {
           }
         }
 
+        const telefonoLimpio = this.normalizarTelefono(telefono);
+        if (telefonoLimpio) {
+          const [duplicadoTelefono] = await tx.$queryRaw<
+            Array<{ existe?: boolean; en_papelera?: boolean }>
+          >(
+            Prisma.sql`
+              SELECT
+                TRUE AS existe,
+                (NOT c.cli_activo OR EXISTS (
+                  SELECT 1
+                  FROM public.tbl_papelera pap
+                  WHERE pap.cli_id = c.id_cli
+                    AND (pap.pap_datos->>'tipo' IS NULL OR pap.pap_datos->>'tipo' = 'CLIENTE')
+                )) AS en_papelera
+              FROM public.tbl_clientes c
+              JOIN public.tbl_personas p ON p.id_per = c.cli_persona
+              WHERE c.org_id = ${scope.organizacionId}::uuid
+                AND p.per_num_celular IS NOT NULL
+                AND TRIM(p.per_num_celular) <> ''
+                AND (
+                  REGEXP_REPLACE(p.per_num_celular, '[^0-9]', '', 'g') = ${telefonoLimpio}
+                  OR (
+                    LENGTH(REGEXP_REPLACE(p.per_num_celular, '[^0-9]', '', 'g')) >= 10
+                    AND LENGTH(${telefonoLimpio}) >= 10
+                    AND RIGHT(REGEXP_REPLACE(p.per_num_celular, '[^0-9]', '', 'g'), 10) = RIGHT(${telefonoLimpio}, 10)
+                  )
+                )
+              ORDER BY (c.cli_activo = true) DESC
+              LIMIT 1
+            `,
+          );
+
+          if (duplicadoTelefono && duplicadoTelefono.existe !== false) {
+            if (duplicadoTelefono.en_papelera) {
+              throw DomainError.conflict(
+                'Ya existe un cliente con este numero de celular, restaurelo de la papelera',
+                'CLIENTE_EN_PAPELERA',
+              );
+            }
+
+            throw DomainError.conflict(
+              'Ya existe un cliente con este numero de celular',
+              'TELEFONO_YA_REGISTRADO',
+            );
+          }
+        }
+
         const [persona] = await tx.$queryRaw<Array<{ id: string }>>(
           Prisma.sql`
             INSERT INTO public.tbl_personas (
@@ -422,6 +469,60 @@ export class ClientesService {
           }
         }
 
+        const telefonoEntrada = this.normalizarTextoOpcional(
+          dto.telefono ?? dto.whatsapp,
+        );
+        const telefonoFinal =
+          telefonoEntrada !== undefined ? telefonoEntrada : actual.telefono;
+        const telefonoLimpio = this.normalizarTelefono(telefonoFinal);
+        const actualTelefonoLimpio = this.normalizarTelefono(actual.telefono);
+        if (telefonoLimpio && telefonoLimpio !== actualTelefonoLimpio) {
+          const [duplicadoTelefono] = await tx.$queryRaw<
+            Array<{ existe?: boolean; en_papelera?: boolean }>
+          >(
+            Prisma.sql`
+              SELECT
+                TRUE AS existe,
+                (NOT c.cli_activo OR EXISTS (
+                  SELECT 1
+                  FROM public.tbl_papelera pap
+                  WHERE pap.cli_id = c.id_cli
+                    AND (pap.pap_datos->>'tipo' IS NULL OR pap.pap_datos->>'tipo' = 'CLIENTE')
+                )) AS en_papelera
+              FROM public.tbl_clientes c
+              JOIN public.tbl_personas p ON p.id_per = c.cli_persona
+              WHERE c.org_id = ${scope.organizacionId}::uuid
+                AND c.id_cli::text <> ${clienteId}
+                AND p.per_num_celular IS NOT NULL
+                AND TRIM(p.per_num_celular) <> ''
+                AND (
+                  REGEXP_REPLACE(p.per_num_celular, '[^0-9]', '', 'g') = ${telefonoLimpio}
+                  OR (
+                    LENGTH(REGEXP_REPLACE(p.per_num_celular, '[^0-9]', '', 'g')) >= 10
+                    AND LENGTH(${telefonoLimpio}) >= 10
+                    AND RIGHT(REGEXP_REPLACE(p.per_num_celular, '[^0-9]', '', 'g'), 10) = RIGHT(${telefonoLimpio}, 10)
+                  )
+                )
+              ORDER BY (c.cli_activo = true) DESC
+              LIMIT 1
+            `,
+          );
+
+          if (duplicadoTelefono && duplicadoTelefono.existe !== false) {
+            if (duplicadoTelefono.en_papelera) {
+              throw DomainError.conflict(
+                'Ya existe un cliente con este numero de celular, restaurelo de la papelera',
+                'CLIENTE_EN_PAPELERA',
+              );
+            }
+
+            throw DomainError.conflict(
+              'Ya existe un cliente con este numero de celular',
+              'TELEFONO_YA_REGISTRADO',
+            );
+          }
+        }
+
         await tx.$executeRaw(Prisma.sql`
           UPDATE public.tbl_personas
           SET
@@ -431,7 +532,7 @@ export class ClientesService {
             per_direccion = ${direccion},
             per_latitud = ${latitudFinal},
             per_longitud = ${longitudFinal},
-            per_num_celular = ${telefono}
+            per_num_celular = ${telefonoFinal}
           WHERE id_per::text = ${actual.persona_id}
         `);
 
@@ -798,6 +899,20 @@ export class ClientesService {
       nombres: partes.slice(0, -1).join(' '),
       apellidos: partes[partes.length - 1],
     };
+  }
+
+  private normalizarTelefono(telefono?: string | null): string | null {
+    if (!telefono) {
+      return null;
+    }
+    const digits = telefono.replace(/\D/g, '');
+    if (!digits) {
+      return null;
+    }
+    if (digits.length === 12 && digits.startsWith('57')) {
+      return digits.slice(2);
+    }
+    return digits;
   }
 
   private asegurarPermiso(

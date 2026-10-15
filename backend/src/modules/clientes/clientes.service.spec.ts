@@ -184,16 +184,113 @@ describe('ClientesService', () => {
     });
   });
 
+  it('rejects creating client when phone number already exists in same organization', async () => {
+    const queryRaw = jest
+      .fn()
+      // 1. select duplicates cedula
+      .mockResolvedValueOnce([{ existe: false }])
+      // 2. select duplicates phone
+      .mockResolvedValueOnce([{ existe: true, en_papelera: false }]);
+
+    const tx = { $queryRaw: queryRaw };
+    const prisma = {
+      $transaction: async (cb: (t: unknown) => Promise<unknown>) => cb(tx),
+    };
+    const tenantScope = {
+      obtenerScopeOrganizacionTbl: jest.fn().mockResolvedValue({
+        usuarioId: 'u-1',
+        organizacionId: 'org-1',
+      }),
+    };
+    const service = new ClientesService(
+      prisma as never,
+      tenantScope as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(
+      service.crearCliente(
+        {
+          nombreCompleto: 'Maria Perez',
+          cedula: '987654',
+          direccion: 'Carrera 5',
+          telefono: '3119876543',
+        },
+        {
+          usuarioId: 'u-1',
+          usuario: 'admin',
+          organizacionId: 'org-1',
+          roles: ['ADMINISTRADOR'],
+          permisos: [],
+        },
+      ),
+    ).rejects.toMatchObject({
+      message: 'Ya existe un cliente con este numero de celular',
+      code: 'TELEFONO_YA_REGISTRADO',
+    });
+  });
+
+  it('rejects creating client if phone number exists and is in papelera', async () => {
+    const queryRaw = jest
+      .fn()
+      // 1. select duplicates cedula
+      .mockResolvedValueOnce([{ existe: false }])
+      // 2. select duplicates phone
+      .mockResolvedValueOnce([{ existe: true, en_papelera: true }]);
+
+    const tx = { $queryRaw: queryRaw };
+    const prisma = {
+      $transaction: async (cb: (t: unknown) => Promise<unknown>) => cb(tx),
+    };
+    const tenantScope = {
+      obtenerScopeOrganizacionTbl: jest.fn().mockResolvedValue({
+        usuarioId: 'u-1',
+        organizacionId: 'org-1',
+      }),
+    };
+    const service = new ClientesService(
+      prisma as never,
+      tenantScope as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(
+      service.crearCliente(
+        {
+          nombreCompleto: 'Maria Perez',
+          cedula: '987654',
+          direccion: 'Carrera 5',
+          telefono: '3119876543',
+        },
+        {
+          usuarioId: 'u-1',
+          usuario: 'admin',
+          organizacionId: 'org-1',
+          roles: ['ADMINISTRADOR'],
+          permisos: [],
+        },
+      ),
+    ).rejects.toMatchObject({
+      message:
+        'Ya existe un cliente con este numero de celular, restaurelo de la papelera',
+      code: 'CLIENTE_EN_PAPELERA',
+    });
+  });
+
   it('creates client in tbl schema and links route', async () => {
     const queryRaw = jest
       .fn()
-      // 1. select duplicates
+      // 1. select duplicates cedula
       .mockResolvedValueOnce([{ existe: false }])
-      // 2. insert persona
+      // 2. select duplicates phone
+      .mockResolvedValueOnce([{ existe: false }])
+      // 3. insert persona
       .mockResolvedValueOnce([{ id: 'per-1' }])
-      // 3. insert cliente
+      // 4. insert cliente
       .mockResolvedValueOnce([{ id: 'cli-1' }])
-      // 4. select creados
+      // 5. select creados
       .mockResolvedValueOnce([
         {
           id: 'cli-1',

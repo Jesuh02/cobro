@@ -723,7 +723,9 @@ Future<void> mostrarDialogoEditarMovimientoCaja({
       String cajaMenorId = movimiento.cajaMenorId;
       String tipoMovimientoCodigo = movimiento.tipoMovimiento.codigo;
       DateTime fechaMovimiento = movimiento.fechaMovimiento;
-      final bool tipoBloqueado = movimiento.referenciaTabla != null;
+      final bool esApertura = movimiento.tipoMovimiento.codigo == 'APERTURA';
+      final bool tipoBloqueado = movimiento.referenciaTabla != null || esApertura;
+      final bool cajaBloqueada = esApertura;
 
       return StatefulBuilder(
         builder: (BuildContext context, StateSetter setDialogState) {
@@ -739,14 +741,17 @@ Future<void> mostrarDialogoEditarMovimientoCaja({
                       labelText: 'Caja menor',
                       prefixIcon: const Icon(Icons.savings_rounded),
                       value: cajaMenorId,
+                      enabled: !cajaBloqueada,
                       items: catalogos.cajasMenoresActivas
                           .map(itemCajaMenor)
                           .toList(growable: false),
-                      onChanged: (String? value) {
-                        if (value != null) {
-                          setDialogState(() => cajaMenorId = value);
-                        }
-                      },
+                      onChanged: cajaBloqueada
+                          ? null
+                          : (String? value) {
+                              if (value != null) {
+                                setDialogState(() => cajaMenorId = value);
+                              }
+                            },
                     ),
                     const SizedBox(height: 12),
                     CobroDropdownField<String>(

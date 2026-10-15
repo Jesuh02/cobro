@@ -19,7 +19,6 @@ class CajaMenorView extends StatelessWidget {
     required this.puedeRegistrarFlujoCaja,
     required this.puedeModificarMovimientos,
     required this.puedeModificarCreditos,
-    required this.puedeEliminarMovimientos,
     required this.puedeEliminarCreditos,
     required this.esAdministrador,
     required this.guardando,
@@ -30,7 +29,6 @@ class CajaMenorView extends StatelessWidget {
     required this.onCrearCajaMenor,
     required this.onMovimientoCaja,
     required this.onModificarMovimiento,
-    required this.onEliminarMovimiento,
     required this.buscarController,
     required this.filtros,
   });
@@ -43,7 +41,6 @@ class CajaMenorView extends StatelessWidget {
   final bool puedeRegistrarFlujoCaja;
   final bool puedeModificarMovimientos;
   final bool puedeModificarCreditos;
-  final bool puedeEliminarMovimientos;
   final bool puedeEliminarCreditos;
   final bool esAdministrador;
   final bool guardando;
@@ -54,7 +51,6 @@ class CajaMenorView extends StatelessWidget {
   final VoidCallback onCrearCajaMenor;
   final VoidCallback onMovimientoCaja;
   final ValueChanged<MovimientoCaja> onModificarMovimiento;
-  final ValueChanged<MovimientoCaja> onEliminarMovimiento;
   final TextEditingController buscarController;
   final Widget filtros;
 
@@ -141,10 +137,7 @@ class CajaMenorView extends StatelessWidget {
                   movimiento: movimiento,
                   puedeModificar: puedeModificarMovimientos &&
                       (!esDesembolsoCredito || puedeModificarCreditos),
-                  puedeEliminar: puedeEliminarMovimientos &&
-                      (!esDesembolsoCredito || puedeEliminarCreditos),
                   onModificar: () => onModificarMovimiento(movimiento),
-                  onEliminar: () => onEliminarMovimiento(movimiento),
                 ),
               );
             },

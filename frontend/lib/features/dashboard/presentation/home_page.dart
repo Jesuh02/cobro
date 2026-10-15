@@ -51,7 +51,6 @@ const String _permisoModificarClientes = permisoModificarClientes;
 const String _permisoEliminarClientes = permisoEliminarClientes;
 const String _permisoAgregarCuota = permisoAgregarCuota;
 const String _permisoModificarMovimientos = permisoModificarMovimientos;
-const String _permisoEliminarMovimientos = permisoEliminarMovimientos;
 
 class HomePage extends StatefulWidget {
   const HomePage({
@@ -1050,8 +1049,6 @@ class _HomePageState extends State<HomePage> {
       _usuarioSesion?.puede(_permisoAgregarCuota) ?? false;
   bool get _puedeModificarMovimientos =>
       _usuarioSesion?.puede(_permisoModificarMovimientos) ?? false;
-  bool get _puedeEliminarMovimientos =>
-      _usuarioSesion?.puede(_permisoEliminarMovimientos) ?? false;
 
   Widget _construirPresupuesto(BuildContext context) {
     final List<CajaMenorCatalogo> cajasInicio = _filtrarCajasInicio();
@@ -1320,7 +1317,6 @@ class _HomePageState extends State<HomePage> {
       puedeRegistrarFlujoCaja: _puedeRegistrarFlujoCaja,
       puedeModificarMovimientos: _puedeModificarMovimientos,
       puedeModificarCreditos: _puedeModificarCreditos,
-      puedeEliminarMovimientos: _puedeEliminarMovimientos,
       puedeEliminarCreditos: _puedeEliminarCreditos,
       esAdministrador: _usuarioSesion?.esAdministrador ?? false,
       guardando: _guardando,
@@ -1331,7 +1327,6 @@ class _HomePageState extends State<HomePage> {
       onCrearCajaMenor: _abrirCrearCajaMenor,
       onMovimientoCaja: _abrirMovimientoCaja,
       onModificarMovimiento: _abrirEditarMovimientoCaja,
-      onEliminarMovimiento: _confirmarEliminarMovimientoCaja,
       buscarController: _buscarCajaController,
       filtros: _construirFiltrosCaja(context),
     );
@@ -3271,34 +3266,6 @@ class _HomePageState extends State<HomePage> {
         }
       },
       onGuardarMovimientoCajaLocal: _guardarMovimientoCajaLocal,
-      onMarcarAccionOfflinePendiente: _marcarAccionOfflinePendiente,
-      onRecargarEnSegundoPlano: _recargarEnSegundoPlano,
-    );
-  }
-
-  Future<void> _confirmarEliminarMovimientoCaja(
-    MovimientoCaja movimiento,
-  ) async {
-    await mostrarDialogoEliminarMovimientoCaja(
-      context: context,
-      movimiento: movimiento,
-      puedeEliminarMovimientos: _puedeEliminarMovimientos,
-      puedeEliminarCreditos: _puedeEliminarCreditos,
-      apiClient: _apiClient,
-      mostrarMensaje: _mostrarMensaje,
-      ejecutarAccion: _ejecutarAccion,
-      onEliminarMovimientoLocal: (String id) {
-        if (mounted) {
-          setState(() {
-            _movimientosCaja = _movimientosCaja
-                .where((MovimientoCaja item) => item.id != id)
-                .toList(growable: false);
-          });
-        }
-      },
-      onRestaurarMovimientoLocal: (MovimientoCaja m) {
-        _guardarMovimientoCajaLocal(m);
-      },
       onMarcarAccionOfflinePendiente: _marcarAccionOfflinePendiente,
       onRecargarEnSegundoPlano: _recargarEnSegundoPlano,
     );

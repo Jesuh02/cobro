@@ -68,10 +68,6 @@ const List<PermisoEmpleadoDef> permisosEmpleado = <PermisoEmpleadoDef>[
     codigo: permisoModificarMovimientos,
     nombre: 'Modificar movimientos',
   ),
-  PermisoEmpleadoDef(
-    codigo: permisoEliminarMovimientos,
-    nombre: 'Eliminar movimientos',
-  ),
 ];
 
 class GestionEmpleadosPage extends StatefulWidget {

@@ -5,26 +5,17 @@ import '../../../../core/formatters/app_formatters.dart';
 import '../../../../core/ui/clay.dart';
 import '../../../../data/models/models.dart';
 
-enum AccionMovimientoCaja {
-  modificar,
-  eliminar,
-}
-
 class MovimientoCajaItem extends StatelessWidget {
   const MovimientoCajaItem({
     super.key,
     required this.movimiento,
     required this.puedeModificar,
-    required this.puedeEliminar,
     required this.onModificar,
-    required this.onEliminar,
   });
 
   final MovimientoCaja movimiento;
   final bool puedeModificar;
-  final bool puedeEliminar;
   final VoidCallback onModificar;
-  final VoidCallback onEliminar;
 
   @override
   Widget build(BuildContext context) {
@@ -97,46 +88,12 @@ class MovimientoCajaItem extends StatelessWidget {
             formatMoney(movimiento.montoConNaturaleza),
             style: TextStyle(color: color, fontWeight: FontWeight.w900),
           ),
-          if ((puedeModificar || puedeEliminar) &&
-              movimiento.esEditablePorAdmin) ...<Widget>[
+          if (puedeModificar && movimiento.esEditablePorAdmin) ...<Widget>[
             const SizedBox(width: 4),
-            PopupMenuButton<AccionMovimientoCaja>(
-              tooltip: 'Acciones',
-              icon: const Icon(Icons.more_vert_rounded),
-              onSelected: (AccionMovimientoCaja accion) {
-                switch (accion) {
-                  case AccionMovimientoCaja.modificar:
-                    onModificar();
-                  case AccionMovimientoCaja.eliminar:
-                    onEliminar();
-                }
-              },
-              itemBuilder: (BuildContext context) {
-                return <PopupMenuEntry<AccionMovimientoCaja>>[
-                  if (puedeModificar)
-                    const PopupMenuItem<AccionMovimientoCaja>(
-                      value: AccionMovimientoCaja.modificar,
-                      child: Row(
-                        children: <Widget>[
-                          Icon(Icons.edit_outlined),
-                          SizedBox(width: 12),
-                          Text('Modificar'),
-                        ],
-                      ),
-                    ),
-                  if (puedeEliminar)
-                    const PopupMenuItem<AccionMovimientoCaja>(
-                      value: AccionMovimientoCaja.eliminar,
-                      child: Row(
-                        children: <Widget>[
-                          Icon(Icons.delete_outline_rounded),
-                          SizedBox(width: 12),
-                          Text('Eliminar'),
-                        ],
-                      ),
-                    ),
-                ];
-              },
+            IconButton(
+              tooltip: 'Modificar',
+              icon: const Icon(Icons.edit_outlined),
+              onPressed: onModificar,
             ),
           ],
         ],

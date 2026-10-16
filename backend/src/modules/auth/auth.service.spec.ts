@@ -136,4 +136,159 @@ describe('AuthService - Account Lockout (SEC-COBRO-04)', () => {
     expect(mockPasswords.verify).not.toHaveBeenCalled();
     expect(mockPrisma.$queryRaw).not.toHaveBeenCalled();
   });
+
+  describe('actualizarEmpleado', () => {
+    const adminUser = {
+      usuarioId: '11111111-1111-1111-1111-111111111111',
+      usuario: 'adminuser',
+      organizacionId: '22222222-2222-2222-2222-222222222222',
+      roles: ['ADMINISTRADOR'],
+      permisos: [],
+    };
+
+    const empleadoId = '33333333-3333-3333-3333-333333333333';
+
+    it('updates employee information successfully without changing password', async () => {
+      const tx = {
+        $queryRaw: jest
+          .fn()
+          // 1. obtenerOrganizacionActivaAdministradorTbl
+          .mockResolvedValueOnce([{ org_id: adminUser.organizacionId }])
+          // 2. buscar empleado
+          .mockResolvedValueOnce([
+            { usuario_id: empleadoId, persona_id: '44444444-4444-4444-4444-444444444444' },
+          ])
+          // 3. existenteUsuario (Promise.all item 0)
+          .mockResolvedValueOnce([])
+          // 4. existenteCorreo (Promise.all item 1)
+          .mockResolvedValueOnce([]),
+        $executeRaw: jest.fn().mockResolvedValue(1),
+      };
+
+      mockPrisma.$transaction = jest.fn(async (cb) => cb(tx));
+      mockPrisma.$queryRaw = jest.fn().mockResolvedValueOnce([
+        {
+          ...mockUserTbl,
+          id: empleadoId,
+          usuario: 'empleado_modificado',
+          nombres: 'Juan',
+          apellidos: 'Perez',
+          correo: 'juan.perez@example.com',
+          roles: ['COBRADOR'],
+        },
+      ]);
+
+      const resultado = await authService.actualizarEmpleado(adminUser, empleadoId, {
+        nombreCompleto: 'Juan Perez',
+        usuario: 'empleado_modificado',
+        correo: 'juan.perez@example.com',
+      });
+
+      expect(resultado.usuario).toBe('empleado_modificado');
+      expect(resultado.nombreCompleto).toBe('Juan Perez');
+      expect(tx.$executeRaw).toHaveBeenCalledTimes(2);
+      expect(mockPasswords.hash).not.toHaveBeenCalled();
+    });
+
+    it('updates employee information and password, clearing lockout cache', async () => {
+      const tx = {
+        $queryRaw: jest
+          .fn()
+          // 1. obtenerOrganizacionActivaAdministradorTbl
+          .mockResolvedValueOnce([{ org_id: adminUser.organizacionId }])
+          // 2. buscar empleado
+          .mockResolvedValueOnce([
+            { usuario_id: empleadoId, persona_id: '44444444-4444-4444-4444-444444444444' },
+          ])
+          // 3. existenteUsuario
+          .mockResolvedValueOnce([])
+          // 4. existenteCorreo
+          .mockResolvedValueOnce([]),
+        $executeRaw: jest.fn().mockResolvedValue(1),
+      };
+
+      mockPrisma.$transaction = jest.fn(async (cb) => cb(tx));
+      mockPasswords.hash.mockResolvedValue('new-hashed-password');
+      mockPrisma.$queryRaw = jest.fn().mockResolvedValueOnce([
+        {
+          ...mockUserTbl,
+          id: empleadoId,
+          usuario: 'empleado_nuevo',
+          roles: ['COBRADOR'],
+        },
+      ]);
+
+      cacheService.set('auth:failed:empleado_nuevo', 3);
+      cacheService.set('auth:lockout:empleado_nuevo', Date.now());
+
+      const resultado = await authService.actualizarEmpleado(adminUser, empleadoId, {
+        nombreCompleto: 'Juan Perez',
+        usuario: 'empleado_nuevo',
+        correo: 'juan.nuevo@example.com',
+        contrasena: 'NuevaClaveSegura123!',
+      });
+
+      expect(resultado.usuario).toBe('empleado_nuevo');
+      expect(mockPasswords.hash).toHaveBeenCalledWith('NuevaClaveSegura123!');
+      expect(cacheService.get('auth:failed:empleado_nuevo').hit).toBe(false);
+      expect(cacheService.get('auth:lockout:empleado_nuevo').hit).toBe(false);
+    });
+
+    it('rejects update if username already exists', async () => {
+      const tx = {
+        $queryRaw: jest
+          .fn()
+          // 1. obtenerOrganizacionActivaAdministradorTbl
+          .mockResolvedValueOnce([{ org_id: adminUser.organizacionId }])
+          // 2. buscar empleado
+          .mockResolvedValueOnce([
+            { usuario_id: empleadoId, persona_id: '44444444-4444-4444-4444-444444444444' },
+          ])
+          // 3. existenteUsuario -> DUPLICADO
+          .mockResolvedValueOnce([{ id: 'otro-usuario-id' }])
+          // 4. existenteCorreo
+          .mockResolvedValueOnce([]),
+        $executeRaw: jest.fn(),
+      };
+
+      mockPrisma.$transaction = jest.fn(async (cb) => cb(tx));
+
+      await expect(
+        authService.actualizarEmpleado(adminUser, empleadoId, {
+          nombreCompleto: 'Juan Perez',
+          usuario: 'existente',
+          correo: 'juan@example.com',
+        }),
+      ).rejects.toThrow('El usuario ya existe');
+    });
+
+    it('rejects update if email already exists', async () => {
+      const tx = {
+        $queryRaw: jest
+          .fn()
+          // 1. obtenerOrganizacionActivaAdministradorTbl
+          .mockResolvedValueOnce([{ org_id: adminUser.organizacionId }])
+          // 2. buscar empleado
+          .mockResolvedValueOnce([
+            { usuario_id: empleadoId, persona_id: '44444444-4444-4444-4444-444444444444' },
+          ])
+          // 3. existenteUsuario
+          .mockResolvedValueOnce([])
+          // 4. existenteCorreo -> DUPLICADO
+          .mockResolvedValueOnce([{ id: 'otro-usuario-id' }]),
+        $executeRaw: jest.fn(),
+      };
+
+      mockPrisma.$transaction = jest.fn(async (cb) => cb(tx));
+
+      await expect(
+        authService.actualizarEmpleado(adminUser, empleadoId, {
+          nombreCompleto: 'Juan Perez',
+          usuario: 'empleado_1',
+          correo: 'existente@example.com',
+        }),
+      ).rejects.toThrow('El correo ya esta registrado');
+    });
+  });
 });
+

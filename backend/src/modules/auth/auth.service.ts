@@ -1419,13 +1419,13 @@ export class AuthService {
       const [existenteUsuario, existenteCorreo] = await Promise.all([
         tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
           SELECT tu.id_usu::text AS id
-          FROM public.tbl_usuarios
-          WHERE lower(usu_usuario) = lower(${nombreUsuario})
-            AND id_usu <> ${empleadoId}::uuid
+          FROM public.tbl_usuarios tu
+          WHERE lower(tu.usu_usuario) = lower(${nombreUsuario})
+            AND tu.id_usu <> ${empleadoId}::uuid
           LIMIT 1
         `),
         tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
-          SELECT id_usu::text AS id
+          SELECT tu.id_usu::text AS id
           FROM public.tbl_usuarios tu
           JOIN public.tbl_personas p ON p.id_per = tu.persona_id
           WHERE lower(p.per_email) = lower(${correo})
@@ -1468,6 +1468,11 @@ export class AuthService {
         WHERE id_usu = ${empleadoId}::uuid
       `);
     });
+
+    if (passwordHash) {
+      this.cache.delete(`auth:failed:${nombreUsuario}`);
+      this.cache.delete(`auth:lockout:${nombreUsuario}`);
+    }
 
     const actualizado = await this.obtenerUsuarioTblPorId(empleadoId);
     if (!actualizado) {

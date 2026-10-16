@@ -1,11 +1,5 @@
 export const permisosEmpleado = [
   {
-    codigo: 'VER_EMPLEADOS',
-    nombre: 'Ver empleados',
-    rolNombre: 'Permiso ver empleados',
-    predeterminado: false,
-  },
-  {
     codigo: 'CREAR_CAJA_MENOR',
     nombre: 'Crear caja menor',
     rolNombre: 'Permiso crear caja menor',
@@ -68,7 +62,6 @@ export const permisosEmpleadoCodigos = permisosEmpleado.map(
 export const permisosEmpleadoPredeterminadosCodigos: string[] =
   permisosEmpleadoCodigos.filter(
     (codigo) =>
-      codigo !== 'VER_EMPLEADOS' &&
       codigo !== 'MODIFICAR_CLIENTES' &&
       codigo !== 'ELIMINAR_CLIENTES',
   );

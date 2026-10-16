@@ -290,5 +290,43 @@ describe('AuthService - Account Lockout (SEC-COBRO-04)', () => {
       ).rejects.toThrow('El correo ya esta registrado');
     });
   });
+
+  describe('listarEmpleados', () => {
+    it('rejects non-admin users from viewing employees', async () => {
+      const cobradorUser = {
+        usuarioId: '55555555-5555-5555-5555-555555555555',
+        usuario: 'cobrador1',
+        organizacionId: '22222222-2222-2222-2222-222222222222',
+        roles: ['COBRADOR'],
+        permisos: [],
+      };
+
+      await expect(authService.listarEmpleados(cobradorUser)).rejects.toThrow(
+        'Solo el administrador puede ver empleados',
+      );
+    });
+
+    it('allows admin users to view employees', async () => {
+      const adminUser = {
+        usuarioId: '11111111-1111-1111-1111-111111111111',
+        usuario: 'adminuser',
+        organizacionId: '22222222-2222-2222-2222-222222222222',
+        roles: ['ADMINISTRADOR'],
+        permisos: [],
+      };
+
+      mockPrisma.$transaction = jest.fn(async (cb) => cb(mockPrisma));
+      mockPrisma.$queryRaw = jest
+        .fn()
+        // 1. obtenerOrganizacionActivaAdministradorTbl
+        .mockResolvedValueOnce([{ org_id: adminUser.organizacionId }])
+        // 2. listar empleados
+        .mockResolvedValueOnce([]);
+
+      const resultado = await authService.listarEmpleados(adminUser);
+      expect(Array.isArray(resultado)).toBe(true);
+    });
+  });
 });
+
 

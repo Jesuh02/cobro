@@ -40,7 +40,6 @@ import '../../papelera/presentation/dialogs/unificar_credito_dialog.dart';
 
 part 'dashboard_charts.dart';
 
-const String _permisoVerEmpleados = permisoVerEmpleados;
 const String _permisoCrearCajaMenor = permisoCrearCajaMenor;
 const String _permisoRegistrarFlujoCaja = permisoRegistrarFlujoCaja;
 const String _permisoCrearCreditos = permisoCrearCreditos;
@@ -403,7 +402,7 @@ class _HomePageState extends State<HomePage> {
                     ),
                   ),
                   if (!usuarioSesion.esSuperAdmin &&
-                      usuarioSesion.puede(_permisoVerEmpleados))
+                      usuarioSesion.esAdministrador)
                     const PopupMenuItem<_AccionSesion>(
                       value: _AccionSesion.gestionEmpleados,
                       child: Row(
@@ -1023,7 +1022,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   bool get _puedeVerEmpleados =>
-      _usuarioSesion?.puede(_permisoVerEmpleados) ?? false;
+      _usuarioSesion?.esAdministrador ?? false;
   bool get _puedeCrearCajaMenor =>
       _usuarioSesion?.puede(_permisoCrearCajaMenor) ?? false;
   bool get _puedeRegistrarFlujoCaja =>

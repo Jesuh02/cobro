@@ -25,10 +25,6 @@ class PermisoEmpleadoDef {
 
 const List<PermisoEmpleadoDef> permisosEmpleado = <PermisoEmpleadoDef>[
   PermisoEmpleadoDef(
-    codigo: permisoVerEmpleados,
-    nombre: 'Ver empleados',
-  ),
-  PermisoEmpleadoDef(
     codigo: permisoCrearCajaMenor,
     nombre: 'Crear caja menor',
   ),

@@ -68,7 +68,6 @@ async function poblarCatalogosSistema() {
   await prisma.$executeRaw`
     INSERT INTO public.tbl_recursos (nom, rec_orden, rec_interface)
     VALUES
-      ('VER_EMPLEADOS', 10, 'WEB'),
       ('CREAR_CAJA_MENOR', 20, 'WEB'),
       ('REGISTRAR_FLUJO_CAJA', 30, 'WEB'),
       ('CREAR_CREDITOS', 40, 'WEB'),
@@ -86,10 +85,10 @@ async function poblarCatalogosSistema() {
   // Limpieza de permisos eliminados del sistema
   await prisma.$executeRaw`
     DELETE FROM public.tbl_roles_recursos
-    WHERE rec_id IN (SELECT id_rec FROM public.tbl_recursos WHERE nom = 'ELIMINAR_MOVIMIENTOS');
+    WHERE rec_id IN (SELECT id_rec FROM public.tbl_recursos WHERE nom IN ('ELIMINAR_MOVIMIENTOS', 'VER_EMPLEADOS'));
   `;
   await prisma.$executeRaw`
-    DELETE FROM public.tbl_recursos WHERE nom = 'ELIMINAR_MOVIMIENTOS';
+    DELETE FROM public.tbl_recursos WHERE nom IN ('ELIMINAR_MOVIMIENTOS', 'VER_EMPLEADOS');
   `;
 
   // 4. Roles Recursos
@@ -99,16 +98,9 @@ async function poblarCatalogosSistema() {
     FROM public.tbl_roles rol
     JOIN public.tbl_recursos recurso ON recurso.rec_interface = 'WEB'
     WHERE rol.rol_tip = 'ADMINISTRADOR'
-      AND recurso.nom IN ('VER_EMPLEADOS', 'CREAR_CAJA_MENOR', 'REGISTRAR_FLUJO_CAJA', 'CREAR_CREDITOS', 'REFINANCIAR_CREDITOS', 'MODIFICAR_CREDITOS', 'ELIMINAR_CREDITOS', 'MODIFICAR_CLIENTES', 'ELIMINAR_CLIENTES', 'AGREGAR_CUOTA', 'MODIFICAR_MOVIMIENTOS', 'VER_PAPELERA')
+      AND recurso.nom IN ('CREAR_CAJA_MENOR', 'REGISTRAR_FLUJO_CAJA', 'CREAR_CREDITOS', 'REFINANCIAR_CREDITOS', 'MODIFICAR_CREDITOS', 'ELIMINAR_CREDITOS', 'MODIFICAR_CLIENTES', 'ELIMINAR_CLIENTES', 'AGREGAR_CUOTA', 'MODIFICAR_MOVIMIENTOS', 'VER_PAPELERA')
     ON CONFLICT (rec_id, rol_id) DO NOTHING;
   `;
-    await prisma.$executeRaw`
-      INSERT INTO public.tbl_roles_recursos (rol_id, rec_id)
-      SELECT rol.id_rol, recurso.id_rec
-      FROM public.tbl_roles rol
-      JOIN public.tbl_recursos recurso ON recurso.rec_interface = 'WEB'
-      WHERE rol.rol_tip = 'AUDITOR' AND recurso.nom = 'VER_EMPLEADOS'
-    `;
     await prisma.$executeRaw`
       INSERT INTO public.tbl_roles_recursos (rol_id, rec_id)
       SELECT rol.id_rol, recurso.id_rec

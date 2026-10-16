@@ -1640,12 +1640,12 @@ export class AuthService {
   private requerirVerEmpleados(usuario: AuthenticatedUser) {
     if (
       usuario.roles.includes('ADMINISTRADOR') ||
-      usuario.permisos.includes('VER_EMPLEADOS')
+      usuario.roles.includes('SUPER_ADMIN')
     ) {
       return;
     }
 
-    throw new ForbiddenException('No tienes permiso para ver empleados');
+    throw new ForbiddenException('Solo el administrador puede ver empleados');
   }
 
   private async crearUsuario(

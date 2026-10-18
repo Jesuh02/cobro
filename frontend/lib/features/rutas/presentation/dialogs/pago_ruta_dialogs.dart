@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/formatters/app_formatters.dart';
 import '../../../../core/ui/clay.dart';
+import '../../../../core/ui/cobro_dropdown.dart';
 import '../../../../data/models/models.dart';
 import '../widgets/selector_cobro_ruta_buscable.dart';
 import '../widgets/selector_medio_pago_buscable.dart';
@@ -13,6 +14,7 @@ Future<void> mostrarDialogoRegistrarPago({
   required CobroRuta cobro,
   required bool puedeAgregarCuota,
   required List<MedioPago> mediosPago,
+  required List<CajaMenorCatalogo> cajasMenores,
   required List<CobroRuta> cobrosRuta,
   required Set<String> cuotasEnPago,
   required String? rutaFiltroId,
@@ -22,6 +24,11 @@ Future<void> mostrarDialogoRegistrarPago({
 }) async {
   if (!puedeAgregarCuota) {
     mostrarMensaje('No tienes permiso para agregar cuota');
+    return;
+  }
+
+  if (cajasMenores.isEmpty) {
+    mostrarMensaje('No tienes una caja menor activa para registrar pagos');
     return;
   }
 
@@ -47,6 +54,7 @@ Future<void> mostrarDialogoRegistrarPago({
     context: context,
     builder: (BuildContext dialogContext) {
       String medioPagoCodigo = mediosPago.first.codigo;
+      String cajaMenorSeleccionadaId = cajasMenores.first.id;
       bool guardandoPago = false;
 
       return StatefulBuilder(
@@ -65,6 +73,107 @@ Future<void> mostrarDialogoRegistrarPago({
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
+                    if (cajasMenores.length > 1) ...<Widget>[
+                      CobroDropdownField<String>(
+                        labelText: 'Caja menor destino',
+                        prefixIcon: const Icon(Icons.point_of_sale_rounded),
+                        value: cajaMenorSeleccionadaId,
+                        items: cajasMenores
+                            .map(
+                              (CajaMenorCatalogo c) =>
+                                  CobroDropdownItem<String>(
+                                value: c.id,
+                                label: c.nombre,
+                                icon: Icons.account_balance_wallet_rounded,
+                              ),
+                            )
+                            .toList(growable: false),
+                        onChanged: guardandoPago
+                            ? null
+                            : (String? value) {
+                                if (value != null) {
+                                  setDialogState(
+                                    () => cajaMenorSeleccionadaId = value,
+                                  );
+                                }
+                              },
+                      ),
+                      const SizedBox(height: 12),
+                    ] else ...<Widget>[
+                      ClaySurface(
+                        radius: 12,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
+                        child: Row(
+                          children: <Widget>[
+                            Icon(
+                              Icons.point_of_sale_rounded,
+                              size: 20,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: <Widget>[
+                                  Text(
+                                    'Caja activa destino',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodySmall
+                                        ?.copyWith(
+                                          color: context.clay.subtleText,
+                                          fontSize: 11,
+                                        ),
+                                  ),
+                                  Text(
+                                    cajasMenores.first.nombre,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.copyWith(
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            ClaySurface(
+                              radius: 999,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              color: Colors.green.withValues(alpha: 0.12),
+                              borderColor: Colors.green.withValues(alpha: 0.3),
+                              elevated: false,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: <Widget>[
+                                  Icon(
+                                    Icons.check_circle_rounded,
+                                    size: 14,
+                                    color: Colors.green.shade700,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'Abierta',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.green.shade700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
                     SelectorCobroRutaBuscable(
                       cobros: cobrosDisponibles,
                       cuotasSeleccionadas: cuotasSeleccionadas,
@@ -235,6 +344,7 @@ Future<void> mostrarDialogoRegistrarPago({
                       PagoRutaSolicitud(
                         cuotaId: cuotaId,
                         monto: monto,
+                        cajaMenorId: cajaMenorSeleccionadaId,
                         medioPagoCodigo: medioPagoCodigo,
                         observacion: observacion,
                       ),

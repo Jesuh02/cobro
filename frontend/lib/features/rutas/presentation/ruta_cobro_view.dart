@@ -73,6 +73,8 @@ class RutaCobroView extends StatelessWidget {
     required this.onGuardarUbicacionCliente,
     required this.puedeRegistrarPagoRuta,
     required this.mapCustomerBuilder,
+    this.hayCajaMenorActiva = true,
+    this.onIrACajaMenor,
     this.breakpoint = desktopRouteMapBreakpoint,
   });
 
@@ -101,6 +103,8 @@ class RutaCobroView extends StatelessWidget {
   final ValueChanged<CobroRuta> onGuardarUbicacionCliente;
   final bool Function(CobroRuta) puedeRegistrarPagoRuta;
   final CollectionMapCustomer Function(CobroRuta) mapCustomerBuilder;
+  final bool hayCajaMenorActiva;
+  final VoidCallback? onIrACajaMenor;
   final double breakpoint;
 
   @override
@@ -140,12 +144,117 @@ class RutaCobroView extends StatelessWidget {
       onFiltroChanged: onFiltroEstadoChanged,
     );
 
+    final Widget? avisoCaja = (!hayCajaMenorActiva && puedeAgregarCuota)
+        ? ClaySurface(
+            radius: 14,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            color: Theme.of(context)
+                .colorScheme
+                .errorContainer
+                .withValues(alpha: 0.25),
+            borderColor:
+                Theme.of(context).colorScheme.error.withValues(alpha: 0.3),
+            child: LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints constraints) {
+                final bool esEstrecho = constraints.maxWidth < 460;
+                final Widget info = Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Icon(
+                      Icons.warning_amber_rounded,
+                      color: Theme.of(context).colorScheme.error,
+                      size: 22,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            'Caja menor cerrada o inactiva',
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleSmall
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                  color: Theme.of(context).colorScheme.error,
+                                ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Todo pago debe asociarse a una caja activa. Abre tu sesión en Caja Menor para habilitar cobros.',
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
+                                ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+
+                if (onIrACajaMenor == null) {
+                  return info;
+                }
+
+                final Widget boton = FilledButton.tonalIcon(
+                  onPressed: onIrACajaMenor,
+                  icon: const Icon(Icons.point_of_sale_rounded, size: 16),
+                  label: const Text('Abrir caja'),
+                );
+
+                if (esEstrecho) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      info,
+                      const SizedBox(height: 10),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: boton,
+                      ),
+                    ],
+                  );
+                }
+
+                return Row(
+                  children: <Widget>[
+                    Expanded(child: info),
+                    const SizedBox(width: 12),
+                    boton,
+                  ],
+                );
+              },
+            ),
+          )
+        : null;
+
     if (mostrarMapaDesktop) {
       final List<CollectionMapCustomer> mapCustomers =
           cobros.map(mapCustomerBuilder).toList(growable: false);
       final Map<String, CobroRuta> cobroById = <String, CobroRuta>{
         for (final CobroRuta cobro in cobros) cobro.id: cobro,
       };
+
+      final Widget? bannerError =
+          error == null ? null : ErrorBanner(message: error!);
+      final Widget? bannerAviso = avisoCaja;
+      final Widget? bannerSuperior =
+          (bannerError != null && bannerAviso != null)
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    bannerError,
+                    const SizedBox(height: 12),
+                    bannerAviso,
+                  ],
+                )
+              : (bannerError ?? bannerAviso);
 
       return DesktopCollectionRoute(
         header: const Encabezado(
@@ -157,7 +266,7 @@ class RutaCobroView extends StatelessWidget {
         customers: mapCustomers,
         roadRouter: roadRouter,
         onRefresh: onRefresh,
-        error: error == null ? null : ErrorBanner(message: error!),
+        error: bannerSuperior,
         onCollect: (CollectionMapCustomer customer) {
           final CobroRuta? cobro = cobroById[customer.creditId];
           if (cobro != null && puedeRegistrarPagoRuta(cobro)) {
@@ -216,6 +325,10 @@ class RutaCobroView extends StatelessWidget {
       error: error,
       onRefresh: onRefresh,
       children: <Widget>[
+        if (avisoCaja != null) ...<Widget>[
+          avisoCaja,
+          const SizedBox(height: 14),
+        ],
         filtros,
         const SizedBox(height: 14),
         resumen,
@@ -244,13 +357,9 @@ class RutaCobroView extends StatelessWidget {
                     cobrosConPagoInstantaneo.contains(cobro.id),
                 onGuardarUbicacion:
                     guardando ? null : () => onGuardarUbicacionCliente(cobro),
-                onRegistrarPago: guardando ||
-                        cobro.proximaCuotaId == null ||
-                        cuotasEnPago.contains(cobro.proximaCuotaId) ||
-                        cobrosConPagoInstantaneo.contains(cobro.id) ||
-                        !puedeAgregarCuota
-                    ? null
-                    : () => onRegistrarPago(cobro),
+                onRegistrarPago: puedeRegistrarPagoRuta(cobro)
+                    ? () => onRegistrarPago(cobro)
+                    : null,
               ),
             ),
           ),

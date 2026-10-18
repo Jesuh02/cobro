@@ -1238,6 +1238,15 @@ class _HomePageState extends State<HomePage> {
       onGuardarUbicacionCliente: _guardarUbicacionCliente,
       puedeRegistrarPagoRuta: _puedeRegistrarPagoRuta,
       mapCustomerBuilder: _mapCustomerFromCobro,
+      hayCajaMenorActiva: _catalogos?.cajasMenoresActivas.isNotEmpty ?? false,
+      onIrACajaMenor: () {
+        final int index = _destinosMenuActual.indexWhere(
+          (_DestinoMenu d) => d.etiqueta.toLowerCase().contains('caja'),
+        );
+        if (index != -1) {
+          setState(() => _seccionActual = index);
+        }
+      },
     );
   }
 
@@ -1387,6 +1396,7 @@ class _HomePageState extends State<HomePage> {
   bool _puedeRegistrarPagoRuta(CobroRuta cobro) {
     return !_guardando &&
         _puedeAgregarCuota &&
+        (_catalogos?.cajasMenoresActivas.isNotEmpty ?? false) &&
         cobro.proximaCuotaId != null &&
         !_cuotasEnPago.contains(cobro.proximaCuotaId) &&
         !_cobrosConPagoInstantaneo.contains(cobro.id) &&
@@ -3048,11 +3058,21 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _abrirRegistrarPago(CobroRuta cobro) async {
+    final List<CajaMenorCatalogo> cajasActivas =
+        _catalogos?.cajasMenoresActivas ?? const <CajaMenorCatalogo>[];
+    if (cajasActivas.isEmpty) {
+      _mostrarMensaje(
+        'Debes tener una caja menor abierta para registrar pagos',
+      );
+      return;
+    }
+
     await mostrarDialogoRegistrarPago(
       context: context,
       cobro: cobro,
       puedeAgregarCuota: _puedeAgregarCuota,
       mediosPago: _catalogos?.mediosPago ?? const <MedioPago>[],
+      cajasMenores: cajasActivas,
       cobrosRuta: _cobrosRuta,
       cuotasEnPago: _cuotasEnPago,
       rutaFiltroId: _rutaFiltroId,
@@ -3276,6 +3296,15 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
+    final bool hayCajaActiva =
+        _catalogos?.cajasMenoresActivas.isNotEmpty ?? false;
+    if (!hayCajaActiva) {
+      _mostrarMensaje(
+        'Debes tener una caja menor abierta para registrar pagos',
+      );
+      return;
+    }
+
     final List<PagoRutaSolicitud> pagosPendientes = pagos
         .where(
           (PagoRutaSolicitud pago) => !_cuotasEnPago.contains(pago.cuotaId),
@@ -3318,6 +3347,7 @@ class _HomePageState extends State<HomePage> {
             <String, dynamic>{
               'creditoCuotaId': pago.cuotaId,
               'montoPagado': pago.monto,
+              'cajaMenorId': pago.cajaMenorId,
               'medioPagoCodigo': pago.medioPagoCodigo,
               if (pago.observacion != null) 'observacion': pago.observacion,
             },

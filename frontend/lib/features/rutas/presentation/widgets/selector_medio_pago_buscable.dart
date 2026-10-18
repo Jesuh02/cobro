@@ -8,12 +8,14 @@ class PagoRutaSolicitud {
   const PagoRutaSolicitud({
     required this.cuotaId,
     required this.monto,
+    required this.cajaMenorId,
     required this.medioPagoCodigo,
     this.observacion,
   });
 
   final String cuotaId;
   final double monto;
+  final String cajaMenorId;
   final String medioPagoCodigo;
   final String? observacion;
 }

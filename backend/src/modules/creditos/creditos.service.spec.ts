@@ -660,4 +660,48 @@ describe('PagosService', () => {
 
     expect(intento).toBe(2);
   });
+
+  it('rejects registrarPago when no active cash drawer session is open', async () => {
+    mockPrisma.$queryRaw
+      .mockResolvedValueOnce([{ id_cuo: 'cuota-1' }])
+      .mockResolvedValueOnce([
+        {
+          cuota_id: 'cuota-1',
+          cuota_estado: 'PENDIENTE',
+          credito_id: 'credito-1',
+          credito_estado: 'ACTIVO',
+          cliente_id: 'cliente-1',
+          cliente: 'Juan Perez',
+          org_id: '22222222-2222-4222-8222-222222222222',
+          usuario_id: '11111111-1111-4111-8111-111111111111',
+          usuario: 'admin_test',
+          moneda_id: 'moneda-1',
+          moneda_codigo: 'COP',
+        },
+      ])
+      .mockResolvedValueOnce([{ id: 'medio-1' }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id_cuo: 'cuota-1' }]) // SELECT id_cuo ... FOR UPDATE
+      .mockResolvedValueOnce([
+        {
+          cuota_id: 'cuota-1',
+          numero: 1,
+          valor: 100_000,
+          abonado: 0,
+          estado: 'PENDIENTE',
+        },
+      ])
+      .mockResolvedValueOnce([{ id: 'pago-1' }])
+      .mockResolvedValueOnce([]); // sesiones de caja -> vacio!
+
+    await expect(
+      pagosService.registrarPago(
+        {
+          creditoCuotaId: 'cuota-1',
+          montoPagado: 50_000,
+        },
+        usuarioTest(),
+      ),
+    ).rejects.toThrow('No hay una caja menor activa para registrar el pago');
+  });
 });

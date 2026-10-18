@@ -322,6 +322,10 @@ export class PagosService {
           RETURNING id_pag::text AS id
         `);
 
+        const puedeVerTodo =
+          usuario.roles.includes('ADMINISTRADOR') ||
+          usuario.roles.includes('SUPER_ADMIN');
+
         if (this.cajaMenorService) {
           await this.cajaMenorService.registrarMovimientoRecaudoTbl(tx, {
             monto: montoPagado,
@@ -330,8 +334,34 @@ export class PagosService {
             organizacionId: cuota.org_id,
             usuarioId: scope.usuarioId,
             cobradorId: cuota.usuario_id,
+            cajaMenorId: dto.cajaMenorId,
+            puedeVerTodo,
           });
         } else {
+          const condicionesCaja: Prisma.Sql[] = [
+            Prisma.sql`c.org_id = ${cuota.org_id}::uuid`,
+            Prisma.sql`c.caj_tipo::text = 'MENOR'`,
+            Prisma.sql`c.caj_activa`,
+            Prisma.sql`sca.sca_estado::text = 'ABIERTA'`,
+            Prisma.sql`(sca.sca_fecha_cierre IS NULL OR sca.sca_fecha_cierre > now())`,
+          ];
+
+          if (dto.cajaMenorId) {
+            condicionesCaja.push(Prisma.sql`c.id_caj = ${dto.cajaMenorId}::uuid`);
+          }
+
+          if (!puedeVerTodo) {
+            if (cuota.usuario_id && cuota.usuario_id !== scope.usuarioId) {
+              condicionesCaja.push(
+                Prisma.sql`(sca.usu_id = ${scope.usuarioId}::uuid OR sca.usu_id = ${cuota.usuario_id}::uuid)`,
+              );
+            } else {
+              condicionesCaja.push(
+                Prisma.sql`sca.usu_id = ${scope.usuarioId}::uuid`,
+              );
+            }
+          }
+
           const sesiones = await tx.$queryRaw<
             Array<{ sesion_id: string; usuario_id: string }>
           >(Prisma.sql`
@@ -340,11 +370,7 @@ export class PagosService {
               sca.usu_id::text AS usuario_id
             FROM public.tbl_sesiones_cajas sca
             JOIN public.tbl_cajas c ON c.id_caj = sca.caj_id
-            WHERE c.org_id = ${cuota.org_id}::uuid
-              AND c.caj_tipo::text = 'MENOR'
-              AND c.caj_activa
-              AND sca.sca_estado::text = 'ABIERTA'
-              AND (sca.sca_fecha_cierre IS NULL OR sca.sca_fecha_cierre > now())
+            WHERE ${Prisma.join(condicionesCaja, ' AND ')}
             ORDER BY
               CASE
                 WHEN sca.usu_id = ${scope.usuarioId}::uuid THEN 0
@@ -358,10 +384,12 @@ export class PagosService {
           `);
 
           const sesion = sesiones[0];
-          const usuarioMov = sesion?.usuario_id ?? scope.usuarioId;
-          const sesionIdSql = sesion?.sesion_id
-            ? Prisma.sql`${sesion.sesion_id}::uuid`
-            : Prisma.sql`NULL`;
+          if (!sesion?.sesion_id) {
+            throw DomainError.conflict(
+              'No hay una caja menor activa para registrar el pago',
+              'CAJA_MENOR_CERRADA',
+            );
+          }
 
           await tx.$executeRaw(Prisma.sql`
             INSERT INTO public.tbl_movimientos_cajas (
@@ -381,18 +409,16 @@ export class PagosService {
               'PAGO'::public.movimiento_referencia_tipo_enum,
               now(),
               ${cuota.org_id}::uuid,
-              ${usuarioMov}::uuid,
-              ${sesionIdSql}
+              ${sesion.usuario_id}::uuid,
+              ${sesion.sesion_id}::uuid
             )
           `);
 
-          if (sesion?.sesion_id) {
-            await tx.$executeRaw(Prisma.sql`
-              UPDATE public.tbl_sesiones_cajas
-              SET sca_total_cobrado = sca_total_cobrado + ${this.decimal(montoPagado)}
-              WHERE id_sca = ${sesion.sesion_id}::uuid
-            `);
-          }
+          await tx.$executeRaw(Prisma.sql`
+            UPDATE public.tbl_sesiones_cajas
+            SET sca_total_cobrado = sca_total_cobrado + ${this.decimal(montoPagado)}
+            WHERE id_sca = ${sesion.sesion_id}::uuid
+          `);
         }
 
         const cuotasAfectadas: string[] = [];

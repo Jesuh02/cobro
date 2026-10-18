@@ -208,6 +208,12 @@ export class RegistrarPagoDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(64)
+  @Matches(resourceIdPattern, { message: resourceIdMessage() })
+  cajaMenorId?: string;
+
+  @IsOptional()
+  @IsString()
   @MaxLength(120)
   referenciaExterna?: string;
 

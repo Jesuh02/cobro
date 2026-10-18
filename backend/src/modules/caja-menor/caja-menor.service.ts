@@ -1767,9 +1767,33 @@ export class CajaMenorService implements OnModuleInit {
       organizacionId: string;
       usuarioId: string;
       cobradorId?: string;
+      cajaMenorId?: string;
+      puedeVerTodo?: boolean;
     },
   ) {
     const fechaRecaudo = input.fecha ?? new Date();
+
+    const condicionesCaja: Prisma.Sql[] = [
+      Prisma.sql`c.org_id = ${input.organizacionId}::uuid`,
+      Prisma.sql`c.caj_tipo::text = 'MENOR'`,
+      Prisma.sql`c.caj_activa`,
+      Prisma.sql`sca.sca_estado::text = 'ABIERTA'`,
+      Prisma.sql`(sca.sca_fecha_cierre IS NULL OR sca.sca_fecha_cierre > now())`,
+    ];
+
+    if (input.cajaMenorId) {
+      condicionesCaja.push(Prisma.sql`c.id_caj = ${input.cajaMenorId}::uuid`);
+    }
+
+    if (!input.puedeVerTodo) {
+      if (input.cobradorId && input.cobradorId !== input.usuarioId) {
+        condicionesCaja.push(
+          Prisma.sql`(sca.usu_id = ${input.usuarioId}::uuid OR sca.usu_id = ${input.cobradorId}::uuid)`,
+        );
+      } else {
+        condicionesCaja.push(Prisma.sql`sca.usu_id = ${input.usuarioId}::uuid`);
+      }
+    }
 
     const sesiones = await tx.$queryRaw<
       Array<{
@@ -1784,11 +1808,7 @@ export class CajaMenorService implements OnModuleInit {
         sca.usu_id::text AS usuario_id
       FROM public.tbl_sesiones_cajas sca
       JOIN public.tbl_cajas c ON c.id_caj = sca.caj_id
-      WHERE c.org_id = ${input.organizacionId}::uuid
-        AND c.caj_tipo::text = 'MENOR'
-        AND c.caj_activa
-        AND sca.sca_estado::text = 'ABIERTA'
-        AND (sca.sca_fecha_cierre IS NULL OR sca.sca_fecha_cierre > now())
+      WHERE ${Prisma.join(condicionesCaja, ' AND ')}
       ORDER BY
         CASE
           WHEN sca.usu_id = ${input.usuarioId}::uuid THEN 0
@@ -1802,10 +1822,12 @@ export class CajaMenorService implements OnModuleInit {
     `);
 
     const sesion = sesiones[0];
-    const usuarioMovimiento = sesion?.usuario_id ?? input.usuarioId;
-    const sesionSql = sesion?.sesion_id
-      ? Prisma.sql`${sesion.sesion_id}::uuid`
-      : Prisma.sql`NULL`;
+    if (!sesion?.sesion_id) {
+      throw DomainError.conflict(
+        'No hay una caja menor activa para registrar el pago',
+        'CAJA_MENOR_CERRADA',
+      );
+    }
 
     await tx.$executeRaw(Prisma.sql`
       INSERT INTO public.tbl_movimientos_cajas (
@@ -1825,18 +1847,16 @@ export class CajaMenorService implements OnModuleInit {
         'PAGO'::public.movimiento_referencia_tipo_enum,
         ${fechaRecaudo},
         ${input.organizacionId}::uuid,
-        ${usuarioMovimiento}::uuid,
-        ${sesionSql}
+        ${sesion.usuario_id}::uuid,
+        ${sesion.sesion_id}::uuid
       )
     `);
 
-    if (sesion?.sesion_id) {
-      await tx.$executeRaw(Prisma.sql`
-        UPDATE public.tbl_sesiones_cajas
-        SET sca_total_cobrado = sca_total_cobrado + ${this.decimal(input.monto)}
-        WHERE id_sca = ${sesion.sesion_id}::uuid
-      `);
-    }
+    await tx.$executeRaw(Prisma.sql`
+      UPDATE public.tbl_sesiones_cajas
+      SET sca_total_cobrado = sca_total_cobrado + ${this.decimal(input.monto)}
+      WHERE id_sca = ${sesion.sesion_id}::uuid
+    `);
   }
 
   async sincronizarMovimientosRecaudoTbl(

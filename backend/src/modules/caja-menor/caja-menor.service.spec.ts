@@ -393,6 +393,29 @@ describe('CajaMenorService', () => {
     expect(updateRawSql).toContain('sca_total_cobrado');
   });
 
+  it('rejects registrarMovimientoRecaudoTbl when no active cash drawer session is open', async () => {
+    const queryRaw = jest.fn<Promise<unknown[]>, [unknown]>().mockResolvedValueOnce([]);
+    const executeRaw = jest.fn().mockResolvedValue(1);
+    const service = createService(queryRaw, executeRaw);
+
+    const tx = {
+      $queryRaw: queryRaw,
+      $executeRaw: executeRaw,
+    };
+
+    await expect(
+      service.registrarMovimientoRecaudoTbl(tx as never, {
+        monto: 80,
+        pagoId: 'pago-1',
+        organizacionId: '10',
+        usuarioId: '7',
+        cobradorId: '7',
+      }),
+    ).rejects.toThrow('No hay una caja menor activa para registrar el pago');
+
+    expect(executeRaw).not.toHaveBeenCalled();
+  });
+
   it('rejects updating movement if user lacks MODIFICAR_MOVIMIENTOS permission', async () => {
     const queryRaw = jest.fn<Promise<unknown[]>, [unknown]>();
     const service = createService(queryRaw);

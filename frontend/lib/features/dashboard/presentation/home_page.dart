@@ -1383,6 +1383,7 @@ class _HomePageState extends State<HomePage> {
       onCrearCliente: _abrirCrearClienteConCredito,
       onModificarCliente: _abrirModificarCliente,
       onEliminarCliente: _confirmarEliminarCliente,
+      mostrarMensaje: _mostrarMensaje,
       error: _errorParaDestino(_destinosMenuBase[4]),
       guardando: _guardando,
     );

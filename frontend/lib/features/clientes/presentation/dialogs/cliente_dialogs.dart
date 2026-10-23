@@ -280,7 +280,7 @@ class _DialogoModificarClienteContentState
             if (_ubicacionCliente != null) ...<String, dynamic>{
               'latitud': _ubicacionCliente!.latitude,
               'longitud': _ubicacionCliente!.longitude,
-            } else ...<String, dynamic>{
+            } else if (widget.cliente.tieneUbicacion) ...<String, dynamic>{
               'latitud': null,
               'longitud': null,
             },

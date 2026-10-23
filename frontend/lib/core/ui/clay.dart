@@ -72,22 +72,16 @@ class ClayTokens extends ThemeExtension<ClayTokens> {
   List<BoxShadow> get floatingShadow {
     return <BoxShadow>[
       BoxShadow(
-        color: highlight.withValues(alpha: isDark ? 0.28 : 0.9),
-        blurRadius: 18,
-        spreadRadius: -3,
-        offset: const Offset(-6, -6),
-      ),
-      BoxShadow(
-        color: shadow.withValues(alpha: isDark ? 0.58 : 0.25),
-        blurRadius: 28,
+        color: Colors.black.withValues(alpha: isDark ? 0.45 : 0.16),
+        blurRadius: 32,
         spreadRadius: -4,
-        offset: const Offset(10, 13),
+        offset: const Offset(0, 12),
       ),
       BoxShadow(
-        color: shadow.withValues(alpha: isDark ? 0.3 : 0.1),
-        blurRadius: 6,
-        spreadRadius: -1,
-        offset: const Offset(2, 3),
+        color: Colors.black.withValues(alpha: isDark ? 0.30 : 0.08),
+        blurRadius: 10,
+        spreadRadius: -2,
+        offset: const Offset(0, 4),
       ),
     ];
   }

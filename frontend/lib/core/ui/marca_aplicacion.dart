@@ -53,9 +53,9 @@ class MarcaAplicacion extends StatelessWidget {
                     letterSpacing: 0,
                   ),
                   children: const <InlineSpan>[
-                    TextSpan(text: 'App'),
+                    TextSpan(text: 'Daily '),
                     TextSpan(
-                      text: 'Créditos',
+                      text: 'Cobros',
                       style: TextStyle(color: CobroAppTheme.primary),
                     ),
                   ],

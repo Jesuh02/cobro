@@ -33,7 +33,7 @@ class _CobroAppState extends State<CobroApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Cobros',
+      title: 'Daily Cobros',
       debugShowCheckedModeBanner: false,
       theme: CobroAppTheme.light(),
       darkTheme: CobroAppTheme.dark(),

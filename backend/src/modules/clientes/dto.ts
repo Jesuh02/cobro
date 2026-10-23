@@ -26,51 +26,51 @@ export class CrearClienteDto {
   @IsOptional()
   @IsString()
   @MaxLength(60)
-  cedula?: string;
+  cedula?: string | null;
 
   @IsOptional()
   @IsString()
   @MaxLength(180)
-  nombreComercial?: string;
+  nombreComercial?: string | null;
 
   @IsOptional()
   @IsString()
   @MaxLength(220)
-  direccion?: string;
+  direccion?: string | null;
 
   @IsOptional()
   @Type(() => Number)
   @IsNumber({ allowInfinity: false, allowNaN: false })
   @Min(-90)
   @Max(90)
-  latitud?: number;
+  latitud?: number | null;
 
   @IsOptional()
   @Type(() => Number)
   @IsNumber({ allowInfinity: false, allowNaN: false })
   @Min(-180)
   @Max(180)
-  longitud?: number;
+  longitud?: number | null;
 
   @IsOptional()
   @IsString()
   @MaxLength(500)
-  notas?: string;
+  notas?: string | null;
 
   @IsOptional()
   @IsEmail()
   @MaxLength(180)
-  correo?: string;
+  correo?: string | null;
 
   @IsOptional()
   @IsString()
   @MaxLength(40)
-  telefono?: string;
+  telefono?: string | null;
 
   @IsOptional()
   @IsString()
   @MaxLength(40)
-  whatsapp?: string;
+  whatsapp?: string | null;
 }
 
 export class ActualizarClienteDto extends CrearClienteDto {}

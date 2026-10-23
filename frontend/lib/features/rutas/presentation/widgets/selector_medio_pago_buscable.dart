@@ -105,7 +105,6 @@ class SelectorMedioPagoBuscable extends StatelessWidget {
       prefixIcon: const Icon(Icons.payment_rounded),
       value: valorActual,
       enabled: enabled && mediosPago.isNotEmpty,
-      menuWidth: 440,
       items: mediosPago.map((MedioPago medio) {
         return CobroDropdownItem<String>(
           value: medio.codigo,

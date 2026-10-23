@@ -39,7 +39,7 @@ class CobroDropdownField<T> extends StatefulWidget {
     this.hintText = 'Seleccionar opcion',
     this.prefixIcon,
     this.enabled = true,
-    this.menuWidth = 340,
+    this.menuWidth,
     this.menuMaxHeight = 320,
   });
 
@@ -50,7 +50,7 @@ class CobroDropdownField<T> extends StatefulWidget {
   final String hintText;
   final Widget? prefixIcon;
   final bool enabled;
-  final double menuWidth;
+  final double? menuWidth;
   final double menuMaxHeight;
 
   @override
@@ -114,29 +114,69 @@ class _CobroDropdownFieldState<T> extends State<CobroDropdownField<T>> {
         overlayChildBuilder: (BuildContext overlayContext) {
           final RenderBox? renderBox =
               _fieldKey.currentContext?.findRenderObject() as RenderBox?;
-          final double anchoCampo = renderBox != null && renderBox.hasSize
+          final Size screenSize = MediaQuery.sizeOf(overlayContext);
+
+          final double anchoCampo = (renderBox != null && renderBox.hasSize)
               ? renderBox.size.width
-              : widget.menuWidth;
+              : 320.0;
+
+          // Si widget.menuWidth es null, el menú toma exactamente el ancho del campo.
+          // Si se especificó widget.menuWidth, se respeta pero sin salirse de los límites de la pantalla.
+          final double anchoDeseado = widget.menuWidth ?? anchoCampo;
+          final double anchoFinal = math.min(
+            anchoDeseado,
+            screenSize.width - 24.0,
+          );
 
           double alturaMaxima = widget.menuMaxHeight;
+          bool abrirHaciaArriba = false;
+          double offsetDx = 0.0;
+
           if (renderBox != null && renderBox.hasSize && renderBox.attached) {
             final Offset posicionGlobal = renderBox.localToGlobal(Offset.zero);
+            final double alturaCampo = renderBox.size.height;
             final double espacioAbajo =
-                MediaQuery.of(overlayContext).size.height -
-                    (posicionGlobal.dy + renderBox.size.height) -
-                    16;
-            if (espacioAbajo > 0) {
-              alturaMaxima =
-                  math.min(widget.menuMaxHeight, math.max(120.0, espacioAbajo));
+                screenSize.height - (posicionGlobal.dy + alturaCampo) - 16.0;
+            final double espacioArriba = posicionGlobal.dy - 16.0;
+
+            // Abrir hacia arriba si no hay espacio suficiente abajo y hay más arriba
+            if (espacioAbajo < 160.0 && espacioArriba > espacioAbajo) {
+              abrirHaciaArriba = true;
+              alturaMaxima = math.min(
+                widget.menuMaxHeight,
+                math.max(100.0, espacioArriba),
+              );
+            } else if (espacioAbajo > 0) {
+              alturaMaxima = math.min(
+                widget.menuMaxHeight,
+                math.max(100.0, espacioAbajo),
+              );
+            }
+
+            // Si el ancho deseado es mayor al campo o el campo está cercano al borde derecho,
+            // desplazar horizontalmente para que nunca se desborde fuera de la pantalla
+            final double bordeDerecho = posicionGlobal.dx + anchoFinal;
+            final double limiteDerecho = screenSize.width - 12.0;
+            if (bordeDerecho > limiteDerecho) {
+              offsetDx = limiteDerecho - bordeDerecho;
+            }
+            if (posicionGlobal.dx + offsetDx < 12.0) {
+              offsetDx = 12.0 - posicionGlobal.dx;
             }
           }
+
+          final Alignment targetAnchor =
+              abrirHaciaArriba ? Alignment.topLeft : Alignment.bottomLeft;
+          final Alignment followerAnchor =
+              abrirHaciaArriba ? Alignment.bottomLeft : Alignment.topLeft;
+          final Offset offset = Offset(offsetDx, abrirHaciaArriba ? -4.0 : 4.0);
 
           return CompositedTransformFollower(
             link: _layerLink,
             showWhenUnlinked: false,
-            targetAnchor: Alignment.bottomLeft,
-            followerAnchor: Alignment.topLeft,
-            offset: const Offset(0, 4),
+            targetAnchor: targetAnchor,
+            followerAnchor: followerAnchor,
+            offset: offset,
             child: TapRegion(
               groupId: _regionGroupId,
               onTapOutside: (_) => _cerrar(),
@@ -158,8 +198,8 @@ class _CobroDropdownFieldState<T> extends State<CobroDropdownField<T>> {
                   clipBehavior: Clip.antiAlias,
                   child: ConstrainedBox(
                     constraints: BoxConstraints(
-                      minWidth: anchoCampo,
-                      maxWidth: math.max(anchoCampo, widget.menuWidth + 24),
+                      minWidth: anchoFinal,
+                      maxWidth: anchoFinal,
                       maxHeight: alturaMaxima,
                     ),
                     child: SingleChildScrollView(
@@ -288,7 +328,7 @@ class _CobroDropdownFieldState<T> extends State<CobroDropdownField<T>> {
                                                   color:
                                                       context.clay.subtleText,
                                                 ),
-                                            maxLines: 1,
+                                            maxLines: 2,
                                             overflow: TextOverflow.ellipsis,
                                           ),
                                       ],

@@ -66,8 +66,8 @@ Future<void> mostrarDialogoRegistrarPago({
 
           return AlertDialog(
             title: const Text('Registrar pagos'),
-            content: SizedBox(
-              width: 520,
+            content: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
               child: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,

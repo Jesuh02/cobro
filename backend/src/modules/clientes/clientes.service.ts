@@ -140,12 +140,35 @@ export class ClientesService {
       [latitud, longitud].some(
         (value: unknown) =>
           value !== undefined &&
+          value !== null &&
           (typeof value !== 'number' || !Number.isFinite(value)),
       )
     ) {
       throw DomainError.validation(
         'Las coordenadas deben ser números finitos',
         'COORDENADAS_INVALIDAS',
+      );
+    }
+
+    const latitudValida =
+      typeof latitud === 'number' && Number.isFinite(latitud);
+    const longitudValida =
+      typeof longitud === 'number' && Number.isFinite(longitud);
+    const ambosNumeros = latitudValida && longitudValida;
+    const ambosNull = latitud === null && longitud === null;
+    const ambosUndefined = latitud === undefined && longitud === undefined;
+
+    if (!ambosNumeros && !ambosNull && !ambosUndefined) {
+      throw DomainError.validation(
+        'La latitud y la longitud deben enviarse juntas',
+        'COORDENADAS_INCOMPLETAS',
+      );
+    }
+
+    if (ambosNumeros && !input.direccion) {
+      throw DomainError.validation(
+        'La dirección es obligatoria cuando se envían coordenadas',
+        'DIRECCION_COORDENADAS_REQUERIDA',
       );
     }
 
@@ -365,6 +388,7 @@ export class ClientesService {
       [latitud, longitud].some(
         (value: unknown) =>
           value !== undefined &&
+          value !== null &&
           (typeof value !== 'number' || !Number.isFinite(value)),
       )
     ) {
@@ -373,13 +397,23 @@ export class ClientesService {
         'COORDENADAS_INVALIDAS',
       );
     }
-    if ((latitud === undefined) !== (longitud === undefined)) {
+
+    const latitudValida =
+      typeof latitud === 'number' && Number.isFinite(latitud);
+    const longitudValida =
+      typeof longitud === 'number' && Number.isFinite(longitud);
+    const ambosNumeros = latitudValida && longitudValida;
+    const ambosNull = latitud === null && longitud === null;
+    const ambosUndefined = latitud === undefined && longitud === undefined;
+
+    if (!ambosNumeros && !ambosNull && !ambosUndefined) {
       throw DomainError.validation(
         'La latitud y la longitud deben enviarse juntas',
         'COORDENADAS_INCOMPLETAS',
       );
     }
-    if (latitud !== undefined && !direccion) {
+
+    if (ambosNumeros && !direccion) {
       throw DomainError.validation(
         'La dirección es obligatoria cuando se envían coordenadas',
         'DIRECCION_COORDENADAS_REQUERIDA',
@@ -422,15 +456,17 @@ export class ClientesService {
 
         const cedulaFinal = cedula ?? actual.cedula;
         const latitudFinal =
-          latitud ??
-          (actual.latitud === null
-            ? null
-            : this.decimalANumero(actual.latitud));
+          latitud !== undefined
+            ? latitud
+            : (actual.latitud === null
+                ? null
+                : this.decimalANumero(actual.latitud));
         const longitudFinal =
-          longitud ??
-          (actual.longitud === null
-            ? null
-            : this.decimalANumero(actual.longitud));
+          longitud !== undefined
+            ? longitud
+            : (actual.longitud === null
+                ? null
+                : this.decimalANumero(actual.longitud));
         if (cedulaFinal !== actual.cedula) {
           const duplicados = await tx.$queryRaw<
             Array<{ existe?: boolean; en_papelera?: boolean }>

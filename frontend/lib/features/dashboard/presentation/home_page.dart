@@ -824,6 +824,7 @@ class _HomePageState extends State<HomePage> {
       onEliminarDefinitivo: _purgarItemPapelera,
       esAdministrador: _usuarioSesion?.esAdministrador ?? false,
       error: _errorParaDestino(_destinoPapelera),
+      mostrarMensaje: _mostrarMensaje,
     );
   }
 

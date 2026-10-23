@@ -109,5 +109,12 @@ void main() {
     await tester.tap(botonModificar);
     await tester.pump();
     expect(modificado, isTrue);
+
+    // Acción de eliminar
+    final Finder botonEliminar = find.byTooltip('Eliminar cliente');
+    expect(botonEliminar, findsOneWidget);
+    await tester.tap(botonEliminar);
+    await tester.pump();
+    expect(eliminado, isTrue);
   });
 }

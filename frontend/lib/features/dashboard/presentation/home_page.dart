@@ -1335,6 +1335,7 @@ class _HomePageState extends State<HomePage> {
       onCrearCajaMenor: _abrirCrearCajaMenor,
       onMovimientoCaja: _abrirMovimientoCaja,
       onModificarMovimiento: _abrirEditarMovimientoCaja,
+      mostrarMensaje: _mostrarMensaje,
       buscarController: _buscarCajaController,
       filtros: _construirFiltrosCaja(context),
     );

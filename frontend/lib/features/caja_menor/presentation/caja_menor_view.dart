@@ -1,5 +1,6 @@
 export 'widgets/filtros_caja_menor.dart';
 export 'widgets/movimiento_caja_item.dart';
+export 'widgets/movimiento_detalle_sheet.dart';
 
 import 'package:flutter/material.dart';
 
@@ -7,6 +8,7 @@ import '../../../../core/ui/page_layout.dart';
 import '../../../../core/ui/skeletons.dart';
 import '../../../../data/models/models.dart';
 import 'widgets/movimiento_caja_item.dart';
+import 'widgets/movimiento_detalle_sheet.dart';
 
 class CajaMenorView extends StatelessWidget {
   const CajaMenorView({
@@ -29,6 +31,8 @@ class CajaMenorView extends StatelessWidget {
     required this.onCrearCajaMenor,
     required this.onMovimientoCaja,
     required this.onModificarMovimiento,
+    this.onVerDetalleMovimiento,
+    this.mostrarMensaje,
     required this.buscarController,
     required this.filtros,
   });
@@ -51,8 +55,29 @@ class CajaMenorView extends StatelessWidget {
   final VoidCallback onCrearCajaMenor;
   final VoidCallback onMovimientoCaja;
   final ValueChanged<MovimientoCaja> onModificarMovimiento;
+  final ValueChanged<MovimientoCaja>? onVerDetalleMovimiento;
+  final void Function(String)? mostrarMensaje;
   final TextEditingController buscarController;
   final Widget filtros;
+
+  void _abrirFichaDetalle(
+    BuildContext context,
+    MovimientoCaja movimiento,
+    bool puedeModificar,
+  ) {
+    if (onVerDetalleMovimiento != null) {
+      onVerDetalleMovimiento!(movimiento);
+      return;
+    }
+
+    mostrarMovimientoDetalleSheet(
+      context: context,
+      movimiento: movimiento,
+      puedeModificar: puedeModificar,
+      onModificar: () => onModificarMovimiento(movimiento),
+      mostrarMensaje: mostrarMensaje,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -131,12 +156,15 @@ class CajaMenorView extends StatelessWidget {
             (MovimientoCaja movimiento) {
               final bool esDesembolsoCredito =
                   movimiento.referenciaTabla == 'credito_desembolso';
+              final bool puedeModificar = puedeModificarMovimientos &&
+                  (!esDesembolsoCredito || puedeModificarCreditos);
+
               return Padding(
                 padding: const EdgeInsets.only(bottom: 10),
                 child: MovimientoCajaItem(
                   movimiento: movimiento,
-                  puedeModificar: puedeModificarMovimientos &&
-                      (!esDesembolsoCredito || puedeModificarCreditos),
+                  puedeModificar: puedeModificar,
+                  onTap: () => _abrirFichaDetalle(context, movimiento, puedeModificar),
                   onModificar: () => onModificarMovimiento(movimiento),
                 ),
               );

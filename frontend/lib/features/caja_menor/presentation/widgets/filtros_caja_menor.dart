@@ -101,21 +101,30 @@ class FiltrosCajaMenor extends StatelessWidget {
           ),
         SegmentedButton<FiltroMovimientoCaja>(
           showSelectedIcon: false,
+          style: SegmentedButton.styleFrom(
+            visualDensity: VisualDensity.compact,
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            textStyle: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
           segments: const <ButtonSegment<FiltroMovimientoCaja>>[
             ButtonSegment<FiltroMovimientoCaja>(
               value: FiltroMovimientoCaja.todos,
-              icon: Icon(Icons.receipt_long_rounded),
-              label: Text('Todos'),
+              icon: Icon(Icons.receipt_long_rounded, size: 14),
+              label: Text('Todos', softWrap: false, maxLines: 1),
             ),
             ButtonSegment<FiltroMovimientoCaja>(
               value: FiltroMovimientoCaja.entradas,
-              icon: Icon(Icons.arrow_upward_rounded),
-              label: Text('Entradas'),
+              icon: Icon(Icons.arrow_upward_rounded, size: 14),
+              label: Text('Entradas', softWrap: false, maxLines: 1),
             ),
             ButtonSegment<FiltroMovimientoCaja>(
               value: FiltroMovimientoCaja.salidas,
-              icon: Icon(Icons.arrow_downward_rounded),
-              label: Text('Salidas'),
+              icon: Icon(Icons.arrow_downward_rounded, size: 14),
+              label: Text('Salidas', softWrap: false, maxLines: 1),
             ),
           ],
           selected: <FiltroMovimientoCaja>{filtroMovimientoCaja},

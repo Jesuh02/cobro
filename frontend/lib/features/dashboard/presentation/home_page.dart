@@ -824,6 +824,7 @@ class _HomePageState extends State<HomePage> {
       onEliminarDefinitivo: _purgarItemPapelera,
       esAdministrador: _usuarioSesion?.esAdministrador ?? false,
       error: _errorParaDestino(_destinoPapelera),
+      mostrarMensaje: _mostrarMensaje,
     );
   }
 
@@ -1335,6 +1336,7 @@ class _HomePageState extends State<HomePage> {
       onCrearCajaMenor: _abrirCrearCajaMenor,
       onMovimientoCaja: _abrirMovimientoCaja,
       onModificarMovimiento: _abrirEditarMovimientoCaja,
+      mostrarMensaje: _mostrarMensaje,
       buscarController: _buscarCajaController,
       filtros: _construirFiltrosCaja(context),
     );
@@ -1383,6 +1385,7 @@ class _HomePageState extends State<HomePage> {
       onCrearCliente: _abrirCrearClienteConCredito,
       onModificarCliente: _abrirModificarCliente,
       onEliminarCliente: _confirmarEliminarCliente,
+      mostrarMensaje: _mostrarMensaje,
       error: _errorParaDestino(_destinosMenuBase[4]),
       guardando: _guardando,
     );

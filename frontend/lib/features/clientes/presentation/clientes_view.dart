@@ -1,9 +1,11 @@
+export 'widgets/cliente_detalle_sheet.dart';
 export 'widgets/cliente_item.dart';
 
 import 'package:flutter/material.dart';
 
 import '../../../../core/ui/page_layout.dart';
 import '../../../../data/models/models.dart';
+import 'widgets/cliente_detalle_sheet.dart';
 import 'widgets/cliente_item.dart';
 
 class ClientesView extends StatelessWidget {
@@ -19,6 +21,8 @@ class ClientesView extends StatelessWidget {
     required this.onCrearCliente,
     required this.onModificarCliente,
     required this.onEliminarCliente,
+    this.onVerDetalleCliente,
+    this.mostrarMensaje,
     this.error,
     this.guardando = false,
   });
@@ -33,8 +37,28 @@ class ClientesView extends StatelessWidget {
   final VoidCallback onCrearCliente;
   final ValueChanged<Cliente> onModificarCliente;
   final ValueChanged<Cliente> onEliminarCliente;
+  final ValueChanged<Cliente>? onVerDetalleCliente;
+  final void Function(String)? mostrarMensaje;
   final String? error;
   final bool guardando;
+
+  void _abrirFichaDetalle(BuildContext context, Cliente cliente) {
+    if (onVerDetalleCliente != null) {
+      onVerDetalleCliente!(cliente);
+      return;
+    }
+
+    mostrarClienteDetalleSheet(
+      context: context,
+      cliente: cliente,
+      esAdministrador: esAdministrador,
+      puedeModificar: puedeModificar,
+      puedeEliminar: puedeEliminar,
+      onModificar: () => onModificarCliente(cliente),
+      onEliminar: () => onEliminarCliente(cliente),
+      mostrarMensaje: mostrarMensaje,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -80,6 +104,7 @@ class ClientesView extends StatelessWidget {
                   esAdministrador: esAdministrador,
                   puedeModificar: puedeModificar,
                   puedeEliminar: puedeEliminar,
+                  onTap: () => _abrirFichaDetalle(context, cliente),
                   onModificar: () => onModificarCliente(cliente),
                   onEliminar: () => onEliminarCliente(cliente),
                 ),

@@ -491,5 +491,118 @@ describe('ClientesService', () => {
     expect(result.nombreCompleto).toBe('Juan Gomez Actualizado');
     expect(cache.deleteByPrefix).toHaveBeenCalledWith('cobros:');
   });
+
+  it('allows client update with null coordinates (clearing or no coordinates)', async () => {
+    const actual = {
+      id: 'cli-1',
+      persona_id: 'per-1',
+      nombre_completo: 'Juan Gomez',
+      nombre_comercial: null,
+      notas: null,
+      cedula: '123456',
+      direccion: 'Calle 1',
+      correo: null,
+      latitud: 4.5,
+      longitud: -74.1,
+      telefono: '3001234567',
+      creado_en: new Date('2026-09-01T00:00:00.000Z'),
+      actualizado_en: new Date('2026-09-01T00:00:00.000Z'),
+      activo: true,
+    };
+
+    const actualizado = {
+      ...actual,
+      latitud: null,
+      longitud: null,
+    };
+
+    const queryRaw = jest
+      .fn()
+      .mockResolvedValueOnce([actual])
+      .mockResolvedValueOnce([actualizado]);
+
+    const executeRaw = jest.fn().mockResolvedValue(1);
+
+    const tx = {
+      $queryRaw: queryRaw,
+      $executeRaw: executeRaw,
+    };
+
+    const prisma = {
+      $queryRaw: queryRaw,
+      $executeRaw: executeRaw,
+      $transaction: async (cb: (t: unknown) => Promise<unknown>) => cb(tx),
+    };
+
+    const tenantScope = {
+      esAdministrador: jest.fn().mockReturnValue(true),
+      obtenerScopeOrganizacionTbl: jest.fn().mockResolvedValue({
+        usuarioId: 'u-1',
+        organizacionId: 'org-1',
+      }),
+    };
+
+    const cache = { deleteByPrefix: jest.fn() };
+
+    const service = new ClientesService(
+      prisma as never,
+      tenantScope as never,
+      {} as never,
+      cache as never,
+    );
+
+    const result = await service.actualizarCliente(
+      'cli-1',
+      {
+        nombreCompleto: 'Juan Gomez',
+        latitud: null,
+        longitud: null,
+      },
+      {
+        usuarioId: 'u-1',
+        usuario: 'admin',
+        organizacionId: 'org-1',
+        roles: ['ADMINISTRADOR'],
+        permisos: [],
+      },
+    );
+
+    expect(result.id).toBe('cli-1');
+    expect(result.direcciones[0].latitud).toBeNull();
+    expect(result.direcciones[0].longitud).toBeNull();
+  });
+
+  it('rejects client update with incomplete coordinates (one null, one number)', async () => {
+    const tenantScope = {
+      esAdministrador: jest.fn().mockReturnValue(true),
+    };
+
+    const service = new ClientesService(
+      {} as never,
+      tenantScope as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(
+      service.actualizarCliente(
+        'cli-1',
+        {
+          nombreCompleto: 'Juan Gomez',
+          latitud: 4.5,
+          longitud: null,
+        },
+        {
+          usuarioId: 'u-1',
+          usuario: 'admin',
+          organizacionId: 'org-1',
+          roles: ['ADMINISTRADOR'],
+          permisos: [],
+        },
+      ),
+    ).rejects.toMatchObject({
+      code: 'COORDENADAS_INCOMPLETAS',
+    });
+  });
 });
 

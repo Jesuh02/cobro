@@ -9,6 +9,9 @@ export type PresupuestoRow = {
   recaudado: Prisma.Decimal;
   gastos: Prisma.Decimal;
   creditos: Prisma.Decimal;
+  clientes_creditos?: number | bigint;
+  creditos_refinanciados?: number | bigint;
+  valor_refinanciado?: Prisma.Decimal;
   presupuesto: Prisma.Decimal;
 };
 
@@ -21,6 +24,9 @@ export type PresupuestoTblRow = {
   recaudado: Prisma.Decimal;
   gastos: Prisma.Decimal;
   creditos: Prisma.Decimal;
+  clientes_creditos?: number | bigint;
+  creditos_refinanciados?: number | bigint;
+  valor_refinanciado?: Prisma.Decimal;
   presupuesto: Prisma.Decimal;
 };
 
@@ -33,6 +39,9 @@ export type PresupuestoItem = {
   recaudado: number;
   gastos: number;
   creditos: number;
+  creditosRefinanciados: number;
+  clientesCreditos: number;
+  valorRefinanciado: number;
   presupuesto: number;
 };
 
@@ -41,6 +50,9 @@ export type PresupuestoTotales = {
   recaudado: number;
   gastos: number;
   creditos: number;
+  creditosRefinanciados: number;
+  clientesCreditos: number;
+  valorRefinanciado: number;
   presupuesto: number;
 };
 

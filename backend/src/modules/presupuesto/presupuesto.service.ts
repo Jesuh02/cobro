@@ -224,6 +224,9 @@ export class PresupuestoService {
           COALESCE(pagos.recaudado, 0) + COALESCE(mc.recaudos_periodo, 0) AS recaudado,
           COALESCE(gastos.gastos, 0) + COALESCE(mc.gastos_periodo, 0) AS gastos,
           COALESCE(creditos.creditos, 0) AS creditos,
+          COALESCE(creditos.clientes_creditos, 0) AS clientes_creditos,
+          COALESCE(refinanciados.creditos_refinanciados, 0) AS creditos_refinanciados,
+          COALESCE(refinanciados.valor_refinanciado, 0) AS valor_refinanciado,
           COALESCE(mc.desembolsos_periodo, 0) AS desembolsos
         FROM cajas c
         LEFT JOIN sesiones_caja s ON s.caj_id = c.id_caj
@@ -260,7 +263,9 @@ export class PresupuestoService {
             ${fechaGastosWhere}
         ) gastos ON TRUE
         LEFT JOIN LATERAL (
-          SELECT SUM(cr.cre_total) AS creditos
+          SELECT
+            COALESCE(SUM(cr.cre_total), 0) AS creditos,
+            COUNT(DISTINCT cr.cli_id)::int AS clientes_creditos
           FROM public.tbl_creditos cr
           JOIN public.tbl_clientes cl ON cl.id_cli = cr.cli_id
           WHERE cl.org_id = c.org_id
@@ -268,6 +273,23 @@ export class PresupuestoService {
             ${usuarioCreditosWhere}
             ${fechaCreditosWhere}
         ) creditos ON TRUE
+        LEFT JOIN LATERAL (
+          SELECT
+            COUNT(*)::int AS creditos_refinanciados,
+            COALESCE(SUM(cr.cre_total), 0) AS valor_refinanciado
+          FROM public.tbl_creditos cr
+          JOIN public.tbl_clientes cl ON cl.id_cli = cr.cli_id
+          WHERE cl.org_id = c.org_id
+            AND UPPER(cr.cre_estado::text) NOT IN ('ANULADO')
+            ${usuarioCreditosWhere}
+            ${fechaCreditosWhere}
+            AND EXISTS (
+              SELECT 1
+              FROM public.tbl_cuotas cu
+              WHERE cu.cre_id = cr.id_cre
+                AND UPPER(cu.cuo_estado::text) = 'ANULADA'
+            )
+        ) refinanciados ON TRUE
       )
       SELECT
         caja_menor_id,
@@ -278,6 +300,9 @@ export class PresupuestoService {
         recaudado,
         gastos,
         creditos,
+        clientes_creditos,
+        creditos_refinanciados,
+        valor_refinanciado,
         caja_menor + recaudado - gastos - desembolsos AS presupuesto
       FROM resumen
       ORDER BY moneda_codigo ASC, caja_menor_id ASC
@@ -292,6 +317,9 @@ export class PresupuestoService {
       recaudado: this.decimalANumero(row.recaudado),
       gastos: this.decimalANumero(row.gastos),
       creditos: this.decimalANumero(row.creditos),
+      creditosRefinanciados: Number(row.creditos_refinanciados ?? 0),
+      clientesCreditos: Number(row.clientes_creditos ?? 0),
+      valorRefinanciado: this.decimalANumero(row.valor_refinanciado),
       presupuesto: this.decimalANumero(row.presupuesto),
     }));
 
@@ -309,6 +337,17 @@ export class PresupuestoService {
         ),
         creditos: this.redondear(
           items.reduce((total, item) => total + item.creditos, 0),
+        ),
+        creditosRefinanciados: items.reduce(
+          (total, item) => total + item.creditosRefinanciados,
+          0,
+        ),
+        clientesCreditos: items.reduce(
+          (total, item) => total + item.clientesCreditos,
+          0,
+        ),
+        valorRefinanciado: this.redondear(
+          items.reduce((total, item) => total + item.valorRefinanciado, 0),
         ),
         presupuesto: this.redondear(
           items.reduce((total, item) => total + item.presupuesto, 0),

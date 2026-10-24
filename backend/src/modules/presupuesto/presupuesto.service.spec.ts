@@ -59,6 +59,9 @@ describe('PresupuestoService', () => {
         recaudado: new Prisma.Decimal('50000'),
         gastos: new Prisma.Decimal('20000'),
         creditos: new Prisma.Decimal('80000'),
+        clientes_creditos: 4,
+        creditos_refinanciados: 2,
+        valor_refinanciado: new Prisma.Decimal('30000'),
         presupuesto: new Prisma.Decimal('130000'),
       },
       {
@@ -70,6 +73,9 @@ describe('PresupuestoService', () => {
         recaudado: new Prisma.Decimal('10000'),
         gastos: new Prisma.Decimal('5000'),
         creditos: new Prisma.Decimal('30000'),
+        clientes_creditos: 2,
+        creditos_refinanciados: 1,
+        valor_refinanciado: new Prisma.Decimal('15000'),
         presupuesto: new Prisma.Decimal('55000'),
       },
     ]);
@@ -87,6 +93,9 @@ describe('PresupuestoService', () => {
       recaudado: 50000,
       gastos: 20000,
       creditos: 80000,
+      creditosRefinanciados: 2,
+      clientesCreditos: 4,
+      valorRefinanciado: 30000,
       presupuesto: 130000,
     });
 
@@ -95,6 +104,9 @@ describe('PresupuestoService', () => {
       recaudado: 60000,
       gastos: 25000,
       creditos: 110000,
+      creditosRefinanciados: 3,
+      clientesCreditos: 6,
+      valorRefinanciado: 45000,
       presupuesto: 185000,
     });
   });

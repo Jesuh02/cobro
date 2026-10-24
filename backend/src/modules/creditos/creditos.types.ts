@@ -64,6 +64,7 @@ export type CreditoTblRow = {
   valor_cuota: Prisma.Decimal;
   total_abonado: Prisma.Decimal;
   cuotas_restantes: number;
+  cre_plazo_dias?: number | null;
 };
 
 export type CuotaCreditoRow = {

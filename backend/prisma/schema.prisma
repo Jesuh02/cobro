@@ -283,6 +283,7 @@ model TblCredito {
   totalPagar         Decimal              @map("cre_total_pagar")
   fechaInicio        DateTime             @map("cre_fecha_inicio") @db.Date
   fechaFin           DateTime             @map("cre_fecha_fin") @db.Date
+  plazoDias          Int?                 @map("cre_plazo_dias")
   usuId              String               @map("usu_id") @db.Uuid
   pcrId              String               @map("pcr_id") @db.Uuid
   cliId              String               @map("cli_id") @db.Uuid

@@ -487,7 +487,50 @@ describe('CreditosService', () => {
     await expect(service.obtenerCredito('credito-1', empleado)).resolves.toEqual({ id: 'credito-1' });
     await expect(service.listarCuotasCredito('credito-1', empleado)).resolves.toEqual([{ id: 'cuota-1' }]);
   });
+
+  it('obtenerCredito preserves exact plazo_dias from cre_plazo_dias without Sunday inflation', async () => {
+    mockPrisma.$queryRaw
+      .mockResolvedValueOnce([{ existe: true }]) // validarAccesoCreditoTbl
+      .mockResolvedValueOnce([
+        {
+          credito_id: '11111111-1111-4111-8111-111111111111',
+          cliente_id: '22222222-2222-4222-8222-222222222222',
+          cliente: 'Steven Navarroz',
+          cedula: '123456',
+          negocio: 'Tienda',
+          direccion: 'Calle 10',
+          ruta_id: '77777777-7777-4777-8777-777777777777',
+          ruta: 'Ruta 1',
+          caja_menor_id: '88888888-8888-4888-8888-888888888888',
+          caja_menor: 'Caja 1',
+          moneda_codigo: 'COP',
+          frecuencia_id: '1',
+          frecuencia_codigo: 'DIARIO',
+          frecuencia_nombre: 'Diario',
+          estado_codigo: 'ACTIVO',
+          fecha_inicio: new Date('2026-09-01T00:00:00.000Z'),
+          fecha_fin: new Date('2026-10-06T00:00:00.000Z'), // 35 calendar days with Sundays
+          valor_principal: new Prisma.Decimal('100000'),
+          porcentaje_interes: new Prisma.Decimal('20'),
+          interes_total: new Prisma.Decimal('20000'),
+          valor_total: new Prisma.Decimal('120000'),
+          numero_cuotas: 30,
+          valor_cuota: new Prisma.Decimal('4000'),
+          total_abonado: new Prisma.Decimal('0'),
+          cre_plazo_dias: 30, // explicitly stored 30 days
+          cuotas_restantes: 30,
+        },
+      ]);
+
+    const result = await service.obtenerCredito(
+      '11111111-1111-4111-8111-111111111111',
+      usuarioTest(),
+    );
+
+    expect(result.plazoDias).toBe(30);
+  });
 });
+
 
 describe('PagosService', () => {
   let pagosService: PagosService;

@@ -261,6 +261,7 @@ export class CreditosService {
             cre_total_pagar,
             cre_fecha_inicio,
             cre_fecha_fin,
+            cre_plazo_dias,
             usu_id,
             pcr_id,
             cli_id,
@@ -274,6 +275,7 @@ export class CreditosService {
             ${this.decimal(plan.valorTotal)},
             ${fechaInicio}::date,
             ${plan.fechaMaxima}::date,
+            ${Number(dto.plazoDias)},
             ${scope.usuario_id}::uuid,
             ${producto.id}::uuid,
             ${cliente.id}::uuid,
@@ -616,7 +618,18 @@ export class CreditosService {
         INITCAP(REPLACE(cr.cre_estado::text, '_', ' ')) AS estado_nombre,
         cr.cre_total AS valor_principal,
         cr.cre_tasa_interes AS porcentaje_interes,
-        GREATEST((cr.cre_fecha_fin - cr.cre_fecha_inicio), 1)::int AS plazo_dias,
+        COALESCE(
+          cr.cre_plazo_dias,
+          (rc.numero_cuotas * (
+            CASE pc.pcr_frecuencia::text
+              WHEN 'SEMANAL' THEN 7
+              WHEN 'QUINCENAL' THEN 15
+              WHEN 'MENSUAL' THEN 30
+              ELSE 1
+            END
+          )),
+          GREATEST((cr.cre_fecha_fin - cr.cre_fecha_inicio), 1)
+        )::int AS plazo_dias,
         false AS omitir_domingos,
         cr.cre_total_pagar AS valor_total,
         COALESCE(rc.valor_cuota, 0) AS valor_cuota,
@@ -827,6 +840,7 @@ export class CreditosService {
           0
         ) AS valor_cuota,
         COALESCE(SUM(cu.cuo_total_pagado), 0) AS total_abonado,
+        cr.cre_plazo_dias,
         COUNT(*) FILTER (
           WHERE UPPER(cu.cuo_estado::text) NOT IN ('PAGADA', 'ANULADA')
             AND (cu.cuo_valor - COALESCE(cu.cuo_total_pagado, 0)) > 0
@@ -860,6 +874,7 @@ export class CreditosService {
       WHERE cr.id_cre = ${creditoId}::uuid
       GROUP BY
         cr.id_cre,
+        cr.cre_plazo_dias,
         cl.id_cli,
         p.id_per,
         pc.id_pcr,
@@ -878,14 +893,20 @@ export class CreditosService {
       );
     }
 
-    const plazoDias = Math.max(
-      1,
-      Math.ceil(
-        (fechaUtc(credito.fecha_fin).getTime() -
-          fechaUtc(credito.fecha_inicio).getTime()) /
-          86_400_000,
-      ),
-    );
+    const diasIntervalo = this.diasIntervaloFrecuencia(credito.frecuencia_codigo);
+    const plazoDias =
+      credito.cre_plazo_dias != null
+        ? Number(credito.cre_plazo_dias)
+        : credito.numero_cuotas != null
+          ? Number(credito.numero_cuotas) * diasIntervalo
+          : Math.max(
+              1,
+              Math.ceil(
+                (fechaUtc(credito.fecha_fin).getTime() -
+                  fechaUtc(credito.fecha_inicio).getTime()) /
+                  86_400_000,
+              ),
+            );
     const valorTotal = this.decimalANumero(credito.valor_total);
     const totalAbonado = this.decimalANumero(credito.total_abonado);
     const saldo = redondear(Math.max(valorTotal - totalAbonado, 0));
@@ -1341,6 +1362,7 @@ export class CreditosService {
             cre_total_pagar = ${this.decimal(totalNuevo, decimales)},
             cre_fecha_inicio = ${fechaInicio}::date,
             cre_fecha_fin = ${planPendiente.fechaMaxima}::date,
+            cre_plazo_dias = ${Number(dto.plazoDias)},
             pcr_id = ${producto.id}::uuid,
             cre_estado = 'ACTIVO'::public.credito_estado_enum
           WHERE id_cre = ${creditoId}::uuid
@@ -1596,6 +1618,7 @@ export class CreditosService {
             cre_total_pagar = ${this.decimal(plan.valorTotal, decimales)},
             cre_fecha_inicio = ${fechaInicio}::date,
             cre_fecha_fin = ${plan.fechaMaxima}::date,
+            cre_plazo_dias = ${Number(dto.plazoDias)},
             cli_id = ${cliente.id}::uuid,
             pcr_id = ${producto.id}::uuid,
             mon_id = ${moneda.id}::uuid

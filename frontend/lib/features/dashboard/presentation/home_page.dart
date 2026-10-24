@@ -1364,6 +1364,7 @@ class _HomePageState extends State<HomePage> {
       },
       fechaCajaDesde: _fechaCajaDesde,
       fechaCajaHasta: _fechaCajaHasta,
+      onSeleccionarRangoFechas: _seleccionarRangoFechasCaja,
       onSeleccionarFechaDesde: () => _seleccionarFechaCaja(esDesde: true),
       onSeleccionarFechaHasta: () => _seleccionarFechaCaja(esDesde: false),
       exportando: _exportando,
@@ -1614,6 +1615,118 @@ class _HomePageState extends State<HomePage> {
       }
     });
     _recargarDatos(creditos: true);
+  }
+
+  Future<void> _seleccionarRangoFechasCaja() async {
+    final DateTimeRange? selected = await showDateRangePicker(
+      context: context,
+      initialDateRange: (_fechaCajaDesde != null && _fechaCajaHasta != null)
+          ? DateTimeRange(start: _fechaCajaDesde!, end: _fechaCajaHasta!)
+          : (_fechaCajaDesde != null)
+              ? DateTimeRange(start: _fechaCajaDesde!, end: _fechaCajaDesde!)
+              : null,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+      locale: const Locale('es', 'CO'),
+      helpText: 'Seleccionar rango de fechas',
+      cancelText: 'Cancelar',
+      confirmText: 'Aplicar',
+      saveText: 'Aplicar',
+      fieldStartLabelText: 'Fecha inicial',
+      fieldEndLabelText: 'Fecha final',
+      fieldStartHintText: 'dd/mm/aaaa',
+      fieldEndHintText: 'dd/mm/aaaa',
+      builder: (BuildContext context, Widget? child) {
+        final ThemeData theme = Theme.of(context);
+        final bool isDark = theme.brightness == Brightness.dark;
+
+        return Theme(
+          data: theme.copyWith(
+            textButtonTheme: TextButtonThemeData(
+              style: ButtonStyle(
+                backgroundColor: WidgetStateProperty.resolveWith<Color?>(
+                  (Set<WidgetState> states) {
+                    if (states.contains(WidgetState.disabled)) {
+                      return CobroAppTheme.primary.withValues(alpha: 0.15);
+                    }
+                    return CobroAppTheme.primary;
+                  },
+                ),
+                foregroundColor: WidgetStateProperty.resolveWith<Color?>(
+                  (Set<WidgetState> states) {
+                    if (states.contains(WidgetState.disabled)) {
+                      return CobroAppTheme.primary.withValues(alpha: 0.45);
+                    }
+                    return Colors.white;
+                  },
+                ),
+                elevation: WidgetStateProperty.resolveWith<double>(
+                  (Set<WidgetState> states) =>
+                      states.contains(WidgetState.disabled) ? 0 : 1,
+                ),
+                padding: const WidgetStatePropertyAll<EdgeInsetsGeometry>(
+                  EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                ),
+                shape: WidgetStatePropertyAll<OutlinedBorder>(
+                  RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                textStyle: const WidgetStatePropertyAll<TextStyle>(
+                  TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+              ),
+            ),
+            datePickerTheme: theme.datePickerTheme.copyWith(
+              headerBackgroundColor:
+                  isDark ? const Color(0xFF182330) : const Color(0xFFF7F9FB),
+              headerForegroundColor:
+                  isDark ? Colors.white : const Color(0xFF182234),
+              rangeSelectionBackgroundColor:
+                  CobroAppTheme.primary.withValues(alpha: 0.18),
+              rangeSelectionOverlayColor: WidgetStatePropertyAll<Color>(
+                CobroAppTheme.primary.withValues(alpha: 0.12),
+              ),
+              todayForegroundColor: const WidgetStatePropertyAll<Color>(
+                CobroAppTheme.primary,
+              ),
+              todayBorder: const BorderSide(color: CobroAppTheme.primary),
+              rangePickerHeaderHeadlineStyle: TextStyle(
+                color: isDark ? Colors.white : const Color(0xFF182234),
+                fontWeight: FontWeight.w700,
+                fontSize: 20,
+              ),
+              rangePickerHeaderHelpStyle: TextStyle(
+                color: isDark
+                    ? const Color(0xFFAFBBC9)
+                    : const Color(0xFF667181),
+                fontWeight: FontWeight.w500,
+                fontSize: 13,
+              ),
+            ),
+            colorScheme: theme.colorScheme.copyWith(
+              primary: CobroAppTheme.primary,
+              onPrimary: Colors.white,
+            ),
+          ),
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
+    );
+
+    if (selected == null) {
+      return;
+    }
+
+    setState(() {
+      _fechaCajaDesde = selected.start;
+      _fechaCajaHasta = selected.end;
+    });
+    _recargarDatos(movimientosCaja: true);
   }
 
   Future<void> _seleccionarFechaCaja({required bool esDesde}) async {

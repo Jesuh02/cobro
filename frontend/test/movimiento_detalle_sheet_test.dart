@@ -4,6 +4,7 @@ import 'package:cobro_app/features/caja_menor/presentation/widgets/filtros_caja_
 import 'package:cobro_app/features/caja_menor/presentation/widgets/movimiento_caja_item.dart';
 import 'package:cobro_app/features/caja_menor/presentation/widgets/movimiento_detalle_sheet.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -34,6 +35,16 @@ void main() {
   Widget crearEntornoTest(Widget child) {
     return MaterialApp(
       theme: CobroAppTheme.light(),
+      localizationsDelegates: const <LocalizationsDelegate<dynamic>>[
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: const <Locale>[
+        Locale('es', 'CO'),
+        Locale('es'),
+      ],
+      locale: const Locale('es', 'CO'),
       home: Scaffold(
         body: Center(child: child),
       ),
@@ -74,6 +85,84 @@ void main() {
     await tester.tap(find.text('Entradas'));
     await tester.pump();
     expect(filtroSeleccionado, equals(FiltroMovimientoCaja.entradas));
+  });
+
+  testWidgets('FiltrosCajaMenor muestra boton unificado de rango de fechas y dispara callback', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    bool rangoTapped = false;
+    bool exportTapped = false;
+    bool limpiarTapped = false;
+
+    await tester.pumpWidget(
+      crearEntornoTest(
+        FiltrosCajaMenor(
+          cajas: const <CajaMenorCatalogo>[],
+          cajaMenorFiltroId: null,
+          onCajaChanged: (_) {},
+          filtroMovimientoCaja: FiltroMovimientoCaja.todos,
+          onFiltroMovimientoCajaChanged: (_) {},
+          fechaCajaDesde: null,
+          fechaCajaHasta: null,
+          onSeleccionarRangoFechas: () => rangoTapped = true,
+          exportando: false,
+          onExportar: () => exportTapped = true,
+          hayFiltrosCaja: true,
+          onLimpiarFiltros: () => limpiarTapped = true,
+        ),
+      ),
+    );
+
+    // Debe mostrar 'Fechas' cuando no hay rango seleccionado
+    expect(find.text('Fechas'), findsOneWidget);
+    await tester.tap(find.text('Fechas'));
+    await tester.pump();
+    expect(rangoTapped, isTrue);
+
+    // Exportar
+    final Finder exportFinder = find.byTooltip('Exportar reporte');
+    expect(exportFinder, findsOneWidget);
+    await tester.tap(exportFinder);
+    await tester.pump();
+    expect(exportTapped, isTrue);
+
+    // Limpiar filtros
+    final Finder limpiarFinder = find.byTooltip('Limpiar filtros');
+    expect(limpiarFinder, findsOneWidget);
+    await tester.tap(limpiarFinder);
+    await tester.pump();
+    expect(limpiarTapped, isTrue);
+  });
+
+  testWidgets('FiltrosCajaMenor formatea correctamente etiqueta con rango activo', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      crearEntornoTest(
+        FiltrosCajaMenor(
+          cajas: const <CajaMenorCatalogo>[],
+          cajaMenorFiltroId: null,
+          onCajaChanged: (_) {},
+          filtroMovimientoCaja: FiltroMovimientoCaja.entradas,
+          onFiltroMovimientoCajaChanged: (_) {},
+          fechaCajaDesde: DateTime(2026, 10, 15),
+          fechaCajaHasta: DateTime(2026, 10, 24),
+          onSeleccionarRangoFechas: () {},
+          exportando: false,
+          onExportar: () {},
+          hayFiltrosCaja: true,
+          onLimpiarFiltros: () {},
+        ),
+      ),
+    );
+
+    expect(find.textContaining('15 oct'), findsOneWidget);
+    expect(find.textContaining('24 oct'), findsOneWidget);
   });
 
   testWidgets('MovimientoCajaItem muestra datos formateados y responde al toque', (

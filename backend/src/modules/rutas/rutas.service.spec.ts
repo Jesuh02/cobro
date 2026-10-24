@@ -119,8 +119,75 @@ describe('RutasService', () => {
     expect(result[0].creditoId).toBe('cre-1');
     expect(result[0].cliente).toBe('Juan Gomez');
     expect(result[0].saldo).toBe(100000);
+    expect(result[0].numeroCuotas).toBe(12);
+    expect(result[0].cuotasRestantes).toBe(10);
     expect(result[0].proximaNumeroCuota).toBe(3);
     expect(result[0].estadoCobro).toBe('PENDIENTE');
+  });
+
+  it('correctly maps cuotas on refinanced credits with active term', async () => {
+    const queryRaw = jest
+      .fn()
+      .mockResolvedValueOnce([
+        {
+          credito_id: 'cre-refinanciado',
+          cliente_id: 'cli-1',
+          cliente: 'Jesus Navarroz',
+          cedula: '1113335556',
+          negocio: null,
+          direccion: 'Calle 1',
+          latitud: null,
+          longitud: null,
+          ruta_id: 'rut-1',
+          ruta: 'Ruta pedro',
+          moneda_codigo: 'COP',
+          valor_principal: '600',
+          valor_total: '720',
+          valor_cuota: '24',
+          total_abonado: '0',
+          saldo: '720',
+          numero_cuotas: 30, // Solo cuotas activas (30), sin contar las 30 anuladas
+          cuotas_restantes: 30,
+          fecha_inicio: new Date('2026-10-23T00:00:00.000Z'),
+          fecha_maxima: new Date('2026-11-27T00:00:00.000Z'),
+          proxima_cuota_id: 'cuo-31',
+          proxima_numero_cuota: 31,
+          proxima_fecha_pago: new Date('2026-10-24T00:00:00.000Z'),
+          proximo_valor_cuota: '24',
+          proximo_saldo_cuota: '24',
+          estado_cobro: 'PENDIENTE',
+        },
+      ]);
+
+    const tenantScope = {
+      obtenerScopeOrganizacionTbl: jest.fn().mockResolvedValue({
+        usuarioId: 'u-1',
+        organizacionId: 'org-1',
+      }),
+      puedeVerDatosOrganizacion: jest.fn().mockReturnValue(true),
+    };
+
+    const service = new RutasService(
+      { $queryRaw: queryRaw } as never,
+      tenantScope as never,
+      {} as never,
+    );
+
+    const result = await service.listarCobrosRuta(
+      { rutaId: 'rut-1' },
+      {
+        usuarioId: 'u-1',
+        usuario: 'carlos',
+        organizacionId: 'org-1',
+        roles: ['ADMINISTRADOR'],
+        permisos: [],
+      },
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0].numeroCuotas).toBe(30);
+    expect(result[0].cuotasRestantes).toBe(30);
+    expect(result[0].valorCuota).toBe(24);
   });
 
   it('exportarCobrosRuta generates excel export from cobros ruta', async () => {

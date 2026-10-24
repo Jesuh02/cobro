@@ -334,12 +334,23 @@ export class RutasService {
         SELECT
           cu.cre_id,
           COALESCE(SUM(ac.abonado), 0) AS total_abonado,
-          COUNT(*)::int AS numero_cuotas,
+          COUNT(*) FILTER (WHERE UPPER(cu.cuo_estado::text) != 'ANULADA')::int AS numero_cuotas,
           COUNT(*) FILTER (
             WHERE UPPER(cu.cuo_estado::text) NOT IN ('PAGADA', 'ANULADA')
               AND (cu.cuo_valor - COALESCE(ac.abonado, 0)) > 0
           )::int AS cuotas_restantes,
-          COALESCE(MAX(cu.cuo_valor), 0) AS valor_cuota
+          COALESCE(
+            (
+              SELECT cu2.cuo_valor
+              FROM public.tbl_cuotas cu2
+              WHERE cu2.cre_id = cu.cre_id
+                AND UPPER(cu2.cuo_estado::text) != 'ANULADA'
+              ORDER BY cu2.cuo_numero DESC
+              LIMIT 1
+            ),
+            MAX(cu.cuo_valor),
+            0
+          ) AS valor_cuota
         FROM public.tbl_cuotas cu
         LEFT JOIN abonos_cuota ac ON ac.id_cuo = cu.id_cuo
         GROUP BY cu.cre_id

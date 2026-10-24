@@ -1307,6 +1307,7 @@ class _HomePageState extends State<HomePage> {
       },
       fechaCreditoDesde: _fechaCreditoDesde,
       fechaCreditoHasta: _fechaCreditoHasta,
+      onSeleccionarRangoFechas: _seleccionarRangoFechasCredito,
       onSeleccionarFechaDesde: () => _seleccionarFechaCredito(esDesde: true),
       onSeleccionarFechaHasta: () => _seleccionarFechaCredito(esDesde: false),
       exportando: _exportando,
@@ -1617,18 +1618,17 @@ class _HomePageState extends State<HomePage> {
     _recargarDatos(creditos: true);
   }
 
-  Future<void> _seleccionarRangoFechasCaja() async {
-    final DateTimeRange? selected = await showDateRangePicker(
+  Future<DateTimeRange?> _abrirSelectorRangoFechas({
+    DateTimeRange? rangoInicial,
+    String helpText = 'Seleccionar rango de fechas',
+  }) {
+    return showDateRangePicker(
       context: context,
-      initialDateRange: (_fechaCajaDesde != null && _fechaCajaHasta != null)
-          ? DateTimeRange(start: _fechaCajaDesde!, end: _fechaCajaHasta!)
-          : (_fechaCajaDesde != null)
-              ? DateTimeRange(start: _fechaCajaDesde!, end: _fechaCajaDesde!)
-              : null,
+      initialDateRange: rangoInicial,
       firstDate: DateTime(2000),
       lastDate: DateTime(2100),
       locale: const Locale('es', 'CO'),
-      helpText: 'Seleccionar rango de fechas',
+      helpText: helpText,
       cancelText: 'Cancelar',
       confirmText: 'Aplicar',
       saveText: 'Aplicar',
@@ -1717,6 +1717,17 @@ class _HomePageState extends State<HomePage> {
         );
       },
     );
+  }
+
+  Future<void> _seleccionarRangoFechasCaja() async {
+    final DateTimeRange? selected = await _abrirSelectorRangoFechas(
+      rangoInicial: (_fechaCajaDesde != null && _fechaCajaHasta != null)
+          ? DateTimeRange(start: _fechaCajaDesde!, end: _fechaCajaHasta!)
+          : (_fechaCajaDesde != null)
+              ? DateTimeRange(start: _fechaCajaDesde!, end: _fechaCajaDesde!)
+              : null,
+      helpText: 'Filtrar movimientos por fecha',
+    );
 
     if (selected == null) {
       return;
@@ -1727,6 +1738,27 @@ class _HomePageState extends State<HomePage> {
       _fechaCajaHasta = selected.end;
     });
     _recargarDatos(movimientosCaja: true);
+  }
+
+  Future<void> _seleccionarRangoFechasCredito() async {
+    final DateTimeRange? selected = await _abrirSelectorRangoFechas(
+      rangoInicial: (_fechaCreditoDesde != null && _fechaCreditoHasta != null)
+          ? DateTimeRange(start: _fechaCreditoDesde!, end: _fechaCreditoHasta!)
+          : (_fechaCreditoDesde != null)
+              ? DateTimeRange(start: _fechaCreditoDesde!, end: _fechaCreditoDesde!)
+              : null,
+      helpText: 'Filtrar créditos por fecha',
+    );
+
+    if (selected == null) {
+      return;
+    }
+
+    setState(() {
+      _fechaCreditoDesde = selected.start;
+      _fechaCreditoHasta = selected.end;
+    });
+    _recargarDatos(creditos: true);
   }
 
   Future<void> _seleccionarFechaCaja({required bool esDesde}) async {

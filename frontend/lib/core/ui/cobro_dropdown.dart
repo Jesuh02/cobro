@@ -41,6 +41,10 @@ class CobroDropdownField<T> extends StatefulWidget {
     this.enabled = true,
     this.menuWidth,
     this.menuMaxHeight = 320,
+    this.contentPadding,
+    this.prefixIconConstraints,
+    this.suffixIconConstraints,
+    this.isDense,
   });
 
   final T? value;
@@ -52,6 +56,10 @@ class CobroDropdownField<T> extends StatefulWidget {
   final bool enabled;
   final double? menuWidth;
   final double menuMaxHeight;
+  final EdgeInsetsGeometry? contentPadding;
+  final BoxConstraints? prefixIconConstraints;
+  final BoxConstraints? suffixIconConstraints;
+  final bool? isDense;
 
   @override
   State<CobroDropdownField<T>> createState() => _CobroDropdownFieldState<T>();
@@ -366,11 +374,23 @@ class _CobroDropdownFieldState<T> extends State<CobroDropdownField<T>> {
               decoration: InputDecoration(
                 labelText: widget.labelText,
                 prefixIcon: widget.prefixIcon,
+                prefixIconConstraints: widget.prefixIconConstraints ??
+                    (widget.labelText == null
+                        ? const BoxConstraints(minWidth: 28, minHeight: 28)
+                        : null),
                 suffixIcon: Icon(
                   abierto
                       ? Icons.keyboard_arrow_up_rounded
                       : Icons.keyboard_arrow_down_rounded,
+                  size: 18,
                 ),
+                suffixIconConstraints: widget.suffixIconConstraints ??
+                    const BoxConstraints(minWidth: 26, minHeight: 26),
+                isDense: widget.isDense ?? (widget.labelText == null),
+                contentPadding: widget.contentPadding ??
+                    (widget.labelText == null
+                        ? const EdgeInsets.symmetric(horizontal: 8, vertical: 8)
+                        : null),
                 enabled: habilitado,
               ),
               child: Row(
@@ -381,31 +401,34 @@ class _CobroDropdownFieldState<T> extends State<CobroDropdownField<T>> {
                   ] else if (seleccionado?.avatarText != null &&
                       seleccionado!.avatarText!.isNotEmpty) ...<Widget>[
                     CircleAvatar(
-                      radius: 11,
+                      radius: widget.labelText == null ? 9 : 11,
                       backgroundColor:
                           Theme.of(context).colorScheme.primaryContainer,
                       foregroundColor:
                           Theme.of(context).colorScheme.onPrimaryContainer,
                       child: Text(
                         seleccionado.avatarText!,
-                        style: const TextStyle(
-                          fontSize: 10,
+                        style: TextStyle(
+                          fontSize: widget.labelText == null ? 9 : 10,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    SizedBox(width: widget.labelText == null ? 5 : 8),
                   ] else if (seleccionado?.icon != null) ...<Widget>[
                     CircleAvatar(
-                      radius: 11,
+                      radius: widget.labelText == null ? 9 : 11,
                       backgroundColor: (seleccionado!.iconColor ??
                               Theme.of(context).colorScheme.primary)
                           .withValues(alpha: 0.12),
                       foregroundColor: seleccionado.iconColor ??
                           Theme.of(context).colorScheme.primary,
-                      child: Icon(seleccionado.icon, size: 13),
+                      child: Icon(
+                        seleccionado.icon,
+                        size: widget.labelText == null ? 11 : 13,
+                      ),
                     ),
-                    const SizedBox(width: 8),
+                    SizedBox(width: widget.labelText == null ? 5 : 8),
                   ],
                   Expanded(
                     child: Text(
@@ -414,7 +437,7 @@ class _CobroDropdownFieldState<T> extends State<CobroDropdownField<T>> {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontWeight: FontWeight.w600,
-                        fontSize: 14,
+                        fontSize: widget.labelText == null ? 12 : 14,
                         color: seleccionado == null
                             ? context.clay.subtleText
                             : null,

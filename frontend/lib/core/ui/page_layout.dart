@@ -17,6 +17,7 @@ class Pagina extends StatelessWidget {
     required this.onRefresh,
     this.error,
     this.acciones = const <Widget>[],
+    this.accionesBuilder,
     this.onNearEnd,
   });
 
@@ -26,6 +27,7 @@ class Pagina extends StatelessWidget {
   final Future<void> Function() onRefresh;
   final String? error;
   final List<Widget> acciones;
+  final Widget Function(BuildContext context, bool compacto)? accionesBuilder;
   final VoidCallback? onNearEnd;
 
   @override
@@ -59,6 +61,7 @@ class Pagina extends StatelessWidget {
                               titulo: titulo,
                               subtitulo: subtitulo,
                               acciones: acciones,
+                              accionesBuilder: accionesBuilder,
                             ),
                             if (error != null) ...<Widget>[
                               const SizedBox(height: 14),
@@ -86,12 +89,14 @@ class Encabezado extends StatelessWidget {
     super.key,
     required this.titulo,
     this.subtitulo,
-    required this.acciones,
+    this.acciones = const <Widget>[],
+    this.accionesBuilder,
   });
 
   final String titulo;
   final String? subtitulo;
   final List<Widget> acciones;
+  final Widget Function(BuildContext context, bool compacto)? accionesBuilder;
 
   @override
   Widget build(BuildContext context) {
@@ -123,26 +128,28 @@ class Encabezado extends StatelessWidget {
       ],
     );
 
-    if (acciones.isEmpty) {
+    if (accionesBuilder == null && acciones.isEmpty) {
       return texto;
     }
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final bool compacto = constraints.maxWidth < 560;
-        final Widget accionesWrap = Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: acciones,
-        );
+        final Widget accionesWidget = accionesBuilder != null
+            ? accionesBuilder!(context, compacto)
+            : Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: acciones,
+              );
 
         if (compacto) {
           return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
               texto,
               const SizedBox(height: 12),
-              accionesWrap,
+              accionesWidget,
             ],
           );
         }
@@ -153,9 +160,10 @@ class Encabezado extends StatelessWidget {
             Expanded(child: texto),
             const SizedBox(width: 12),
             Flexible(
+              flex: 3,
               child: Align(
                 alignment: Alignment.centerRight,
-                child: accionesWrap,
+                child: accionesWidget,
               ),
             ),
           ],

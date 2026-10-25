@@ -81,37 +81,154 @@ class CajaMenorView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bool mostrarCerrar = hayCajaMenor && puedeCrearCajaMenor;
+    final bool mostrarNuevaCaja = hayCajaMenor && puedeCrearCajaMenor;
+    final bool mostrarMovimiento =
+        hayCajaMenor ? puedeRegistrarFlujoCaja : puedeCrearCajaMenor;
+
+    Widget construirBotonCerrar({bool compacto = false}) {
+      return OutlinedButton.icon(
+        onPressed: guardando ? null : onCerrarCajaMenor,
+        icon: const Icon(Icons.lock_clock_rounded),
+        style: compacto
+            ? OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+              )
+            : null,
+        label: const FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text('Cerrar caja', maxLines: 1),
+        ),
+      );
+    }
+
+    Widget construirBotonNuevaCaja({bool compacto = false}) {
+      return OutlinedButton.icon(
+        onPressed: guardando ? null : onCrearCajaMenor,
+        icon: const Icon(Icons.account_balance_wallet_outlined),
+        style: compacto
+            ? OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+              )
+            : null,
+        label: const FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text('Nueva caja menor', maxLines: 1),
+        ),
+      );
+    }
+
+    Widget construirBotonMovimiento({bool compacto = false}) {
+      return FilledButton.icon(
+        onPressed: guardando
+            ? null
+            : hayCajaMenor
+                ? onMovimientoCaja
+                : onCrearCajaMenor,
+        icon: const Icon(Icons.add_rounded),
+        label: Text(
+          hayCajaMenor ? 'Registrar movimiento' : 'Crear caja menor',
+        ),
+      );
+    }
+
     return Pagina(
       titulo: 'Caja menor',
       error: error,
       onRefresh: onRefresh,
       onNearEnd: onNearEnd,
       acciones: <Widget>[
-        if (hayCajaMenor && puedeCrearCajaMenor)
-          OutlinedButton.icon(
-            onPressed: guardando ? null : onCerrarCajaMenor,
-            icon: const Icon(Icons.lock_clock_rounded),
-            label: const Text('Cerrar caja'),
-          ),
-        if (hayCajaMenor && puedeCrearCajaMenor && esAdministrador)
-          OutlinedButton.icon(
-            onPressed: guardando ? null : onCrearCajaMenor,
-            icon: const Icon(Icons.account_balance_wallet_outlined),
-            label: const Text('Nueva caja menor'),
-          ),
-        if (hayCajaMenor ? puedeRegistrarFlujoCaja : puedeCrearCajaMenor)
-          FilledButton.icon(
-            onPressed: guardando
-                ? null
-                : hayCajaMenor
-                    ? onMovimientoCaja
-                    : onCrearCajaMenor,
-            icon: const Icon(Icons.add_rounded),
-            label: Text(
-              hayCajaMenor ? 'Registrar movimiento' : 'Crear caja menor',
-            ),
-          ),
+        if (mostrarCerrar) construirBotonCerrar(),
+        if (mostrarNuevaCaja) construirBotonNuevaCaja(),
+        if (mostrarMovimiento) construirBotonMovimiento(),
       ],
+      accionesBuilder: (BuildContext context, bool compacto) {
+        if (!compacto) {
+          return Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            alignment: WrapAlignment.end,
+            children: <Widget>[
+              if (mostrarCerrar) construirBotonCerrar(),
+              if (mostrarNuevaCaja) construirBotonNuevaCaja(),
+              if (mostrarMovimiento) construirBotonMovimiento(),
+            ],
+          );
+        }
+
+        if (mostrarCerrar && mostrarNuevaCaja && mostrarMovimiento) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  Expanded(child: construirBotonCerrar(compacto: true)),
+                  const SizedBox(width: 8),
+                  Expanded(child: construirBotonNuevaCaja(compacto: true)),
+                ],
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: construirBotonMovimiento(compacto: true),
+              ),
+            ],
+          );
+        }
+
+        if (mostrarCerrar && mostrarNuevaCaja) {
+          return Row(
+            children: <Widget>[
+              Expanded(child: construirBotonCerrar(compacto: true)),
+              const SizedBox(width: 8),
+              Expanded(child: construirBotonNuevaCaja(compacto: true)),
+            ],
+          );
+        }
+
+        if (mostrarCerrar && mostrarMovimiento) {
+          return Row(
+            children: <Widget>[
+              Expanded(child: construirBotonCerrar(compacto: true)),
+              const SizedBox(width: 8),
+              Expanded(child: construirBotonMovimiento(compacto: true)),
+            ],
+          );
+        }
+
+        if (mostrarNuevaCaja && mostrarMovimiento) {
+          return Row(
+            children: <Widget>[
+              Expanded(child: construirBotonNuevaCaja(compacto: true)),
+              const SizedBox(width: 8),
+              Expanded(child: construirBotonMovimiento(compacto: true)),
+            ],
+          );
+        }
+
+        if (mostrarMovimiento) {
+          return SizedBox(
+            width: double.infinity,
+            child: construirBotonMovimiento(compacto: true),
+          );
+        }
+
+        if (mostrarCerrar) {
+          return SizedBox(
+            width: double.infinity,
+            child: construirBotonCerrar(compacto: true),
+          );
+        }
+
+        if (mostrarNuevaCaja) {
+          return SizedBox(
+            width: double.infinity,
+            child: construirBotonNuevaCaja(compacto: true),
+          );
+        }
+
+        return const SizedBox.shrink();
+      },
       children: <Widget>[
         TextField(
           controller: buscarController,

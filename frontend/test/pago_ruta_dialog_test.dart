@@ -89,7 +89,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(mensajeMostrado, 'No tienes una caja menor activa para registrar pagos');
-    expect(find.byType(AlertDialog), findsNothing);
+    expect(find.byType(PagoRutaSheet), findsNothing);
   });
 
   testWidgets('muestra caja activa y asocia cajaMenorId en la solicitud de pago',
@@ -126,7 +126,7 @@ void main() {
     await tester.tap(find.text('Abrir'));
     await tester.pumpAndSettle();
 
-    expect(find.byType(AlertDialog), findsOneWidget);
+    expect(find.byType(PagoRutaSheet), findsOneWidget);
     expect(find.text('Caja Principal'), findsOneWidget);
     expect(find.text('Abierta'), findsOneWidget);
 
@@ -169,7 +169,7 @@ void main() {
     await tester.tap(find.text('Abrir'));
     await tester.pumpAndSettle();
 
-    expect(find.byType(AlertDialog), findsOneWidget);
+    expect(find.byType(PagoRutaSheet), findsOneWidget);
     expect(find.text('Caja menor destino'), findsOneWidget);
     expect(find.text('Caja Principal'), findsOneWidget);
   });

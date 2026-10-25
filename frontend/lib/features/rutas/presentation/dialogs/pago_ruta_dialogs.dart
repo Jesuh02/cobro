@@ -314,7 +314,6 @@ class _PagoRutaSheetState extends State<PagoRutaSheet> {
                 cobros: widget.cobrosDisponibles,
                 cuotasSeleccionadas: cuotasSeleccionadas,
                 enabled: !_guardandoPago,
-                onCerrar: () => setState(() => _mostrarSelectorOtros = false),
                 onSelected: (CobroRuta nuevo) {
                   if (cuotasSeleccionadas.contains(nuevo.proximaCuotaId)) {
                     return;
@@ -324,16 +323,6 @@ class _PagoRutaSheetState extends State<PagoRutaSheet> {
                     _mostrarSelectorOtros = false;
                   });
                 },
-              ),
-              const SizedBox(height: 6),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton.icon(
-                  onPressed: () =>
-                      setState(() => _mostrarSelectorOtros = false),
-                  icon: const Icon(Icons.close_rounded, size: 16),
-                  label: const Text('Cerrar lista'),
-                ),
               ),
             ],
           ],
@@ -651,7 +640,7 @@ class _FichaClienteCobro extends StatelessWidget {
           ),
           const SizedBox(height: 8),
 
-          // Chips de atajo rápido 1-Tap
+          // Chip de atajo rápido 1-Tap
           Wrap(
             spacing: 6,
             runSpacing: 4,
@@ -665,15 +654,6 @@ class _FichaClienteCobro extends StatelessWidget {
                       }
                     : null,
               ),
-              if (saldoTotal > cuotaPactada)
-                _BotonMontoRapido(
-                  etiqueta: 'Liquidar: ${formatMoney(saldoTotal)}',
-                  onTap: habilitado
-                      ? () {
-                          item.montoController.text = formatNumber(saldoTotal);
-                        }
-                      : null,
-                ),
             ],
           ),
         ],

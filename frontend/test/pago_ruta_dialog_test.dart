@@ -229,21 +229,24 @@ void main() {
     expect(find.text('CC 1234567890'), findsOneWidget);
     expect(find.text('Ruta Principal'), findsOneWidget);
 
+    // Botón rápido de Cuota sí existe, pero Liquidar fue eliminado
+    expect(find.textContaining('Cuota:'), findsWidgets);
+    expect(find.textContaining('Liquidar'), findsNothing);
+
     // 3. Título de sección "Medio de pagos y detalles" sin etiqueta duplicada "Medio de pago"
     expect(find.text('Medio de pagos y detalles'), findsOneWidget);
     expect(find.text('Medio de pago'), findsNothing);
 
-    // 2. Abrir selector de clientes y cerrarlo sin añadir
+    // 2. Abrir selector de clientes y cerrarlo sin añadir usando únicamente el botón de la esquina
     expect(find.text('Agregar otro cobro a este recibo'), findsOneWidget);
     await tester.tap(find.text('Agregar otro cobro a este recibo'));
     await tester.pumpAndSettle();
 
-    // El buscador ahora es visible
+    // El buscador ahora es visible con su botón Cerrar en la esquina superior
     expect(find.text('Maria Gomez'), findsOneWidget);
     expect(find.text('Cerrar'), findsOneWidget);
-    expect(find.text('Cerrar lista'), findsOneWidget);
 
-    // Cerrar el selector con el botón Cerrar del encabezado
+    // Cerrar el selector con el botón Cerrar de la esquina
     await tester.tap(find.text('Cerrar'));
     await tester.pumpAndSettle();
 

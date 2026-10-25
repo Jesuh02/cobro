@@ -6,7 +6,7 @@ class AppConfig {
   factory AppConfig.fromEnvironment() {
     const String configured = String.fromEnvironment(
       'API_BASE_URL',
-      defaultValue: 'http://localhost:3000/api/v1',
+      defaultValue: 'https://cobro-production.up.railway.app/api/v1',
     );
     final String normalized =
         configured.trim().replaceFirst(RegExp(r'/+$'), '');

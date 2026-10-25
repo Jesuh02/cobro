@@ -11,11 +11,13 @@ class MarcaAplicacion extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final TextStyle? baseStyle = Theme.of(context).textTheme.titleMedium;
-    const Widget logo = ClayIcon(
-      icon: Icons.monetization_on_rounded,
-      size: 42,
-      iconSize: 24,
-      radius: 13,
+    const Widget logo = SizedBox(
+      width: 42,
+      height: 42,
+      child: Image(
+        image: AssetImage('assets/logo.png'),
+        fit: BoxFit.contain,
+      ),
     );
 
     return LayoutBuilder(

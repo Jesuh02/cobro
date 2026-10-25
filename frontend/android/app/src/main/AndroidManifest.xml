@@ -4,7 +4,7 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
 
     <application
-        android:label="cobro_app"
+        android:label="Daily Cobros"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

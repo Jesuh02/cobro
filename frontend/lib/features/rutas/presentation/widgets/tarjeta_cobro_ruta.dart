@@ -161,58 +161,44 @@ class TarjetaCobroRuta extends StatelessWidget {
           ),
           const SizedBox(height: 10),
 
-          // Fila 4: Pie con progreso textual y botón principal 'Registrar pago'
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: Text(
-                  '${formatMoney(cobro.totalAbonado)} abonado de ${formatMoney(cobro.valorTotal)}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: clay.subtleText,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
+          // Fila 4: Pie con botón principal 'Registrar pago'
+          Align(
+            alignment: Alignment.centerRight,
+            child: FilledButton.icon(
+              onPressed: deshabilitado ? null : onRegistrarPago,
+              icon: pagoEnProceso
+                  ? const SizedBox.square(
+                      dimension: 14,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
                       ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              FilledButton.icon(
-                onPressed: deshabilitado ? null : onRegistrarPago,
-                icon: pagoEnProceso
-                    ? const SizedBox.square(
-                        dimension: 14,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
+                    )
+                  : pagoAplicadoInstantaneo
+                      ? const Icon(Icons.check_circle_rounded, size: 16)
+                      : const Icon(Icons.payments_rounded, size: 16),
+              label: Text(
+                pagoEnProceso
+                    ? 'Aplicando'
                     : pagoAplicadoInstantaneo
-                        ? const Icon(Icons.check_circle_rounded, size: 16)
-                        : const Icon(Icons.payments_rounded, size: 16),
-                label: Text(
-                  pagoEnProceso
-                      ? 'Aplicando'
-                      : pagoAplicadoInstantaneo
-                          ? 'Aplicado'
-                          : cobroCompletado
-                              ? 'Pagado'
-                              : 'Registrar pago',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
-                  ),
-                ),
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size(0, 36),
-                  visualDensity: VisualDensity.compact,
-                  padding: const EdgeInsets.symmetric(horizontal: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(ClayRadius.control),
-                  ),
+                        ? 'Aplicado'
+                        : cobroCompletado
+                            ? 'Pagado'
+                            : 'Registrar pago',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
                 ),
               ),
-            ],
+              style: FilledButton.styleFrom(
+                minimumSize: const Size(0, 36),
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(ClayRadius.control),
+                ),
+              ),
+            ),
           ),
         ],
       ),

@@ -64,9 +64,10 @@ void main() {
     expect(find.text('34 / 35'), findsOneWidget);
     expect(find.text('Próxima'), findsOneWidget);
 
-    // NO debe existir botón "Guardar casa"
+    // NO debe existir botón "Guardar casa" ni texto repetido de abonado
     expect(find.text('Guardar casa'), findsNothing);
     expect(find.text('Actualizar casa'), findsNothing);
+    expect(find.textContaining('abonado de'), findsNothing);
 
     // Botón de pago
     final Finder botonPago = find.text('Registrar pago');

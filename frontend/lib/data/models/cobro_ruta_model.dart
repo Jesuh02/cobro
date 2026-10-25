@@ -157,6 +157,9 @@ class CobroRuta {
   final double proximoSaldoCuota;
   final EstadoCobro estadoCobro;
 
+  int get cuotasPagadas =>
+      (numeroCuotas - cuotasRestantes).clamp(0, numeroCuotas);
+
   bool get tieneUbicacion {
     final double? latitud = latitude;
     final double? longitud = longitude;

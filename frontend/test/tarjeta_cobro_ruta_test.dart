@@ -60,8 +60,8 @@ void main() {
     // 4 Métricas clave
     expect(find.text('Cuota'), findsOneWidget);
     expect(find.text('Saldo'), findsOneWidget);
-    expect(find.text('Restantes'), findsOneWidget);
-    expect(find.text('34 / 35'), findsOneWidget);
+    expect(find.text('Pagadas'), findsOneWidget);
+    expect(find.text('1 / 35'), findsOneWidget);
     expect(find.text('Próxima'), findsOneWidget);
 
     // NO debe existir botón "Guardar casa" ni texto repetido de abonado

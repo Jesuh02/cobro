@@ -302,8 +302,9 @@ class _SeccionCondiciones extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         FilaDatoSheet(
-          etiqueta: 'Cuotas pendientes / pactadas',
-          valor: '${credito.cuotasRestantes} restantes de ${credito.numeroCuotas}',
+          etiqueta: 'Cuotas pagadas',
+          valor:
+              '${credito.cuotasPagadas} de ${credito.numeroCuotas} (${credito.cuotasRestantes} pendientes)',
           icono: Icons.pie_chart_outline_rounded,
           onCopiar: onCopiar,
         ),

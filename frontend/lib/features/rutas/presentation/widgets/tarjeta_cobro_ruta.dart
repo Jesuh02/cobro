@@ -136,8 +136,8 @@ class TarjetaCobroRuta extends StatelessWidget {
                 valor: formatMoney(cobro.saldo),
               ),
               _MetricaRuta(
-                etiqueta: 'Restantes',
-                valor: '${cobro.cuotasRestantes} / ${cobro.numeroCuotas}',
+                etiqueta: 'Pagadas',
+                valor: '${cobro.cuotasPagadas} / ${cobro.numeroCuotas}',
               ),
               _MetricaRuta(
                 etiqueta: 'Próxima',

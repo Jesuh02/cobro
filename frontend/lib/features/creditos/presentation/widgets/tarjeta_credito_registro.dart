@@ -122,8 +122,8 @@ class TarjetaCreditoRegistro extends StatelessWidget {
                 valor: formatMoney(credito.valorCuota),
               ),
               _MetricaCard(
-                etiqueta: 'Cuotas',
-                valor: '${credito.cuotasRestantes} / ${credito.numeroCuotas}',
+                etiqueta: 'Pagadas',
+                valor: '${credito.cuotasPagadas} / ${credito.numeroCuotas}',
               ),
             ],
           ),

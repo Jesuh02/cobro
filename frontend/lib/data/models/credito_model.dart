@@ -105,6 +105,9 @@ class CreditoRegistro {
   final DateTime? creadoEn;
   final DateTime? actualizadoEn;
 
+  int get cuotasPagadas =>
+      (numeroCuotas - cuotasRestantes).clamp(0, numeroCuotas);
+
   bool get pagado =>
       estado.codigo == 'PAGADO' || saldo <= 0.009 || cuotasRestantes <= 0;
 

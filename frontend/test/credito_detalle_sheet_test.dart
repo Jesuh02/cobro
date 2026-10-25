@@ -80,8 +80,8 @@ void main() {
       // Verificación de 3 métricas clave
       expect(find.text('Saldo'), findsOneWidget);
       expect(find.text('Cuota'), findsOneWidget);
-      expect(find.text('Cuotas'), findsOneWidget);
-      expect(find.text('12 / 30'), findsOneWidget);
+      expect(find.text('Pagadas'), findsOneWidget);
+      expect(find.text('18 / 30'), findsOneWidget);
 
       // Simular tap para abrir detalle
       await tester.tap(find.byType(TarjetaCreditoRegistro));

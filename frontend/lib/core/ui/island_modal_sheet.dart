@@ -133,12 +133,14 @@ class TarjetaSeccionSheet extends StatelessWidget {
     required this.icono,
     required this.children,
     this.colorIcono,
+    this.trailing,
   });
 
   final String titulo;
   final IconData icono;
   final List<Widget> children;
   final Color? colorIcono;
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -162,13 +164,16 @@ class TarjetaSeccionSheet extends StatelessWidget {
                 color: colorIcono ?? CobroAppTheme.primary,
               ),
               const SizedBox(width: 6),
-              Text(
-                titulo,
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                      color: clay.text,
-                    ),
+              Expanded(
+                child: Text(
+                  titulo,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: clay.text,
+                      ),
+                ),
               ),
+              if (trailing != null) trailing!,
             ],
           ),
           const SizedBox(height: 8),

@@ -38,10 +38,13 @@ class TarjetaCobroRuta extends StatelessWidget {
         ? 0.0
         : (cobro.totalAbonado / cobro.valorTotal).clamp(0.0, 1.0);
 
-    final String subtitulo = <String>[
-      if ((cobro.cedula ?? '').isNotEmpty) 'CC ${cobro.cedula!}',
-      if ((cobro.negocio ?? '').isNotEmpty) cobro.negocio!,
-      cobro.ruta,
+    final String cedula = (cobro.cedula ?? '').trim();
+    final String negocio = (cobro.negocio ?? '').trim();
+    final String ruta = cobro.ruta.trim();
+
+    final String infoCliente = <String>[
+      if (cedula.isNotEmpty) 'CC $cedula',
+      if (negocio.isNotEmpty) negocio,
     ].join(' · ');
 
     final bool cobroCompletado = cobro.saldo <= 0.009;
@@ -73,15 +76,42 @@ class TarjetaCobroRuta extends StatelessWidget {
                           ),
                     ),
                     const SizedBox(height: 2),
-                    Text(
-                      subtitulo,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: clay.subtleText,
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w500,
+                    if (infoCliente.isNotEmpty) ...<Widget>[
+                      Text(
+                        infoCliente,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: clay.subtleText,
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w500,
+                            ),
+                      ),
+                      const SizedBox(height: 1),
+                    ],
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Icon(
+                          Icons.alt_route_rounded,
+                          size: 13,
+                          color: clay.subtleText.withValues(alpha: 0.8),
+                        ),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            ruta.isEmpty ? 'Sin ruta' : ruta,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style:
+                                Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: clay.subtleText,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w500,
+                                    ),
                           ),
+                        ),
+                      ],
                     ),
                   ],
                 ),

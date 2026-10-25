@@ -246,6 +246,35 @@ class _PagoRutaSheetState extends State<PagoRutaSheet> {
         TarjetaSeccionSheet(
           titulo: 'Buscar y agregar cliente',
           icono: Icons.person_add_alt_1_rounded,
+          trailing: _mostrarSelectorOtros
+              ? InkWell(
+                  onTap: () => setState(() => _mostrarSelectorOtros = false),
+                  borderRadius: BorderRadius.circular(ClayRadius.control),
+                  child: Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Icon(
+                          Icons.close_rounded,
+                          size: 14,
+                          color: clay.subtleText,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Cerrar',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: clay.subtleText,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : null,
           children: <Widget>[
             if (!_mostrarSelectorOtros)
               InkWell(
@@ -285,6 +314,7 @@ class _PagoRutaSheetState extends State<PagoRutaSheet> {
                 cobros: widget.cobrosDisponibles,
                 cuotasSeleccionadas: cuotasSeleccionadas,
                 enabled: !_guardandoPago,
+                onCerrar: () => setState(() => _mostrarSelectorOtros = false),
                 onSelected: (CobroRuta nuevo) {
                   if (cuotasSeleccionadas.contains(nuevo.proximaCuotaId)) {
                     return;
@@ -298,10 +328,11 @@ class _PagoRutaSheetState extends State<PagoRutaSheet> {
               const SizedBox(height: 6),
               Align(
                 alignment: Alignment.centerRight,
-                child: TextButton(
+                child: TextButton.icon(
                   onPressed: () =>
                       setState(() => _mostrarSelectorOtros = false),
-                  child: const Text('Ocultar buscador'),
+                  icon: const Icon(Icons.close_rounded, size: 16),
+                  label: const Text('Cerrar lista'),
                 ),
               ),
             ],
@@ -311,13 +342,14 @@ class _PagoRutaSheetState extends State<PagoRutaSheet> {
 
         // Medio de pago y Observación
         TarjetaSeccionSheet(
-          titulo: 'Medio de pago y detalles',
+          titulo: 'Medio de pagos y detalles',
           icono: Icons.payment_rounded,
           children: <Widget>[
             SelectorMedioPagoBuscable(
               mediosPago: widget.mediosPago,
               medioPagoCodigo: _medioPagoCodigo,
               enabled: !_guardandoPago,
+              labelText: null,
               onChanged: (String value) {
                 setState(() => _medioPagoCodigo = value);
               },
@@ -398,18 +430,41 @@ class _HeaderPagoRuta extends StatelessWidget {
                     ),
               ),
               const SizedBox(height: 2),
-              Text(
-                <String>[
-                  if (cedula.isNotEmpty) 'CC $cedula',
-                  cobro.ruta,
-                ].join(' · '),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: clay.subtleText,
-                      fontWeight: FontWeight.w500,
-                      fontSize: 11.5,
+              if (cedula.isNotEmpty) ...<Widget>[
+                Text(
+                  'CC $cedula',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: clay.subtleText,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                      ),
+                ),
+                const SizedBox(height: 1),
+              ],
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Icon(
+                    Icons.alt_route_rounded,
+                    size: 13,
+                    color: clay.subtleText.withValues(alpha: 0.8),
+                  ),
+                  const SizedBox(width: 4),
+                  Flexible(
+                    child: Text(
+                      cobro.ruta.isEmpty ? 'Sin ruta' : cobro.ruta,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: clay.subtleText,
+                            fontWeight: FontWeight.w500,
+                            fontSize: 11.5,
+                          ),
                     ),
+                  ),
+                ],
               ),
             ],
           ),

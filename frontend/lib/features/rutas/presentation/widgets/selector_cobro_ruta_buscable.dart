@@ -13,12 +13,14 @@ class SelectorCobroRutaBuscable extends StatefulWidget {
     required this.cuotasSeleccionadas,
     required this.enabled,
     required this.onSelected,
+    this.onCerrar,
   });
 
   final List<CobroRuta> cobros;
   final Set<String> cuotasSeleccionadas;
   final bool enabled;
   final ValueChanged<CobroRuta> onSelected;
+  final VoidCallback? onCerrar;
 
   @override
   State<SelectorCobroRutaBuscable> createState() =>
@@ -83,7 +85,13 @@ class _SelectorCobroRutaBuscableState extends State<SelectorCobroRutaBuscable> {
             labelText: 'Buscar y agregar cliente',
             prefixIcon: const Icon(Icons.person_search_rounded),
             suffixIcon: _controller.text.isEmpty
-                ? const Icon(Icons.list_alt_rounded)
+                ? (widget.onCerrar != null
+                    ? IconButton(
+                        tooltip: 'Cerrar lista',
+                        onPressed: widget.enabled ? widget.onCerrar : null,
+                        icon: const Icon(Icons.close_rounded),
+                      )
+                    : const Icon(Icons.list_alt_rounded))
                 : IconButton(
                     tooltip: 'Limpiar busqueda',
                     onPressed: widget.enabled ? _controller.clear : null,

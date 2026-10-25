@@ -38,12 +38,14 @@ class SelectorMedioPagoBuscable extends StatelessWidget {
     required this.medioPagoCodigo,
     required this.enabled,
     required this.onChanged,
+    this.labelText,
   });
 
   final List<MedioPago> mediosPago;
   final String medioPagoCodigo;
   final bool enabled;
   final ValueChanged<String> onChanged;
+  final String? labelText;
 
   static IconData iconoMedioPago(String codigo) {
     switch (codigo.toUpperCase()) {
@@ -100,7 +102,7 @@ class SelectorMedioPagoBuscable extends StatelessWidget {
 
     return CobroDropdownField<String>(
       key: ValueKey<String?>('medio-pago-$valorActual'),
-      labelText: 'Medio de pago',
+      labelText: labelText,
       hintText: 'Selecciona medio de pago',
       prefixIcon: const Icon(Icons.payment_rounded),
       value: valorActual,

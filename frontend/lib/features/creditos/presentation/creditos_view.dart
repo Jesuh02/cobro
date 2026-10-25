@@ -1,4 +1,5 @@
 export 'widgets/calculo_credito.dart';
+export 'widgets/credito_detalle_sheet.dart';
 export 'widgets/filtros_credito.dart';
 export 'widgets/formulario_credito.dart';
 export 'widgets/resumen_credito_animado.dart';
@@ -11,8 +12,10 @@ import '../../../../core/ui/skeletons.dart';
 import '../../../../data/models/models.dart';
 import 'widgets/tarjeta_credito_registro.dart';
 
-String mensajeDatosBaseCredito(Catalogos? catalogos,
-    {required bool sinClientes}) {
+String mensajeDatosBaseCredito(
+  Catalogos? catalogos, {
+  required bool sinClientes,
+}) {
   if (catalogos == null) {
     return 'No se pudieron cargar los catalogos.';
   }
@@ -56,6 +59,7 @@ class CreditosView extends StatelessWidget {
     required this.onModificarCredito,
     required this.onEliminarCredito,
     required this.onRefinanciarCredito,
+    this.onVerDetalleCredito,
     required this.buscarController,
     required this.filtros,
   });
@@ -82,6 +86,7 @@ class CreditosView extends StatelessWidget {
   final ValueChanged<CreditoRegistro> onModificarCredito;
   final ValueChanged<CreditoRegistro> onEliminarCredito;
   final ValueChanged<CreditoRegistro> onRefinanciarCredito;
+  final ValueChanged<CreditoRegistro>? onVerDetalleCredito;
   final TextEditingController buscarController;
   final Widget filtros;
 
@@ -159,6 +164,9 @@ class CreditosView extends StatelessWidget {
                     credito.activo && !guardando && puedeRefinanciarCreditos
                         ? () => onRefinanciarCredito(credito)
                         : null,
+                onTap: onVerDetalleCredito != null
+                    ? () => onVerDetalleCredito!(credito)
+                    : null,
               ),
             ),
           ),

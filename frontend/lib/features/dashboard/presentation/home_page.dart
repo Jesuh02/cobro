@@ -1289,6 +1289,7 @@ class _HomePageState extends State<HomePage> {
       onModificarCredito: _abrirModificarCredito,
       onEliminarCredito: _confirmarEliminarCredito,
       onRefinanciarCredito: _abrirRefinanciarCredito,
+      onVerDetalleCredito: _abrirDetalleCredito,
       buscarController: _buscarCreditoController,
       filtros: _construirFiltrosCredito(context),
     );
@@ -3137,6 +3138,23 @@ class _HomePageState extends State<HomePage> {
         movimientosCaja: movimientosCaja,
         presupuesto: presupuesto,
       ),
+    );
+  }
+
+  void _abrirDetalleCredito(CreditoRegistro credito) {
+    mostrarCreditoDetalleSheet(
+      context: context,
+      credito: credito,
+      puedeModificar: _puedeModificarCreditos,
+      puedeEliminar: _puedeEliminarCreditos,
+      puedeRefinanciar:
+          _puedeRefinanciarCreditos && credito.activo && !_guardando,
+      onModificar: () => _abrirModificarCredito(credito),
+      onEliminar: () => _confirmarEliminarCredito(credito),
+      onRefinanciar: credito.activo && !_guardando && _puedeRefinanciarCreditos
+          ? () => _abrirRefinanciarCredito(credito)
+          : null,
+      mostrarMensaje: _mostrarMensaje,
     );
   }
 

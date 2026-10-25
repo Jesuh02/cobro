@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
+import '../../../../app/app_theme.dart';
 import '../../../../core/formatters/app_formatters.dart';
 import '../../../../core/ui/chips_indicadores.dart';
 import '../../../../core/ui/clay.dart';
@@ -12,6 +14,11 @@ enum AccionCredito {
   eliminar,
 }
 
+/// Tarjeta limpia y compacta para listas de créditos.
+///
+/// Muestra métricas clave en una sola fila (Saldo, Cuota, Progreso) y
+/// barra de abono delgada. Al tocar la tarjeta despliega la ficha modal
+/// de detalle completa con las acciones pertinentes.
 class TarjetaCreditoRegistro extends StatelessWidget {
   const TarjetaCreditoRegistro({
     super.key,
@@ -21,6 +28,7 @@ class TarjetaCreditoRegistro extends StatelessWidget {
     required this.onModificar,
     required this.onEliminar,
     required this.onRefinanciar,
+    this.onTap,
   });
 
   final CreditoRegistro credito;
@@ -29,19 +37,37 @@ class TarjetaCreditoRegistro extends StatelessWidget {
   final VoidCallback onModificar;
   final VoidCallback onEliminar;
   final VoidCallback? onRefinanciar;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    final CreditoRefinanciacion? refinanciacion = credito.refinanciacion;
-    final DateTime? fechaModificacion = credito.fechaModificacionVisible;
+    final ClayTokens clay = context.clay;
+    final double progreso = credito.valorTotal <= 0
+        ? 0
+        : (credito.totalAbonado / credito.valorTotal).clamp(0.0, 1.0).toDouble();
+
+    final String subtitulo = <String>[
+      if ((credito.cedula ?? '').isNotEmpty) 'CC ${credito.cedula!}',
+      if ((credito.negocio ?? '').isNotEmpty) credito.negocio!,
+      credito.ruta,
+    ].join(' · ');
+
     return ClaySurface(
       radius: 14,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      onTap: onTap != null
+          ? () {
+              HapticFeedback.lightImpact();
+              onTap!();
+            }
+          : null,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: <Widget>[
+          // Fila 1: Cliente, Subtítulo (CC · Ruta), Estado y Chevron
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: <Widget>[
               Expanded(
                 child: Column(
@@ -51,140 +77,119 @@ class TarjetaCreditoRegistro extends StatelessWidget {
                       credito.cliente,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
                             fontWeight: FontWeight.w900,
+                            fontSize: 15,
                           ),
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      <String>[
-                        if ((credito.cedula ?? '').isNotEmpty)
-                          'CC ${credito.cedula!}',
-                        if ((credito.negocio ?? '').isNotEmpty)
-                          credito.negocio!,
-                        credito.ruta,
-                      ].join(' - '),
+                      subtitulo,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: context.clay.subtleText,
+                            color: clay.subtleText,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w500,
                           ),
                     ),
                   ],
                 ),
               ),
+              const SizedBox(width: 8),
               EstadoCreditoChip(credito: credito),
-              if (puedeModificar || puedeEliminar) ...<Widget>[
-                const SizedBox(width: 4),
-                PopupMenuButton<AccionCredito>(
-                  tooltip: 'Acciones',
-                  icon: const Icon(Icons.more_horiz_rounded),
-                  onSelected: (AccionCredito accion) {
-                    switch (accion) {
-                      case AccionCredito.modificar:
-                        onModificar();
-                      case AccionCredito.eliminar:
-                        onEliminar();
-                      case AccionCredito.refinanciar:
-                        onRefinanciar?.call();
-                      case AccionCredito.cuota:
-                        break;
-                    }
-                  },
-                  itemBuilder: (BuildContext context) {
-                    return <PopupMenuEntry<AccionCredito>>[
-                      if (puedeModificar)
-                        const PopupMenuItem<AccionCredito>(
-                          value: AccionCredito.modificar,
-                          child: Row(
-                            children: <Widget>[
-                              Icon(Icons.edit_outlined),
-                              SizedBox(width: 12),
-                              Text('Modificar'),
-                            ],
-                          ),
-                        ),
-                      if (puedeEliminar)
-                        const PopupMenuItem<AccionCredito>(
-                          value: AccionCredito.eliminar,
-                          child: Row(
-                            children: <Widget>[
-                              Icon(Icons.delete_outline_rounded),
-                              SizedBox(width: 12),
-                              Text('Eliminar'),
-                            ],
-                          ),
-                        ),
-                    ];
-                  },
-                ),
-              ],
+              const SizedBox(width: 4),
+              Icon(
+                Icons.chevron_right_rounded,
+                size: 20,
+                color: clay.subtleText.withValues(alpha: 0.6),
+              ),
             ],
           ),
-          if (refinanciacion != null) ...<Widget>[
-            const SizedBox(height: 10),
-            EtiquetaRefinanciacion(refinanciacion: refinanciacion),
-          ],
-          if (fechaModificacion != null) ...<Widget>[
-            const SizedBox(height: 10),
-            EtiquetaCreditoModificado(fecha: fechaModificacion),
-          ],
-          const SizedBox(height: 14),
-          BarraSaldo(
-            abonado: credito.totalAbonado,
-            total: credito.valorTotal,
-          ),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 16,
-            runSpacing: 8,
+          const SizedBox(height: 10),
+
+          // Fila 2: 3 Métricas Financieras Principales
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: <Widget>[
-              DatoResumen(
-                label: 'Principal',
-                value: formatMoney(credito.valorPrincipal),
+              _MetricaCard(
+                etiqueta: 'Saldo',
+                valor: formatMoney(credito.saldo),
+                destacado: true,
               ),
-              DatoResumen(label: 'Saldo', value: formatMoney(credito.saldo)),
-              DatoResumen(
-                  label: 'Cuota', value: formatMoney(credito.valorCuota)),
-              DatoResumen(
-                label: 'Cuotas',
-                value: '${credito.cuotasRestantes} / ${credito.numeroCuotas}',
+              _MetricaCard(
+                etiqueta: 'Cuota',
+                valor: formatMoney(credito.valorCuota),
               ),
-              DatoResumen(
-                label: 'Inicio',
-                value: formatDateLabel(credito.fechaInicio),
-              ),
-              DatoResumen(
-                label: 'Maxima',
-                value: formatDateLabel(credito.fechaMaxima),
+              _MetricaCard(
+                etiqueta: 'Cuotas',
+                valor: '${credito.cuotasRestantes} / ${credito.numeroCuotas}',
               ),
             ],
           ),
-          if ((credito.cajaMenor ?? '').isNotEmpty) ...<Widget>[
-            const SizedBox(height: 10),
-            Text(
-              'Caja menor: ${credito.cajaMenor}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: context.clay.subtleText,
-                    fontWeight: FontWeight.w700,
-                  ),
-            ),
-          ],
-          if (onRefinanciar != null) ...<Widget>[
-            const SizedBox(height: 14),
-            Align(
-              alignment: Alignment.centerRight,
-              child: OutlinedButton.icon(
-                onPressed: onRefinanciar,
-                icon: const Icon(Icons.currency_exchange_rounded),
-                label: const Text('Refinanciar'),
+          const SizedBox(height: 8),
+
+          // Fila 3: Barra de progreso sutil y delgada (3.5px)
+          ClipRRect(
+            borderRadius: BorderRadius.circular(99),
+            child: LinearProgressIndicator(
+              minHeight: 3.5,
+              value: progreso,
+              backgroundColor: clay.progressBackground,
+              valueColor: AlwaysStoppedAnimation<Color>(
+                progreso >= 1.0 ? CobroAppTheme.success : CobroAppTheme.primary,
               ),
             ),
-          ],
+          ),
         ],
       ),
     );
+  }
+}
+
+class _MetricaCard extends StatelessWidget {
+  const _MetricaCard({
+    required this.etiqueta,
+    required this.valor,
+    this.destacado = false,
+  });
+
+  final String etiqueta;
+  final String valor;
+  final bool destacado;
+
+  @override
+  Widget build(BuildContext context) {
+    final ClayTokens clay = context.clay;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Text(
+          etiqueta,
+          style: TextStyle(
+            fontSize: 10.5,
+            fontWeight: FontWeight.w600,
+            color: clay.subtleText,
+          ),
+        ),
+        const SizedBox(height: 1),
+        Text(
+          valor,
+          style: TextStyle(
+            fontSize: destacado ? 14 : 12.5,
+            fontWeight: destacado ? FontWeight.w900 : FontWeight.w700,
+            color: destacado
+                ? (creditoColor(clay))
+                : (clay.text.withValues(alpha: 0.9)),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Color creditoColor(ClayTokens clay) {
+    return clay.text;
   }
 }

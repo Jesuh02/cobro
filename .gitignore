@@ -41,11 +41,16 @@ Landing_cobro/**/out/
 
 # Cloudflare Security Audit Skill and generated artifacts
 .agents/
+docs/codex-skills/security-audit/
 architecture.md
 coverage-ledger.json
 findings.json
 REPORT.md
 FINDINGS-DETAIL.md
+NEEDS-VALIDATION.md
+run-metadata.json
+security-audit-runs/
+agents/
 
 
 # Draw.io diagrams

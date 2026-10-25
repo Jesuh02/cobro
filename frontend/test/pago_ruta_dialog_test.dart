@@ -89,7 +89,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(mensajeMostrado, 'No tienes una caja menor activa para registrar pagos');
-    expect(find.byType(AlertDialog), findsNothing);
+    expect(find.byType(PagoRutaSheet), findsNothing);
   });
 
   testWidgets('muestra caja activa y asocia cajaMenorId en la solicitud de pago',
@@ -126,7 +126,7 @@ void main() {
     await tester.tap(find.text('Abrir'));
     await tester.pumpAndSettle();
 
-    expect(find.byType(AlertDialog), findsOneWidget);
+    expect(find.byType(PagoRutaSheet), findsOneWidget);
     expect(find.text('Caja Principal'), findsOneWidget);
     expect(find.text('Abierta'), findsOneWidget);
 
@@ -169,8 +169,89 @@ void main() {
     await tester.tap(find.text('Abrir'));
     await tester.pumpAndSettle();
 
-    expect(find.byType(AlertDialog), findsOneWidget);
+    expect(find.byType(PagoRutaSheet), findsOneWidget);
     expect(find.text('Caja menor destino'), findsOneWidget);
     expect(find.text('Caja Principal'), findsOneWidget);
+  });
+
+  testWidgets(
+      'muestra ruta debajo de la cedula, permite cerrar el buscador de clientes y muestra Medio de pagos y detalles',
+      (WidgetTester tester) async {
+    final CobroRuta otroCobro = CobroRuta(
+      id: 'cobro-2',
+      clienteId: 'cli-2',
+      cliente: 'Maria Gomez',
+      cedula: '987654321',
+      rutaId: 'ruta-1',
+      ruta: 'Ruta Principal',
+      valorTotal: 50000,
+      valorCuota: 10000,
+      totalAbonado: 0,
+      saldo: 50000,
+      numeroCuotas: 5,
+      cuotasRestantes: 5,
+      estadoCobro: EstadoCobro.alDia,
+      proximoSaldoCuota: 10000,
+      proximaCuotaId: 'cuota-2',
+      proximaNumeroCuota: 1,
+      proximaFechaPago: DateTime(2026, 10, 21),
+    );
+
+    await tester.pumpWidget(
+      testApp(
+        child: Builder(
+          builder: (BuildContext context) => ElevatedButton(
+            onPressed: () {
+              mostrarDialogoRegistrarPago(
+                context: context,
+                cobro: cobroEjemplo,
+                puedeAgregarCuota: true,
+                mediosPago: mediosPago,
+                cajasMenores: <CajaMenorCatalogo>[cajaPrincipal],
+                cobrosRuta: <CobroRuta>[cobroEjemplo, otroCobro],
+                cuotasEnPago: const <String>{},
+                rutaFiltroId: null,
+                mostrarMensaje: (_) {},
+                mensajeError: (Object e) => e.toString(),
+                onRegistrarPagos: (_) async {},
+              );
+            },
+            child: const Text('Abrir'),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Abrir'));
+    await tester.pumpAndSettle();
+
+    // 1. Cédula y ruta visualizadas
+    expect(find.text('CC 1234567890'), findsOneWidget);
+    expect(find.text('Ruta Principal'), findsOneWidget);
+
+    // Botón rápido de Cuota sí existe, pero Liquidar fue eliminado
+    expect(find.textContaining('Cuota:'), findsWidgets);
+    expect(find.textContaining('Liquidar'), findsNothing);
+
+    // 3. Título de sección "Medio de pagos y detalles" sin etiqueta duplicada "Medio de pago"
+    expect(find.text('Medio de pagos y detalles'), findsOneWidget);
+    expect(find.text('Medio de pago'), findsNothing);
+
+    // 2. Abrir selector de clientes y cerrarlo sin añadir usando únicamente el botón de la esquina
+    expect(find.text('Agregar otro cobro a este recibo'), findsOneWidget);
+    await tester.tap(find.text('Agregar otro cobro a este recibo'));
+    await tester.pumpAndSettle();
+
+    // El buscador ahora es visible con su botón Cerrar en la esquina superior
+    expect(find.text('Maria Gomez'), findsOneWidget);
+    expect(find.text('Cerrar'), findsOneWidget);
+
+    // Cerrar el selector con el botón Cerrar de la esquina
+    await tester.tap(find.text('Cerrar'));
+    await tester.pumpAndSettle();
+
+    // Se cerró la lista y vuelve a mostrar el botón para agregar
+    expect(find.text('Agregar otro cobro a este recibo'), findsOneWidget);
+    expect(find.text('Maria Gomez'), findsNothing);
   });
 }

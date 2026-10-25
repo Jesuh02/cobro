@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 import '../features/dashboard/presentation/home_page.dart';
 import 'app_config.dart';
@@ -38,6 +39,16 @@ class _CobroAppState extends State<CobroApp> {
       theme: CobroAppTheme.light(),
       darkTheme: CobroAppTheme.dark(),
       themeMode: _themeMode,
+      localizationsDelegates: const <LocalizationsDelegate<dynamic>>[
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: const <Locale>[
+        Locale('es', 'CO'),
+        Locale('es'),
+      ],
+      locale: const Locale('es', 'CO'),
       home: HomePage(
         apiBaseUrl: widget.config.apiBaseUrl,
         themeMode: _themeMode,

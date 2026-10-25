@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart';
+
 import '../../core/utils/json_utils.dart';
 
 class Catalogos {
@@ -163,6 +165,41 @@ class TipoMovimientoCaja {
   final String codigo;
   final String nombre;
   final String naturaleza;
+
+  IconData get icono {
+    final String cod = codigo.trim().toUpperCase();
+    final String nom = nombre.trim().toUpperCase();
+    final bool salida = naturaleza == 'S';
+
+    if (cod == 'APERTURA' || nom.contains('APERTURA')) {
+      return Icons.lock_open_rounded;
+    }
+    if (cod == 'CIERRE' || nom.contains('CIERRE')) {
+      return Icons.lock_clock_rounded;
+    }
+    if (cod == 'RECAUDO' ||
+        cod == 'PAGO' ||
+        nom.contains('RECAUDO') ||
+        nom.contains('PAGO')) {
+      return Icons.payments_rounded;
+    }
+    if (cod == 'DESEMBOLSO_CREDITO' ||
+        nom.contains('DESEMBOLSO') ||
+        nom.contains('CREDITO')) {
+      return Icons.request_quote_rounded;
+    }
+    if (cod == 'GASTO' || nom.contains('GASTO')) {
+      return Icons.receipt_long_rounded;
+    }
+    if (cod == 'AJUSTE_ENTRADA') {
+      return Icons.add_circle_outline_rounded;
+    }
+    if (cod == 'AJUSTE_SALIDA') {
+      return Icons.remove_circle_outline_rounded;
+    }
+
+    return salida ? Icons.call_made_rounded : Icons.call_received_rounded;
+  }
 }
 
 class RutaCatalogo {

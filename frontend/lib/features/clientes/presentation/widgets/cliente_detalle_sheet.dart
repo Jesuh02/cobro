@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../../../../app/app_theme.dart';
 import '../../../../core/ui/clay.dart';
+import '../../../../core/ui/island_modal_sheet.dart';
 import '../../../../data/models/models.dart';
 
 /// Despliega la ficha de detalle de un cliente en un Modal Bottom Sheet
@@ -18,13 +18,8 @@ Future<void> mostrarClienteDetalleSheet({
   required VoidCallback onEliminar,
   void Function(String)? mostrarMensaje,
 }) async {
-  await showModalBottomSheet<void>(
+  await mostrarIslandModalBottomSheet<void>(
     context: context,
-    isScrollControlled: true,
-    useSafeArea: true,
-    backgroundColor: Colors.transparent,
-    elevation: 0,
-    barrierColor: Colors.black.withValues(alpha: 0.45),
     builder: (BuildContext sheetContext) {
       return ClienteDetalleSheet(
         cliente: cliente,
@@ -40,20 +35,12 @@ Future<void> mostrarClienteDetalleSheet({
           onEliminar();
         },
         onCopiarDato: (String etiqueta, String valor) {
-          Clipboard.setData(ClipboardData(text: valor));
-          HapticFeedback.selectionClick();
-          final String mensaje = '$etiqueta copiado al portapapeles';
-          if (mostrarMensaje != null) {
-            mostrarMensaje(mensaje);
-          } else {
-            ScaffoldMessenger.of(sheetContext).showSnackBar(
-              SnackBar(
-                content: Text(mensaje),
-                duration: const Duration(seconds: 2),
-                behavior: SnackBarBehavior.floating,
-              ),
-            );
-          }
+          copiarDatoAlPortapapeles(
+            context: sheetContext,
+            etiqueta: etiqueta,
+            valor: valor,
+            mostrarMensaje: mostrarMensaje,
+          );
         },
       );
     },
@@ -82,112 +69,40 @@ class ClienteDetalleSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ClayTokens clay = context.clay;
-    final Size screenSize = MediaQuery.sizeOf(context);
-    final double bottomInset = MediaQuery.viewInsetsOf(context).bottom;
-    final double systemBottom = MediaQuery.paddingOf(context).bottom;
-
-    // Márgenes flotantes para evitar que el sheet se pegue a los bordes de la pantalla
-    final double horizontalMargin = screenSize.width < 420 ? 10.0 : 18.0;
-    final double bottomMargin = bottomInset > 0
-        ? bottomInset + 8.0
-        : (systemBottom > 0 ? systemBottom + 6.0 : 12.0);
-
-    return SafeArea(
-      top: false,
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(
-          horizontalMargin,
-          0,
-          horizontalMargin,
-          bottomMargin,
-        ),
-        child: Center(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxHeight: screenSize.height * 0.78,
-              maxWidth: 480,
-            ),
-            child: Container(
-              decoration: BoxDecoration(
-                color: clay.surface,
-                borderRadius: BorderRadius.circular(22),
-                border: Border.all(
-                  color: clay.border.withValues(alpha: 0.65),
-                ),
-                boxShadow: clay.floatingShadow,
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  const _DragHandle(),
-                  Flexible(
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: <Widget>[
-                          _HeaderCliente(cliente: cliente),
-                          const SizedBox(height: 12),
-                          _SeccionIdentificacion(
-                            cliente: cliente,
-                            onCopiar: onCopiarDato,
-                          ),
-                          const SizedBox(height: 8),
-                          _SeccionContacto(
-                            cliente: cliente,
-                            onCopiar: onCopiarDato,
-                          ),
-                          const SizedBox(height: 8),
-                          _SeccionUbicacion(
-                            cliente: cliente,
-                            onCopiar: onCopiarDato,
-                          ),
-                          const SizedBox(height: 12),
-                        ],
-                      ),
-                    ),
-                  ),
-                  _FooterAcciones(
-                    esAdministrador: esAdministrador,
-                    puedeModificar: puedeModificar,
-                    puedeEliminar: puedeEliminar,
-                    onModificar: onModificar,
-                    onEliminar: onEliminar,
-                    onCerrar: () => Navigator.of(context).pop(),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
+    return IslandModalSheet(
+      maxHeightFactor: 0.78,
+      footer: _FooterAcciones(
+        esAdministrador: esAdministrador,
+        puedeModificar: puedeModificar,
+        puedeEliminar: puedeEliminar,
+        onModificar: onModificar,
+        onEliminar: onEliminar,
+        onCerrar: () => Navigator.of(context).pop(),
       ),
+      children: <Widget>[
+        _HeaderCliente(cliente: cliente),
+        const SizedBox(height: 12),
+        _SeccionIdentificacion(
+          cliente: cliente,
+          onCopiar: onCopiarDato,
+        ),
+        const SizedBox(height: 8),
+        _SeccionContacto(
+          cliente: cliente,
+          onCopiar: onCopiarDato,
+        ),
+        const SizedBox(height: 8),
+        _SeccionUbicacion(
+          cliente: cliente,
+          onCopiar: onCopiarDato,
+        ),
+        const SizedBox(height: 12),
+      ],
     );
   }
 }
 
-class _DragHandle extends StatelessWidget {
-  const _DragHandle();
 
-  @override
-  Widget build(BuildContext context) {
-    final ClayTokens clay = context.clay;
-    return Padding(
-      padding: const EdgeInsets.only(top: 10, bottom: 6),
-      child: Center(
-        child: Container(
-          width: 32,
-          height: 3.5,
-          decoration: BoxDecoration(
-            color: clay.subtleText.withValues(alpha: 0.35),
-            borderRadius: BorderRadius.circular(2),
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 class _HeaderCliente extends StatelessWidget {
   const _HeaderCliente({required this.cliente});
@@ -417,120 +332,8 @@ class _SeccionUbicacion extends StatelessWidget {
   }
 }
 
-class _InfoCard extends StatelessWidget {
-  const _InfoCard({
-    required this.titulo,
-    required this.icono,
-    required this.children,
-  });
-
-  final String titulo;
-  final IconData icono;
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) {
-    final ClayTokens clay = context.clay;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: clay.surfaceLow,
-        borderRadius: BorderRadius.circular(ClayRadius.small),
-        border: Border.all(color: clay.border.withValues(alpha: 0.5)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              Icon(icono, size: 15, color: CobroAppTheme.primary),
-              const SizedBox(width: 6),
-              Text(
-                titulo,
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                      color: clay.text,
-                    ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          ...children,
-        ],
-      ),
-    );
-  }
-}
-
-class _FilaDato extends StatelessWidget {
-  const _FilaDato({
-    required this.etiqueta,
-    required this.valor,
-    this.valorCopiable,
-    this.icono,
-    this.multiline = false,
-    required this.onCopiar,
-  });
-
-  final String etiqueta;
-  final String valor;
-  final String? valorCopiable;
-  final IconData? icono;
-  final bool multiline;
-  final void Function(String etiqueta, String valor) onCopiar;
-
-  @override
-  Widget build(BuildContext context) {
-    final ClayTokens clay = context.clay;
-
-    return Row(
-      crossAxisAlignment:
-          multiline ? CrossAxisAlignment.start : CrossAxisAlignment.center,
-      children: <Widget>[
-        if (icono != null) ...<Widget>[
-          Icon(icono, size: 15, color: clay.subtleText),
-          const SizedBox(width: 6),
-        ],
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Text(
-                etiqueta,
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: clay.subtleText,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 11,
-                    ),
-              ),
-              const SizedBox(height: 1),
-              SelectableText(
-                valor,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: clay.text,
-                    ),
-              ),
-            ],
-          ),
-        ),
-        if (valorCopiable != null)
-          IconButton(
-            icon: const Icon(Icons.copy_rounded, size: 15),
-            tooltip: 'Copiar $etiqueta',
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-            style: IconButton.styleFrom(
-              minimumSize: const Size(32, 32),
-              padding: EdgeInsets.zero,
-            ),
-            onPressed: () => onCopiar(etiqueta, valorCopiable!),
-          ),
-      ],
-    );
-  }
-}
+typedef _InfoCard = TarjetaSeccionSheet;
+typedef _FilaDato = FilaDatoSheet;
 
 class _FooterAcciones extends StatelessWidget {
   const _FooterAcciones({

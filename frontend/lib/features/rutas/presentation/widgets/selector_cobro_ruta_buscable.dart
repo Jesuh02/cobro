@@ -83,7 +83,7 @@ class _SelectorCobroRutaBuscableState extends State<SelectorCobroRutaBuscable> {
             labelText: 'Buscar y agregar cliente',
             prefixIcon: const Icon(Icons.person_search_rounded),
             suffixIcon: _controller.text.isEmpty
-                ? const Icon(Icons.list_alt_rounded)
+                ? null
                 : IconButton(
                     tooltip: 'Limpiar busqueda',
                     onPressed: widget.enabled ? _controller.clear : null,
@@ -126,6 +126,8 @@ class _SelectorCobroRutaBuscableState extends State<SelectorCobroRutaBuscable> {
                       controller: _scrollController,
                       child: ListView.separated(
                         controller: _scrollController,
+                        shrinkWrap: true,
+                        physics: const ClampingScrollPhysics(),
                         padding: EdgeInsets.zero,
                         itemCount: opciones.length,
                         separatorBuilder: (_, __) => const Divider(height: 1),

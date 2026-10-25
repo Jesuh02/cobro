@@ -389,7 +389,7 @@ void main() {
 
       expect(find.text('Registrar pagos'), findsOneWidget);
       expect(find.text('Buscar y agregar cliente'), findsOneWidget);
-      expect(find.text('Medio de pago'), findsOneWidget);
+      expect(find.text('Medio de pagos y detalles'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );

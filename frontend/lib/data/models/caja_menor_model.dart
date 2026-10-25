@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart';
+
 import '../../core/utils/json_utils.dart';
 import 'catalogo_model.dart';
 
@@ -58,6 +60,34 @@ class MovimientoCaja {
   bool get esPago => referenciaTabla == 'pago';
   bool get esAuditoria => referenciaTabla == 'auditoria_caja_menor';
   bool get esEditablePorAdmin => !esAuditoria;
+
+  IconData get icono {
+    if (esAuditoria) {
+      return Icons.history_rounded;
+    }
+    if (esPago) {
+      return Icons.payments_rounded;
+    }
+    if (referenciaTabla == 'credito_desembolso') {
+      return Icons.request_quote_rounded;
+    }
+
+    final String mot = motivo.trim().toUpperCase();
+    if (mot.contains('APERTURA')) {
+      return Icons.lock_open_rounded;
+    }
+    if (mot.contains('CIERRE')) {
+      return Icons.lock_clock_rounded;
+    }
+    if (mot.contains('DESEMBOLSO') || mot.contains('CREDITO')) {
+      return Icons.request_quote_rounded;
+    }
+    if (mot.contains('GASTO')) {
+      return Icons.receipt_long_rounded;
+    }
+
+    return tipoMovimiento.icono;
+  }
 
   MovimientoCaja copyWith({
     String? cajaMenorId,

@@ -1070,14 +1070,26 @@ class _HomePageState extends State<HomePage> {
         .where((CobroRuta cobro) => cobro.estadoCobro == EstadoCobro.atrasado)
         .length;
     final DateTime ahora = DateTime.now();
-    DateTime inicioPeriodo = DateTime(ahora.year, ahora.month);
+    DateTime inicioPeriodo =
+        _fechaInicioDesde ?? DateTime(ahora.year, ahora.month);
+    DateTime finPeriodo = _fechaInicioHasta ?? ahora;
 
-    for (final MovimientoCaja movimiento in _movimientosCaja) {
-      final DateTime fecha = movimiento.fechaMovimiento;
-      if (!fecha.isAfter(ahora) && fecha.isAfter(inicioPeriodo)) {
-        inicioPeriodo = fecha;
+    if (_fechaInicioDesde == null) {
+      for (final MovimientoCaja movimiento in _movimientosCaja) {
+        final DateTime fecha = movimiento.fechaMovimiento;
+        if (!fecha.isAfter(ahora) && fecha.isAfter(inicioPeriodo)) {
+          inicioPeriodo = fecha;
+        }
       }
     }
+
+    final String subtituloEncabezado = _inicioMostrandoHoy
+        ? 'Movimientos de hoy'
+        : _inicioMostrandoTodosLosDias
+            ? 'Histórico global de presupuesto'
+            : (_fechaInicioDesde != null || _fechaInicioHasta != null)
+                ? 'Periodo filtrado'
+                : 'Desde el último movimiento de caja menor';
 
     return PaginaInicioPresupuesto(
       totales: totales,
@@ -1087,7 +1099,8 @@ class _HomePageState extends State<HomePage> {
       conteoCreditos: _conteoCreditosInicio,
       creditosAtrasados: creditosAtrasados,
       fechaInicio: inicioPeriodo,
-      fechaFin: ahora,
+      fechaFin: finPeriodo,
+      subtituloEncabezado: subtituloEncabezado,
       items: itemsInicio,
       cajasMenores: cajasInicio,
       cajaMenorId: cajaInicioSeleccionada,

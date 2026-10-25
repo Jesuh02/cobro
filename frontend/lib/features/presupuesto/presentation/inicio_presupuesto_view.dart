@@ -64,6 +64,7 @@ class PaginaInicioPresupuesto extends StatelessWidget {
     this.fechaDesde,
     this.fechaHasta,
     this.error,
+    this.subtituloEncabezado,
   });
 
   final PresupuestoTotales totales;
@@ -95,6 +96,7 @@ class PaginaInicioPresupuesto extends StatelessWidget {
   final VoidCallback onVerAtrasados;
   final Future<void> Function() onRefresh;
   final String? error;
+  final String? subtituloEncabezado;
 
   @override
   Widget build(BuildContext context) {
@@ -119,6 +121,7 @@ class PaginaInicioPresupuesto extends StatelessWidget {
                             EncabezadoInicioPresupuesto(
                               fechaInicio: fechaInicio,
                               fechaFin: fechaFin,
+                              subtitulo: subtituloEncabezado,
                             ),
                             if (error != null) ...<Widget>[
                               const SizedBox(height: 16),
@@ -573,10 +576,12 @@ class EncabezadoInicioPresupuesto extends StatelessWidget {
   const EncabezadoInicioPresupuesto({
     required this.fechaInicio,
     required this.fechaFin,
+    this.subtitulo,
   });
 
   final DateTime fechaInicio;
   final DateTime fechaFin;
+  final String? subtitulo;
 
   @override
   Widget build(BuildContext context) {
@@ -614,7 +619,7 @@ class EncabezadoInicioPresupuesto extends StatelessWidget {
         ),
         const SizedBox(height: 24),
         Text(
-          'Desde el último movimiento de caja menor',
+          subtitulo ?? 'Desde el último movimiento de caja menor',
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: clay.subtleText,
                 fontWeight: FontWeight.w700,

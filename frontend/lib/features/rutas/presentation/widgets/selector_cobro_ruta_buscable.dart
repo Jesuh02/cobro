@@ -126,6 +126,8 @@ class _SelectorCobroRutaBuscableState extends State<SelectorCobroRutaBuscable> {
                       controller: _scrollController,
                       child: ListView.separated(
                         controller: _scrollController,
+                        shrinkWrap: true,
+                        physics: const ClampingScrollPhysics(),
                         padding: EdgeInsets.zero,
                         itemCount: opciones.length,
                         separatorBuilder: (_, __) => const Divider(height: 1),

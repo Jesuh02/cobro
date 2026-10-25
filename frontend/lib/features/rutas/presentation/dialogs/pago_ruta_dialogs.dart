@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/formatters/app_formatters.dart';
 import '../../../../core/ui/clay.dart';
 import '../../../../core/ui/cobro_dropdown.dart';
+import '../../../../core/ui/modal_layouts.dart';
 import '../../../../data/models/models.dart';
 import '../widgets/selector_cobro_ruta_buscable.dart';
 import '../widgets/selector_medio_pago_buscable.dart';
@@ -66,13 +67,12 @@ Future<void> mostrarDialogoRegistrarPago({
 
           return AlertDialog(
             title: const Text('Registrar pagos'),
-            content: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 520),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
+            content: DialogContent(
+              maxWidth: 520,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
                     if (cajasMenores.length > 1) ...<Widget>[
                       CobroDropdownField<String>(
                         labelText: 'Caja menor destino',
@@ -294,7 +294,6 @@ Future<void> mostrarDialogoRegistrarPago({
                   ],
                 ),
               ),
-            ),
             actions: <Widget>[
               TextButton(
                 onPressed: guardandoPago

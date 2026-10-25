@@ -51,7 +51,6 @@ export class PresupuestoService {
       : null;
     const condicionesCajas: Prisma.Sql[] = [
       Prisma.sql`c.caj_tipo::text = 'MENOR'`,
-      Prisma.sql`c.caj_activa`,
       Prisma.sql`c.org_id = ${scope.organizacionId}::uuid`,
     ];
     const filtrosFechaPagos: Prisma.Sql[] = [];
@@ -129,6 +128,7 @@ export class PresupuestoService {
           c.id_caj,
           c.caj_nombre,
           c.org_id,
+          c.caj_activa,
           ${
             puedeVerTodo
               ? Prisma.sql`COALESCE(tu.id_usu, responsable.id_usu)`
@@ -247,6 +247,25 @@ export class PresupuestoService {
           JOIN public.tbl_creditos cr ON cr.id_cre = pa.credito_id
           JOIN public.tbl_clientes cl ON cl.id_cli = cr.cli_id
           WHERE cl.org_id = c.org_id
+            AND (
+              EXISTS (
+                SELECT 1
+                FROM public.tbl_movimientos_cajas mc_cr
+                JOIN public.tbl_sesiones_cajas sc_cr ON sc_cr.id_sca = mc_cr.sca_id
+                WHERE sc_cr.caj_id = c.id_caj
+                  AND mc_cr.mca_referencia_id = cr.id_cre
+                  AND UPPER(mc_cr.mca_tipo::text) = 'DESEMBOLSO_CREDITO'
+              )
+              OR (
+                c.caj_activa
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM public.tbl_movimientos_cajas mc_any
+                  WHERE mc_any.mca_referencia_id = cr.id_cre
+                    AND UPPER(mc_any.mca_tipo::text) = 'DESEMBOLSO_CREDITO'
+                )
+              )
+            )
             ${usuarioPagosWhere}
             ${fechaPagosWhere}
             AND NOT EXISTS (
@@ -270,6 +289,25 @@ export class PresupuestoService {
           JOIN public.tbl_clientes cl ON cl.id_cli = cr.cli_id
           WHERE cl.org_id = c.org_id
             AND UPPER(cr.cre_estado::text) NOT IN ('ANULADO')
+            AND (
+              EXISTS (
+                SELECT 1
+                FROM public.tbl_movimientos_cajas mc_cr
+                JOIN public.tbl_sesiones_cajas sc_cr ON sc_cr.id_sca = mc_cr.sca_id
+                WHERE sc_cr.caj_id = c.id_caj
+                  AND mc_cr.mca_referencia_id = cr.id_cre
+                  AND UPPER(mc_cr.mca_tipo::text) = 'DESEMBOLSO_CREDITO'
+              )
+              OR (
+                c.caj_activa
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM public.tbl_movimientos_cajas mc_any
+                  WHERE mc_any.mca_referencia_id = cr.id_cre
+                    AND UPPER(mc_any.mca_tipo::text) = 'DESEMBOLSO_CREDITO'
+                )
+              )
+            )
             ${usuarioCreditosWhere}
             ${fechaCreditosWhere}
         ) creditos ON TRUE
@@ -281,6 +319,25 @@ export class PresupuestoService {
           JOIN public.tbl_clientes cl ON cl.id_cli = cr.cli_id
           WHERE cl.org_id = c.org_id
             AND UPPER(cr.cre_estado::text) NOT IN ('ANULADO')
+            AND (
+              EXISTS (
+                SELECT 1
+                FROM public.tbl_movimientos_cajas mc_cr
+                JOIN public.tbl_sesiones_cajas sc_cr ON sc_cr.id_sca = mc_cr.sca_id
+                WHERE sc_cr.caj_id = c.id_caj
+                  AND mc_cr.mca_referencia_id = cr.id_cre
+                  AND UPPER(mc_cr.mca_tipo::text) = 'DESEMBOLSO_CREDITO'
+              )
+              OR (
+                c.caj_activa
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM public.tbl_movimientos_cajas mc_any
+                  WHERE mc_any.mca_referencia_id = cr.id_cre
+                    AND UPPER(mc_any.mca_tipo::text) = 'DESEMBOLSO_CREDITO'
+                )
+              )
+            )
             ${usuarioCreditosWhere}
             ${fechaCreditosWhere}
             AND EXISTS (

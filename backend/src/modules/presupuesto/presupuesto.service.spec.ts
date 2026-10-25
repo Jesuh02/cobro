@@ -126,6 +126,22 @@ describe('PresupuestoService', () => {
   });
 
 
+  it('allows querying budget without caj_activa constraint so closed and historical cajas can be analyzed', async () => {
+    const queryRaw = jest.fn<Promise<unknown[]>, [unknown]>().mockResolvedValueOnce([]);
+    const service = createService(queryRaw, true);
+
+    await service.obtenerPresupuesto(
+      { cajaMenorId: 'caja-cerrada-id' },
+      usuario('7', ['ADMINISTRADOR']),
+    );
+
+    const [sqlCall] = queryRaw.mock.calls;
+    const sqlText = (sqlCall[0] as { strings?: string[] }).strings?.join(' ') ?? '';
+    expect(sqlText).not.toContain("c.caj_tipo::text = 'MENOR' AND c.caj_activa");
+    expect(sqlText).toContain('c.id_caj::text =');
+    expect(sqlText).toContain('mc_cr.mca_referencia_id = cr.id_cre');
+  });
+
   it('throws validation error on invalid date', async () => {
     const queryRaw = jest.fn<Promise<unknown[]>, [unknown]>();
     const service = createService(queryRaw, false);

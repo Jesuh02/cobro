@@ -24,8 +24,7 @@ CobroDropdownItem<String> itemCajaMenor(CajaMenorCatalogo caja) {
 
 CobroDropdownItem<String> itemTipoMovimientoCaja(TipoMovimientoCaja tipo) {
   final bool esEntrada = tipo.naturaleza == 'E';
-  final IconData iconData =
-      esEntrada ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded;
+  final IconData iconData = tipo.icono;
 
   return CobroDropdownItem<String>(
     value: tipo.codigo,

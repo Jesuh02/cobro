@@ -235,4 +235,117 @@ void main() {
     await tester.pump();
     expect(modificado, isTrue);
   });
+
+  test('MovimientoCaja.icono mapea correctamente segun la naturaleza y contexto', () {
+    MovimientoCaja crear({
+      required String codigo,
+      required String nombre,
+      required String naturaleza,
+      String motivo = 'Operacion de prueba',
+      String? referenciaTabla,
+    }) {
+      return MovimientoCaja(
+        id: '1',
+        cajaMenorId: 'caja-1',
+        cajaMenor: 'Caja 1',
+        tipoMovimiento: TipoMovimientoCaja(
+          codigo: codigo,
+          nombre: nombre,
+          naturaleza: naturaleza,
+        ),
+        fechaMovimiento: DateTime(2026, 10, 25),
+        monto: 10000,
+        montoConNaturaleza: naturaleza == 'S' ? -10000 : 10000,
+        motivo: motivo,
+        referenciaTabla: referenciaTabla,
+      );
+    }
+
+    // 1. Apertura
+    expect(
+      crear(codigo: 'APERTURA', nombre: 'Apertura', naturaleza: 'E', motivo: 'Apertura de caja').icono,
+      equals(Icons.lock_open_rounded),
+    );
+
+    // 2. Desembolso Credito
+    expect(
+      crear(codigo: 'DESEMBOLSO_CREDITO', nombre: 'Desembolso de credito', naturaleza: 'S', motivo: 'Desembolso Credito').icono,
+      equals(Icons.request_quote_rounded),
+    );
+
+    // 3. Recaudo / Pago
+    expect(
+      crear(codigo: 'RECAUDO', nombre: 'Recaudo', naturaleza: 'E', motivo: 'Pago cuota', referenciaTabla: 'pago').icono,
+      equals(Icons.payments_rounded),
+    );
+
+    // 4. Gasto
+    expect(
+      crear(codigo: 'GASTO', nombre: 'Gasto', naturaleza: 'S', motivo: 'Gasto transporte').icono,
+      equals(Icons.receipt_long_rounded),
+    );
+
+    // 5. Ajustes
+    expect(
+      crear(codigo: 'AJUSTE_ENTRADA', nombre: 'Ajuste de entrada', naturaleza: 'E').icono,
+      equals(Icons.add_circle_outline_rounded),
+    );
+    expect(
+      crear(codigo: 'AJUSTE_SALIDA', nombre: 'Ajuste de salida', naturaleza: 'S').icono,
+      equals(Icons.remove_circle_outline_rounded),
+    );
+
+    // 6. Cierre
+    expect(
+      crear(codigo: 'CIERRE', nombre: 'Cierre', naturaleza: 'N', motivo: 'Cierre de caja').icono,
+      equals(Icons.lock_clock_rounded),
+    );
+
+    // 7. Auditoria
+    expect(
+      crear(codigo: 'AUDITORIA', nombre: 'Auditoria', naturaleza: 'N', referenciaTabla: 'auditoria_caja_menor').icono,
+      equals(Icons.history_rounded),
+    );
+  });
+
+  testWidgets('MovimientoCajaItem renderiza icono de candado abierto para Apertura y request_quote para Desembolso', (
+    WidgetTester tester,
+  ) async {
+    final MovimientoCaja apertura = MovimientoCaja(
+      id: 'ap-1',
+      cajaMenorId: 'caja-1',
+      cajaMenor: 'Caja Principal',
+      tipoMovimiento: const TipoMovimientoCaja(codigo: 'APERTURA', nombre: 'Apertura', naturaleza: 'E'),
+      fechaMovimiento: DateTime(2026, 10, 24),
+      monto: 10000,
+      montoConNaturaleza: 10000,
+      motivo: 'Apertura',
+    );
+
+    final MovimientoCaja desembolso = MovimientoCaja(
+      id: 'des-1',
+      cajaMenorId: 'caja-1',
+      cajaMenor: 'Caja Principal',
+      tipoMovimiento: const TipoMovimientoCaja(codigo: 'DESEMBOLSO_CREDITO', nombre: 'Desembolso de credito', naturaleza: 'S'),
+      fechaMovimiento: DateTime(2026, 10, 23),
+      monto: 100,
+      montoConNaturaleza: -100,
+      motivo: 'Desembolso Credito',
+      referenciaTabla: 'credito_desembolso',
+    );
+
+    await tester.pumpWidget(
+      crearEntornoTest(
+        Column(
+          children: [
+            MovimientoCajaItem(movimiento: apertura, puedeModificar: false, onTap: () {}, onModificar: () {}),
+            MovimientoCajaItem(movimiento: desembolso, puedeModificar: false, onTap: () {}, onModificar: () {}),
+          ],
+        ),
+      ),
+    );
+
+    expect(find.byIcon(Icons.lock_open_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.request_quote_rounded), findsOneWidget);
+  });
 }

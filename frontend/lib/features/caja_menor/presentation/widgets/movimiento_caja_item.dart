@@ -65,13 +65,7 @@ class _MovimientoIcono extends StatelessWidget {
             ? CobroAppTheme.danger
             : CobroAppTheme.success;
 
-    final IconData icono = auditoria
-        ? Icons.history_rounded
-        : movimiento.esPago
-            ? Icons.payments_rounded
-            : salida
-                ? Icons.arrow_downward_rounded
-                : Icons.arrow_upward_rounded;
+    final IconData icono = movimiento.icono;
 
     return CircleAvatar(
       radius: 20,

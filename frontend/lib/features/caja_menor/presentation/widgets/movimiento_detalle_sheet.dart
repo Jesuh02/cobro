@@ -113,13 +113,7 @@ class _HeaderMovimiento extends StatelessWidget {
             ? CobroAppTheme.danger
             : CobroAppTheme.success;
 
-    final IconData iconoNaturaleza = auditoria
-        ? Icons.history_rounded
-        : movimiento.esPago
-            ? Icons.payments_rounded
-            : salida
-                ? Icons.arrow_downward_rounded
-                : Icons.arrow_upward_rounded;
+    final IconData iconoNaturaleza = movimiento.icono;
 
     final String textoNaturaleza = auditoria
         ? 'Auditoría'

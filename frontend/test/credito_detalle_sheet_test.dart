@@ -128,7 +128,8 @@ void main() {
       // Verificar que el modal flotante está visible
       expect(find.byType(CreditoDetalleSheet), findsOneWidget);
       expect(find.text('Carlos Alberto Perez'), findsOneWidget);
-      expect(find.textContaining('1098765432'), findsWidgets);
+      expect(find.text('CC 1098765432'), findsOneWidget);
+      expect(find.text('Ruta Norte'), findsOneWidget);
 
       // Secciones
       expect(find.text('Balance y Recaudo'), findsOneWidget);
@@ -150,10 +151,10 @@ void main() {
 
       // Botones de acción en footer
       expect(find.text('Cerrar'), findsOneWidget);
-      expect(find.text('Refinanciar'), findsOneWidget);
+      expect(find.text('Refinanciar crédito'), findsOneWidget);
 
       // Probar callback de refinanciar
-      await tester.tap(find.text('Refinanciar'));
+      await tester.tap(find.text('Refinanciar crédito'));
       await tester.pumpAndSettle();
       expect(refinanciarPressed, isTrue);
       // El sheet se debió cerrar tras la acción

@@ -150,6 +150,7 @@ class _HeaderCredito extends StatelessWidget {
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               Text(
                 credito.cliente,
@@ -161,35 +162,56 @@ class _HeaderCredito extends StatelessWidget {
                     ),
               ),
               const SizedBox(height: 2),
-              Row(
-                children: <Widget>[
-                  Expanded(
-                    child: Text(
-                      <String>[
-                        if (cedula.isNotEmpty) 'CC $cedula',
-                        credito.ruta,
-                      ].join(' · '),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+              if (cedula.isNotEmpty) ...<Widget>[
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Text(
+                      'CC $cedula',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: clay.subtleText,
                             fontWeight: FontWeight.w600,
+                            fontSize: 12,
                           ),
                     ),
-                  ),
-                  if (cedula.isNotEmpty)
+                    const SizedBox(width: 4),
                     IconButton(
-                      icon: const Icon(Icons.copy_rounded, size: 14),
+                      icon: const Icon(Icons.copy_rounded, size: 13),
                       tooltip: 'Copiar cédula',
                       padding: EdgeInsets.zero,
                       constraints:
-                          const BoxConstraints(minWidth: 26, minHeight: 26),
+                          const BoxConstraints(minWidth: 22, minHeight: 22),
                       style: IconButton.styleFrom(
-                        minimumSize: const Size(26, 26),
+                        minimumSize: const Size(22, 22),
                         padding: EdgeInsets.zero,
                       ),
                       onPressed: () => onCopiar('Cédula', cedula),
                     ),
+                  ],
+                ),
+                const SizedBox(height: 1),
+              ],
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Icon(
+                    Icons.alt_route_rounded,
+                    size: 13,
+                    color: clay.subtleText.withValues(alpha: 0.8),
+                  ),
+                  const SizedBox(width: 4),
+                  Flexible(
+                    child: Text(
+                      credito.ruta.isEmpty ? 'Sin ruta' : credito.ruta,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: clay.subtleText,
+                            fontWeight: FontWeight.w500,
+                            fontSize: 11.5,
+                          ),
+                    ),
+                  ),
                 ],
               ),
             ],
@@ -376,101 +398,118 @@ class _FooterAccionesCredito extends StatelessWidget {
     final bool tieneRefinanciar = puedeRefinanciar && onRefinanciar != null;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         color: clay.surface,
         border: Border(
           top: BorderSide(color: clay.border.withValues(alpha: 0.5)),
         ),
       ),
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Expanded(
-            flex: 1,
-            child: OutlinedButton(
-              onPressed: onCerrar,
-              style: OutlinedButton.styleFrom(
-                minimumSize: const Size.fromHeight(40),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(ClayRadius.control),
-                ),
-              ),
-              child: const Text('Cerrar'),
-            ),
-          ),
           if (tieneRefinanciar) ...<Widget>[
-            const SizedBox(width: 8),
-            Expanded(
-              flex: 2,
-              child: FilledButton.icon(
-                onPressed: onRefinanciar,
-                icon: const Icon(Icons.currency_exchange_rounded, size: 16),
-                label: const Text('Refinanciar'),
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size.fromHeight(40),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(ClayRadius.control),
-                  ),
-                ),
+            FilledButton.icon(
+              onPressed: onRefinanciar,
+              icon: const Icon(Icons.currency_exchange_rounded, size: 18),
+              label: const Text(
+                'Refinanciar crédito',
+                maxLines: 1,
+                softWrap: false,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
               ),
-            ),
-          ],
-          if (puedeModificar && !tieneRefinanciar) ...<Widget>[
-            const SizedBox(width: 8),
-            Expanded(
-              flex: 2,
-              child: FilledButton.icon(
-                onPressed: onModificar,
-                icon: const Icon(Icons.edit_outlined, size: 16),
-                label: const Text('Modificar'),
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size.fromHeight(40),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(ClayRadius.control),
-                  ),
-                ),
-              ),
-            ),
-          ] else if (puedeModificar && tieneRefinanciar) ...<Widget>[
-            const SizedBox(width: 8),
-            IconButton(
-              onPressed: onModificar,
-              icon: const Icon(Icons.edit_outlined, size: 18),
-              tooltip: 'Modificar crédito',
-              style: IconButton.styleFrom(
-                minimumSize: const Size(40, 40),
-                padding: EdgeInsets.zero,
+              style: FilledButton.styleFrom(
+                minimumSize: const Size.fromHeight(42),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(ClayRadius.control),
-                  side: BorderSide(
-                    color: clay.border.withValues(alpha: 0.6),
-                  ),
                 ),
               ),
             ),
+            const SizedBox(height: 10),
           ],
-          if (puedeEliminar) ...<Widget>[
-            const SizedBox(width: 8),
-            IconButton(
-              onPressed: onEliminar,
-              icon: const Icon(Icons.delete_outline_rounded, size: 19),
-              color: Theme.of(context).colorScheme.error,
-              tooltip: 'Eliminar crédito',
-              style: IconButton.styleFrom(
-                minimumSize: const Size(40, 40),
-                padding: EdgeInsets.zero,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(ClayRadius.control),
-                  side: BorderSide(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .error
-                        .withValues(alpha: 0.35),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: onCerrar,
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(40),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(ClayRadius.control),
+                    ),
+                  ),
+                  child: const Text(
+                    'Cerrar',
+                    maxLines: 1,
+                    softWrap: false,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ),
-            ),
-          ],
+              if (puedeModificar && !tieneRefinanciar) ...<Widget>[
+                const SizedBox(width: 8),
+                Expanded(
+                  flex: 2,
+                  child: FilledButton.icon(
+                    onPressed: onModificar,
+                    icon: const Icon(Icons.edit_outlined, size: 16),
+                    label: const Text(
+                      'Modificar',
+                      maxLines: 1,
+                      softWrap: false,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(40),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(ClayRadius.control),
+                      ),
+                    ),
+                  ),
+                ),
+              ] else if (puedeModificar && tieneRefinanciar) ...<Widget>[
+                const SizedBox(width: 8),
+                IconButton(
+                  onPressed: onModificar,
+                  icon: const Icon(Icons.edit_outlined, size: 18),
+                  tooltip: 'Modificar crédito',
+                  style: IconButton.styleFrom(
+                    minimumSize: const Size(40, 40),
+                    padding: EdgeInsets.zero,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(ClayRadius.control),
+                      side: BorderSide(
+                        color: clay.border.withValues(alpha: 0.6),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+              if (puedeEliminar) ...<Widget>[
+                const SizedBox(width: 8),
+                IconButton(
+                  onPressed: onEliminar,
+                  icon: const Icon(Icons.delete_outline_rounded, size: 19),
+                  color: Theme.of(context).colorScheme.error,
+                  tooltip: 'Eliminar crédito',
+                  style: IconButton.styleFrom(
+                    minimumSize: const Size(40, 40),
+                    padding: EdgeInsets.zero,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(ClayRadius.control),
+                      side: BorderSide(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .error
+                            .withValues(alpha: 0.35),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
         ],
       ),
     );

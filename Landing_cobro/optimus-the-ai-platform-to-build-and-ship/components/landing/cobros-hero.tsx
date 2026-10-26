@@ -38,7 +38,7 @@ export function CobrosHero() {
         </p>
 
         <div className="flex items-center justify-center gap-4 mt-14 max-sm:flex-col">
-          <Link href="/app/">
+          <a href="https://app.dailycobro.com/">
             <Button
               className="bg-white text-black hover:bg-white/90 font-mono rounded-none px-8 h-12"
               onMouseEnter={() => setHovering(true)}
@@ -46,7 +46,7 @@ export function CobrosHero() {
             >
               [Empezar gratis]
             </Button>
-          </Link>
+          </a>
           <Link href="#how-it-works">
             <Button
               className="bg-transparent border border-white/30 text-white hover:bg-white/10 hover:text-white font-mono rounded-none px-8 h-12"

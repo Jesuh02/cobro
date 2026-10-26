@@ -73,7 +73,7 @@ export function Navigation() {
           {/* Desktop CTA */}
           <div className="hidden md:flex items-center gap-4">
             <a
-              href="/app/"
+              href="https://app.dailycobro.com/"
               className={`transition-all duration-500 ${
                 isScrolled
                   ? `text-foreground/70 hover:text-foreground ${isScrolled ? "text-xs" : "text-sm"}`
@@ -82,7 +82,7 @@ export function Navigation() {
             >
               Iniciar sesión
             </a>
-            <a href="/app/">
+            <a href="https://app.dailycobro.com/">
               <Button
                 size="sm"
                 className={`rounded-full transition-all duration-500 ${
@@ -147,7 +147,7 @@ export function Navigation() {
             }`}
             style={{ transitionDelay: isMobileMenuOpen ? "300ms" : "0ms" }}
           >
-            <a href="/app/" className="flex-1" onClick={() => setIsMobileMenuOpen(false)}>
+            <a href="https://app.dailycobro.com/" className="flex-1" onClick={() => setIsMobileMenuOpen(false)}>
               <Button
                 variant="outline"
                 className="w-full rounded-full h-14 text-base"
@@ -155,7 +155,7 @@ export function Navigation() {
                 Iniciar sesión
               </Button>
             </a>
-            <a href="/app/" className="flex-1" onClick={() => setIsMobileMenuOpen(false)}>
+            <a href="https://app.dailycobro.com/" className="flex-1" onClick={() => setIsMobileMenuOpen(false)}>
               <Button
                 className="w-full bg-foreground text-background rounded-full h-14 text-base"
               >

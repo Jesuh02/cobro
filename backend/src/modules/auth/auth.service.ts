@@ -1604,6 +1604,11 @@ export class AuthService {
       throw new UnauthorizedException('La sesion expiro');
     }
 
+    const revocationKey = `auth:revoked:${decoded.jti}`;
+    if (this.cache.get<boolean>(revocationKey).hit) {
+      throw new UnauthorizedException('La sesion fue cerrada');
+    }
+
     return {
       usuarioId: decoded.sub,
       usuario: '',
@@ -1611,6 +1616,40 @@ export class AuthService {
       roles: [],
       permisos: [],
     };
+  }
+
+  async cerrarSesion(tokenOHeader?: string): Promise<{ ok: boolean }> {
+    if (!tokenOHeader) {
+      return { ok: true };
+    }
+    const token = tokenOHeader.replace(/^Bearer\s+/i, '').trim();
+    const segments = token.split('.');
+    if (segments.length !== 3) {
+      return { ok: true };
+    }
+    const [header, payload, signature] = segments;
+    if (!header || !payload || !signature) {
+      return { ok: true };
+    }
+    const expectedSignature = this.firmar(`${header}.${payload}`);
+    if (!this.compararFirmas(signature, expectedSignature)) {
+      return { ok: true };
+    }
+    try {
+      const decoded = this.decodeTokenPart(payload);
+      if (typeof decoded.jti === 'string' && typeof decoded.exp === 'number') {
+        const now = Math.floor(Date.now() / 1000);
+        const remainingSeconds = decoded.exp - now;
+        if (remainingSeconds > 0) {
+          this.cache.set(`auth:revoked:${decoded.jti}`, true, {
+            ttlMs: (remainingSeconds + tokenClockToleranceSeconds) * 1000,
+          });
+        }
+      }
+    } catch {
+      // Ignorar silenciosamente si no es decodificable
+    }
+    return { ok: true };
   }
 
   requerirAdministrador(usuario: AuthenticatedUser) {

@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   Param,
   Patch,
   Post,
@@ -56,6 +57,17 @@ export class AuthController {
   @UseGuards(AuthGuard)
   obtenerSesion(@CurrentUser() usuario: AuthenticatedUser) {
     return this.auth.obtenerUsuarioAutenticado(usuario.usuarioId);
+  }
+
+  @Post('auth/logout')
+  @UseGuards(AuthGuard)
+  @Throttle({
+    burst: { limit: 5, ttl: 1_000, blockDuration: 2_000 },
+    minute: { limit: 30, ttl: 60_000, blockDuration: 60_000 },
+    hour: { limit: 200, ttl: 3_600_000, blockDuration: 300_000 },
+  })
+  cerrarSesion(@Headers('authorization') authHeader?: string) {
+    return this.auth.cerrarSesion(authHeader);
   }
 
   @Get('super-admin/organizaciones')

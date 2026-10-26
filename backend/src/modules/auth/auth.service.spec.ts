@@ -327,6 +327,34 @@ describe('AuthService - Account Lockout (SEC-COBRO-04)', () => {
       expect(Array.isArray(resultado)).toBe(true);
     });
   });
+
+  describe('cerrarSesion (Token Revocation)', () => {
+    it('revokes an active token so subsequent verification throws', async () => {
+      const session = (authService as any).crearSesionParaUsuario(mockUserTbl);
+      const token = session.token;
+
+      // 1. First verification succeeds
+      const verified = authService.verificarToken(token);
+      expect(verified.usuarioId).toBe(mockUserTbl.id);
+
+      // 2. User logs out
+      const logoutResult = await authService.cerrarSesion(`Bearer ${token}`);
+      expect(logoutResult.ok).toBe(true);
+
+      // 3. Subsequent verification fails because token is revoked
+      expect(() => authService.verificarToken(token)).toThrow(
+        new UnauthorizedException('La sesion fue cerrada'),
+      );
+    });
+
+    it('handles missing or malformed token gracefully', async () => {
+      const emptyResult = await authService.cerrarSesion();
+      expect(emptyResult.ok).toBe(true);
+
+      const invalidResult = await authService.cerrarSesion('invalid.token');
+      expect(invalidResult.ok).toBe(true);
+    });
+  });
 });
 
 

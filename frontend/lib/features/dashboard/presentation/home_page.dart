@@ -1955,6 +1955,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _cerrarSesion() {
+    unawaited(_apiClient.logout());
     _apiClient.setAuthToken(null);
     unawaited(clearCachedSessionPayload());
     _loginContrasenaController.clear();

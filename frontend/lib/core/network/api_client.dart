@@ -37,6 +37,22 @@ class ApiClient {
     _authToken = token;
   }
 
+  Future<void> logout() async {
+    final String? token = _authToken;
+    if (token == null) return;
+    try {
+      await _client
+          .post(
+            _uri('/auth/logout'),
+            headers: _headers,
+            body: jsonEncode(const <String, dynamic>{}),
+          )
+          .timeout(const Duration(seconds: 4));
+    } catch (_) {
+      // Ignorar fallos de red en logout para asegurar que la sesión local siempre se cierre
+    }
+  }
+
   Future<List<dynamic>> getList(
     String path, {
     Map<String, String?> query = const <String, String?>{},

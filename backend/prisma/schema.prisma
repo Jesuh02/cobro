@@ -12,7 +12,7 @@ model TblPersona {
   idPer        String       @id @default(dbgenerated("gen_random_uuid()")) @map("id_per") @db.Uuid
   primerNombre String       @map("per_primer_nombre")
   apellido     String       @map("per_apellido")
-  documento    String       @unique @map("per_documento")
+  documento    String       @map("per_documento")
   direccion    String?      @map("per_direccion")
   latitud      Decimal?     @map("per_latitud") @db.Decimal(10, 7)
   longitud     Decimal?     @map("per_longitud") @db.Decimal(10, 7)

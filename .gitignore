@@ -68,3 +68,8 @@ agents/
 # Local database DDL & diagrams
 backend/database/cockroach_init_cobrod.sql
 backend/database/ddl_cobrod_er_diagram.mmd
+docs/AUDITORIA_SEGURIDAD_2.md
+
+# Graphify (Knowledge graph outputs & local virtualenv)
+graphify-out/
+.venv-graphify/

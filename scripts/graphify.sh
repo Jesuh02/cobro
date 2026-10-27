@@ -1,37 +1,39 @@
 #!/usr/bin/env bash
 # Script portable para ejecutar Graphify en cualquier repositorio.
-# Es 100% autosuficiente: si no existe el entorno, lo crea e instala automáticamente.
+# Utiliza un único entorno centralizado en ~/.graphify-env para ahorrar espacio en disco.
 # Todos los resultados se almacenan en 'graphify-out/' (ignorado por Git).
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-LOCAL_VENV="$PROJECT_ROOT/.venv-graphify"
-GRAPHIFY_BIN="$LOCAL_VENV/bin/graphify"
+CENTRAL_VENV="$HOME/.graphify-env"
+CENTRAL_BIN="$CENTRAL_VENV/bin/graphify"
 
-# 1. Resolver ejecutable: usar comando global si existe, o el entorno local
+# 1. Resolver ejecutable: usar comando global si existe, o el entorno central
 if command -v graphify &>/dev/null; then
     GRAPHIFY_EXEC="graphify"
-elif [ -x "$GRAPHIFY_BIN" ]; then
-    GRAPHIFY_EXEC="$GRAPHIFY_BIN"
+elif [ -x "$CENTRAL_BIN" ]; then
+    GRAPHIFY_EXEC="$CENTRAL_BIN"
 else
     echo "=========================================================="
-    echo " Entorno de Graphify no detectado en este proyecto."
-    echo " Creando entorno virtual local (.venv-graphify) e instalando dependencias..."
+    echo " Entorno central de Graphify no detectado (~/.graphify-env)."
+    echo " Creando entorno central único e instalando dependencias..."
     echo "=========================================================="
-    python3 -m venv "$LOCAL_VENV"
-    "$LOCAL_VENV/bin/pip" install --quiet graphifyy
-    GRAPHIFY_EXEC="$GRAPHIFY_BIN"
-    echo "✅ Entorno configurado exitosamente en $LOCAL_VENV"
+    python3 -m venv "$CENTRAL_VENV"
+    "$CENTRAL_VENV/bin/pip" install --quiet graphifyy
+    mkdir -p "$HOME/.local/bin"
+    ln -sf "$CENTRAL_BIN" "$HOME/.local/bin/graphify"
+    GRAPHIFY_EXEC="$CENTRAL_BIN"
+    echo "✅ Entorno central configurado exitosamente en $CENTRAL_VENV"
 fi
 
-# 2. Asegurar que .gitignore incluya las carpetas generadas automáticamente
+# 2. Asegurar que .gitignore incluya la carpeta de salida generada
 GITIGNORE="$PROJECT_ROOT/.gitignore"
 if [ -f "$GITIGNORE" ]; then
     if ! grep -q "graphify-out/" "$GITIGNORE" 2>/dev/null; then
-        echo -e "\n# Graphify (Knowledge graph outputs & local virtualenv)\ngraphify-out/\n.venv-graphify/" >> "$GITIGNORE"
-        echo "ℹ️ Se añadieron automáticamente 'graphify-out/' y '.venv-graphify/' a tu .gitignore"
+        echo -e "\n# Graphify (Knowledge graph outputs)\ngraphify-out/" >> "$GITIGNORE"
+        echo "ℹ️ Se añadió automáticamente 'graphify-out/' a tu .gitignore"
     fi
 fi
 

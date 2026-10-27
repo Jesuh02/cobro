@@ -73,3 +73,4 @@ docs/AUDITORIA_SEGURIDAD_2.md
 # Graphify (Knowledge graph outputs & local virtualenv)
 graphify-out/
 .venv-graphify/
+cobro_init.sql

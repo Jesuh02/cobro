@@ -35,7 +35,30 @@ if [ -f "$GITIGNORE" ]; then
     fi
 fi
 
-# 3. Si no se pasan argumentos, corre la extracción de código AST por defecto
+# 3. Asegurar regla automática para que la IA consulte Graphify por sí sola
+AGENTS_RULES_DIR="$PROJECT_ROOT/.agents/rules"
+RULE_FILE="$AGENTS_RULES_DIR/graphify.md"
+if [ ! -f "$RULE_FILE" ]; then
+    mkdir -p "$AGENTS_RULES_DIR"
+    cat << 'EOF' > "$RULE_FILE"
+---
+trigger: always_on
+description: Consult the graphify knowledge graph at graphify-out/ for codebase and architecture questions.
+---
+
+## graphify (Knowledge Graph)
+
+Este proyecto cuenta con un grafo de conocimiento generado en `graphify-out/`.
+
+Reglas para el asistente:
+- Para preguntas sobre arquitectura, dependencias o ubicación de funciones/clases, si `graphify-out/graph.json` existe, consulta primero el grafo antes de hacer lecturas masivas o búsquedas ciegas de archivos.
+- Puedes usar `./scripts/graphify.sh query "<pregunta o símbolo>"` o inspeccionar el grafo para obtener el subgrafo de dependencias exacto.
+- Al modificar código relevante en la sesión, recuerda actualizar el grafo con `./scripts/graphify.sh` (extracción local AST rápida y gratuita).
+EOF
+    echo "ℹ️ Regla de IA configurada en .agents/rules/graphify.md (la IA consultará el grafo automáticamente)"
+fi
+
+# 4. Si no se pasan argumentos, corre la extracción de código AST por defecto
 if [ "$#" -eq 0 ]; then
     echo "=========================================================="
     echo " Ejecutando Graphify: Análisis de código AST (Local/Gratuito)"

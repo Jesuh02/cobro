@@ -58,7 +58,7 @@ void main() {
               _usuarioJson(
                 id: _cobradorId,
                 usuario: 'cobrador.uno',
-                nombre: 'Cobrador Uno',
+                nombre: "Jesús D'Ávila",
                 roles: const <String>['COBRADOR'],
               ),
             ]);
@@ -99,24 +99,44 @@ void main() {
         ),
         findsOneWidget,
       );
+      expect(
+        tester
+            .widget<SegmentedButton<int>>(
+              find.byKey(
+                const ValueKey<String>('super-admin-navigation'),
+              ),
+            )
+            .selected,
+        <int>{0},
+      );
       await tester.tap(
         find.byKey(const ValueKey<String>('super-admin-tab-acceso')),
         warnIfMissed: false,
       );
       await tester.pumpAndSettle(const Duration(milliseconds: 100));
 
-      expect(find.text('Cobrador Uno'), findsOneWidget);
+      expect(find.text("Jesús D'Ávila"), findsOneWidget);
+      expect(
+        tester
+            .widget<SegmentedButton<int>>(
+              find.byKey(
+                const ValueKey<String>('super-admin-navigation'),
+              ),
+            )
+            .selected,
+        <int>{1},
+      );
       expect(ultimaConsultaUsuarios?.url.queryParameters, isEmpty);
 
       await tester.enterText(
         find.byKey(
           const ValueKey<String>('buscar-usuarios-super-admin'),
         ),
-        'cobrador',
+        'jesus',
       );
       await tester.pump(const Duration(milliseconds: 350));
       await tester.pump();
-      expect(ultimaConsultaUsuarios?.url.queryParameters['q'], 'cobrador');
+      expect(ultimaConsultaUsuarios?.url.queryParameters['q'], 'jesus');
 
       await tester.tap(
         find.byKey(

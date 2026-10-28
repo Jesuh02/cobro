@@ -30,6 +30,7 @@ import '../../empleados/presentation/dialogs/empleado_dialogs.dart';
 import '../../empleados/presentation/gestion_empleados_page.dart';
 import '../../organizaciones/presentation/super_admin_activacion_view.dart';
 import '../../organizaciones/presentation/super_admin_view.dart';
+import '../../organizaciones/presentation/widgets/super_admin_navigation.dart';
 import '../../presupuesto/presentation/inicio_presupuesto_view.dart';
 import '../../rutas/presentation/dialogs/pago_ruta_dialogs.dart';
 import '../../rutas/presentation/ruta_cobro_view.dart';
@@ -486,7 +487,57 @@ class _HomePageState extends State<HomePage> {
               ],
               Expanded(
                 child: usuarioSesion.esSuperAdmin
-                    ? _construirSuperAdmin(context, usuarioSesion)
+                    ? SuperAdminNavigation(
+                        selectedIndex: _pestanaSuperAdmin,
+                        onSelected: _seleccionarPestanaSuperAdmin,
+                        instituciones: SuperAdminView(
+                          key: const ValueKey<String>(
+                            'super-admin-instituciones',
+                          ),
+                          organizaciones: _organizacionesAdmin,
+                          guardando: _guardando,
+                          cargando: _cargando,
+                          error: _error,
+                          onRefresh: _cargar,
+                          onCrearOrganizacion: _crearOrganizacionAdmin,
+                          onCrearAdministrador: _crearAdministradorAdmin,
+                          onEditarOrganizacion: _editarOrganizacionAdmin,
+                          onActivoChanged: (
+                            OrganizacionAdmin organizacion,
+                            bool activo,
+                          ) =>
+                              _actualizarOrganizacionAdmin(
+                            organizacion,
+                            <String, dynamic>{
+                              'activo': activo,
+                              if (!activo)
+                                'motivoSuspension':
+                                    'Suspendido por falta de pagos',
+                            },
+                            activo
+                                ? 'Institución reactivada'
+                                : 'Institución suspendida',
+                          ),
+                        ),
+                        gestionAcceso: SuperAdminActivacionView(
+                          key: const ValueKey<String>('super-admin-acceso'),
+                          usuarios: _usuariosSuperAdmin,
+                          organizaciones: _organizacionesAdmin,
+                          usuarioActualId: usuarioSesion.id,
+                          organizacionSeleccionadaId:
+                              _organizacionUsuariosSuperAdminId,
+                          consulta: _consultaUsuariosSuperAdmin,
+                          cargando: _cargandoUsuariosSuperAdmin,
+                          actualizandoIds: _usuariosSuperAdminActualizando,
+                          error: _error,
+                          onRefresh: _cargarUsuariosSuperAdmin,
+                          onOrganizacionChanged:
+                              _seleccionarOrganizacionUsuariosSuperAdmin,
+                          onConsultaChanged:
+                              _programarBusquedaUsuariosSuperAdmin,
+                          onEstadoChanged: _actualizarEstadoUsuarioSuperAdmin,
+                        ),
+                      )
                     : _cargando && _catalogos == null
                         ? const Center(child: CircularProgressIndicator())
                         : _construirVistaActual(context),
@@ -498,90 +549,6 @@ class _HomePageState extends State<HomePage> {
       bottomNavigationBar: esMovil && !usuarioSesion.esSuperAdmin
           ? _construirNavegacionInferior(context)
           : null,
-    );
-  }
-
-  Widget _construirSuperAdmin(
-    BuildContext context,
-    SesionUsuario usuarioSesion,
-  ) {
-    return DefaultTabController(
-      length: 2,
-      initialIndex: _pestanaSuperAdmin,
-      child: Column(
-        children: <Widget>[
-          Material(
-            color: context.clay.surface,
-            child: TabBar(
-              onTap: _seleccionarPestanaSuperAdmin,
-              tabs: const <Widget>[
-                Tab(
-                  key: ValueKey<String>('super-admin-tab-instituciones'),
-                  icon: Icon(Icons.apartment_rounded),
-                  text: 'Instituciones',
-                ),
-                Tab(
-                  key: ValueKey<String>('super-admin-tab-acceso'),
-                  icon: Icon(Icons.manage_accounts_rounded),
-                  text: 'Gestión de acceso',
-                ),
-              ],
-            ),
-          ),
-          Divider(height: 1, color: context.clay.border),
-          Expanded(
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 180),
-              child: _pestanaSuperAdmin == 0
-                  ? SuperAdminView(
-                      key: const ValueKey<String>(
-                        'super-admin-instituciones',
-                      ),
-                      organizaciones: _organizacionesAdmin,
-                      guardando: _guardando,
-                      cargando: _cargando,
-                      error: _error,
-                      onRefresh: _cargar,
-                      onCrearOrganizacion: _crearOrganizacionAdmin,
-                      onCrearAdministrador: _crearAdministradorAdmin,
-                      onEditarOrganizacion: _editarOrganizacionAdmin,
-                      onActivoChanged: (
-                        OrganizacionAdmin organizacion,
-                        bool activo,
-                      ) =>
-                          _actualizarOrganizacionAdmin(
-                        organizacion,
-                        <String, dynamic>{
-                          'activo': activo,
-                          if (!activo)
-                            'motivoSuspension': 'Suspendido por falta de pagos',
-                        },
-                        activo
-                            ? 'Institución reactivada'
-                            : 'Institución suspendida',
-                      ),
-                    )
-                  : SuperAdminActivacionView(
-                      key: const ValueKey<String>('super-admin-acceso'),
-                      usuarios: _usuariosSuperAdmin,
-                      organizaciones: _organizacionesAdmin,
-                      usuarioActualId: usuarioSesion.id,
-                      organizacionSeleccionadaId:
-                          _organizacionUsuariosSuperAdminId,
-                      consulta: _consultaUsuariosSuperAdmin,
-                      cargando: _cargandoUsuariosSuperAdmin,
-                      actualizandoIds: _usuariosSuperAdminActualizando,
-                      error: _error,
-                      onRefresh: _cargarUsuariosSuperAdmin,
-                      onOrganizacionChanged:
-                          _seleccionarOrganizacionUsuariosSuperAdmin,
-                      onConsultaChanged: _programarBusquedaUsuariosSuperAdmin,
-                      onEstadoChanged: _actualizarEstadoUsuarioSuperAdmin,
-                    ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 

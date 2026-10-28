@@ -60,12 +60,13 @@ model TblRol {
 }
 
 model TblRecurso {
-  idRec     String          @id @default(dbgenerated("gen_random_uuid()")) @map("id_rec") @db.Uuid
-  nombre    String          @map("nom")
-  icono     String?         @map("rec_icono")
-  orden     BigInt          @default(0) @map("rec_orden")
-  interface recurso_interface_enum @default(WEB) @map("rec_interface")
-  roles     TblRolRecurso[]
+  idRec                  String                          @id @default(dbgenerated("gen_random_uuid()")) @map("id_rec") @db.Uuid
+  nombre                 String                          @map("nom")
+  icono                  String?                         @map("rec_icono")
+  orden                  BigInt                          @default(0) @map("rec_orden")
+  interface              recurso_interface_enum          @default(WEB) @map("rec_interface")
+  roles                  TblRolRecurso[]
+  usuariosOrganizaciones TblUsuarioOrganizacionRecurso[]
 
   @@unique([interface, nombre], map: "ux_tbl_recursos_interface_nombre")
   @@map("tbl_recursos")
@@ -112,17 +113,32 @@ model TblOrganizacion {
 }
 
 model TblUsuarioOrganizacion {
-  idUrg        String          @id @default(dbgenerated("gen_random_uuid()")) @map("id_urg") @db.Uuid
-  activo       Boolean         @default(true) @map("urg_activo")
-  rolId        String          @map("rol_id") @db.Uuid
-  usuId        String          @map("usu_id") @db.Uuid
-  orgId        String          @map("org_id") @db.Uuid
-  organizacion TblOrganizacion @relation(fields: [orgId], references: [idOrg])
-  rol          TblRol          @relation(fields: [rolId], references: [idRol])
-  usuario      TblUsuario      @relation(fields: [usuId], references: [idUsu])
+  idUrg        String                          @id @default(dbgenerated("gen_random_uuid()")) @map("id_urg") @db.Uuid
+  activo       Boolean                         @default(true) @map("urg_activo")
+  rolId        String                          @map("rol_id") @db.Uuid
+  usuId        String                          @map("usu_id") @db.Uuid
+  orgId        String                          @map("org_id") @db.Uuid
+  recursos     TblUsuarioOrganizacionRecurso[]
+  organizacion TblOrganizacion                 @relation(fields: [orgId], references: [idOrg])
+  rol          TblRol                          @relation(fields: [rolId], references: [idRol])
+  usuario      TblUsuario                      @relation(fields: [usuId], references: [idUsu])
 
   @@unique([usuId, orgId, rolId], map: "ux_tbl_usuarios_organizaciones")
   @@map("tbl_usuarios_organizaciones")
+  @@schema("public")
+}
+
+model TblUsuarioOrganizacionRecurso {
+  idUor                 String                 @id @default(dbgenerated("gen_random_uuid()")) @map("id_uor") @db.Uuid
+  usuarioOrganizacionId String                 @map("urg_id") @db.Uuid
+  recursoId             String                 @map("rec_id") @db.Uuid
+  creacion              DateTime               @default(now()) @map("uor_creacion") @db.Timestamptz(6)
+  usuarioOrganizacion   TblUsuarioOrganizacion @relation(fields: [usuarioOrganizacionId], references: [idUrg], onDelete: Cascade)
+  recurso               TblRecurso             @relation(fields: [recursoId], references: [idRec], onDelete: Cascade)
+
+  @@unique([usuarioOrganizacionId, recursoId], map: "ux_tbl_usuarios_organizaciones_recursos")
+  @@index([recursoId], map: "ix_tbl_usuarios_organizaciones_recursos_recurso")
+  @@map("tbl_usuarios_organizaciones_recursos")
   @@schema("public")
 }
 

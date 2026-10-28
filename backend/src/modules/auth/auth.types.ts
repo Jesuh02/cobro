@@ -42,6 +42,7 @@ export type UsuarioSuperAdminResponse = {
   organizacionNombre: string | null;
   organizacionSuspendida: boolean;
   roles: string[];
+  permisos: string[];
   creadoEn: string | null;
 };
 

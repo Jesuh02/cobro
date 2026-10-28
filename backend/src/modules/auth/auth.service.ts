@@ -17,6 +17,7 @@ import {
   ActualizarOrganizacionSuperAdminDto,
   ActualizarUsuarioDto,
   ActualizarEstadoUsuarioDto,
+  ActualizarPermisosUsuarioSuperAdminDto,
   ActualizarPermisosUsuariosDto,
   CrearAdministradorSuperAdminDto,
   CrearOrganizacionSuperAdminDto,
@@ -87,6 +88,7 @@ type UsuarioSuperAdminRow = {
   organizacion_nombre: string | null;
   organizacion_suspendida: boolean | null;
   roles: string[];
+  permisos: string[];
 };
 
 type TokenPayload = {
@@ -838,7 +840,12 @@ export class AuthService {
               array_agg(DISTINCT tr.rol_tip::text)
                 FILTER (WHERE tr.rol_tip IS NOT NULL),
               ARRAY[]::text[]
-            ) AS roles
+            ) AS roles,
+            COALESCE(
+              array_agg(DISTINCT recurso_usuario.nom)
+                FILTER (WHERE recurso_usuario.nom IS NOT NULL),
+              ARRAY[]::text[]
+            ) AS permisos
           FROM public.tbl_usuarios tu
           JOIN public.tbl_personas p ON p.id_per = tu.persona_id
           LEFT JOIN public.tbl_usuarios_organizaciones uo
@@ -848,6 +855,11 @@ export class AuthService {
             ON org.id_org = uo.org_id
           LEFT JOIN public.tbl_roles tr
             ON tr.id_rol = uo.rol_id
+          LEFT JOIN public.tbl_usuarios_organizaciones_recursos uor
+            ON uor.urg_id = uo.id_urg
+          LEFT JOIN public.tbl_recursos recurso_usuario
+            ON recurso_usuario.id_rec = uor.rec_id
+           AND recurso_usuario.rec_interface = 'WEB'
           WHERE ${whereClause}
           GROUP BY
             tu.id_usu,
@@ -907,18 +919,94 @@ export class AuthService {
     );
 
     this.cache.delete('superadmin:organizaciones');
-    this.cache.delete(`superadmin:usuario:${usuarioId}`);
+    this.cache.deleteByPrefix(`superadmin:usuario:${usuarioId}:`);
     this.cache.deleteByPrefix('superadmin:usuarios:');
 
     return this.obtenerUsuarioSuperAdminPorId(usuarioId);
   }
 
+  async actualizarPermisosUsuarioSuperAdmin(
+    superadmin: AuthenticatedUser,
+    usuarioId: string,
+    dto: ActualizarPermisosUsuarioSuperAdminDto,
+  ): Promise<UsuarioSuperAdminResponse> {
+    this.requerirSuperAdmin(superadmin);
+    await this.requerirEsquemaTblSuperAdmin();
+    this.requerirIdTbl(usuarioId, 'Usuario no encontrado');
+    this.requerirIdTbl(dto.organizacionId, 'Institucion no encontrada');
+    const permisos = this.validarPermisos(dto.permisos);
+
+    await this.prisma.$transaction(async (tx) => {
+      const membresias = await tx.$queryRaw<
+        Array<{ id: string; rol: string }>
+      >(Prisma.sql`
+        SELECT
+          uo.id_urg::text AS id,
+          rol.rol_tip::text AS rol
+        FROM public.tbl_usuarios_organizaciones uo
+        JOIN public.tbl_roles rol ON rol.id_rol = uo.rol_id
+        JOIN public.tbl_organizaciones org ON org.id_org = uo.org_id
+        WHERE uo.usu_id = ${usuarioId}::uuid
+          AND uo.org_id = ${dto.organizacionId}::uuid
+          AND uo.urg_activo
+          AND NOT COALESCE(org.org_es_sistema, FALSE)
+      `);
+
+      if (membresias.length === 0) {
+        throw new NotFoundException('Usuario no encontrado en la institucion');
+      }
+
+      if (
+        membresias.some(
+          (membresia) =>
+            membresia.rol === 'ADMINISTRADOR' ||
+            membresia.rol === 'SUPER_ADMIN',
+        )
+      ) {
+        throw new BadRequestException(
+          'Los permisos de administradores y SuperAdmin se heredan del rol',
+        );
+      }
+
+      const membresiasCobrador = membresias
+        .filter((membresia) => membresia.rol === 'COBRADOR')
+        .map((membresia) => membresia.id);
+
+      if (membresiasCobrador.length === 0) {
+        throw new BadRequestException(
+          'Solo puedes gestionar permisos de empleados cobradores',
+        );
+      }
+
+      await this.reemplazarPermisosMembresias(
+        tx,
+        membresiasCobrador,
+        permisos,
+      );
+    });
+
+    this.cache.deleteByPrefix(`superadmin:usuario:${usuarioId}:`);
+    this.cache.deleteByPrefix('superadmin:usuarios:');
+
+    return this.obtenerUsuarioSuperAdminPorId(
+      usuarioId,
+      dto.organizacionId,
+    );
+  }
+
   async obtenerUsuarioSuperAdminPorId(
     usuarioId: string,
+    organizacionId?: string,
   ): Promise<UsuarioSuperAdminResponse> {
     this.requerirIdTbl(usuarioId, 'Usuario no encontrado');
+    if (organizacionId) {
+      this.requerirIdTbl(organizacionId, 'Institucion no encontrada');
+    }
 
-    const cacheKey = `superadmin:usuario:${usuarioId}`;
+    const cacheKey = `superadmin:usuario:${usuarioId}:${organizacionId || 'all'}`;
+    const filtroOrganizacion = organizacionId
+      ? Prisma.sql`AND uo.org_id = ${organizacionId}::uuid`
+      : Prisma.empty;
 
     return this.cache.remember(
       cacheKey,
@@ -948,7 +1036,12 @@ export class AuthService {
               array_agg(DISTINCT tr.rol_tip::text)
                 FILTER (WHERE tr.rol_tip IS NOT NULL),
               ARRAY[]::text[]
-            ) AS roles
+            ) AS roles,
+            COALESCE(
+              array_agg(DISTINCT recurso_usuario.nom)
+                FILTER (WHERE recurso_usuario.nom IS NOT NULL),
+              ARRAY[]::text[]
+            ) AS permisos
           FROM public.tbl_usuarios tu
           JOIN public.tbl_personas p ON p.id_per = tu.persona_id
           LEFT JOIN public.tbl_usuarios_organizaciones uo
@@ -958,7 +1051,13 @@ export class AuthService {
             ON org.id_org = uo.org_id
           LEFT JOIN public.tbl_roles tr
             ON tr.id_rol = uo.rol_id
+          LEFT JOIN public.tbl_usuarios_organizaciones_recursos uor
+            ON uor.urg_id = uo.id_urg
+          LEFT JOIN public.tbl_recursos recurso_usuario
+            ON recurso_usuario.id_rec = uor.rec_id
+           AND recurso_usuario.rec_interface = 'WEB'
           WHERE tu.id_usu = ${usuarioId}::uuid
+            ${filtroOrganizacion}
           GROUP BY
             tu.id_usu,
             tu.usu_usuario,
@@ -989,6 +1088,15 @@ export class AuthService {
   private formatearUsuarioSuperAdmin(
     row: UsuarioSuperAdminRow,
   ): UsuarioSuperAdminResponse {
+    const roles = row.roles ?? [];
+    const permisosAsignados = new Set(row.permisos ?? []);
+    const permisos =
+      roles.includes('ADMINISTRADOR') || roles.includes('SUPER_ADMIN')
+        ? [...permisosEmpleadoCodigos]
+        : permisosEmpleadoCodigos.filter((permiso) =>
+            permisosAsignados.has(permiso),
+          );
+
     return {
       id: row.id,
       usuario: row.usuario,
@@ -1002,7 +1110,8 @@ export class AuthService {
       organizacionId: row.organizacion_id,
       organizacionNombre: row.organizacion_nombre,
       organizacionSuspendida: Boolean(row.organizacion_suspendida),
-      roles: row.roles ?? [],
+      roles,
+      permisos,
       creadoEn: this.fechaIso(row.creado_en),
     };
   }
@@ -1208,8 +1317,11 @@ export class AuthService {
        AND uo.urg_activo
        AND uo.org_id = ${orgId}::uuid
       JOIN public.tbl_roles tr ON tr.id_rol = uo.rol_id
-      LEFT JOIN public.tbl_roles_recursos rr ON rr.rol_id = tr.id_rol
-      LEFT JOIN public.tbl_recursos rec ON rec.id_rec = rr.rec_id
+      LEFT JOIN public.tbl_usuarios_organizaciones_recursos uor
+        ON uor.urg_id = uo.id_urg
+      LEFT JOIN public.tbl_recursos rec
+        ON rec.id_rec = uor.rec_id
+       AND rec.rec_interface = 'WEB'
       WHERE EXISTS (
         SELECT 1
         FROM public.tbl_usuarios_organizaciones uo_cobrador
@@ -1571,7 +1683,9 @@ export class AuthService {
     dto: ActualizarPermisosUsuariosDto,
   ): Promise<AuthUserResponse[]> {
     const permisos = this.validarPermisos(dto.permisos);
-    const usuarioIdsDto = dto.usuarioIds?.filter((id) => id.trim()) ?? [];
+    const usuarioIdsDto = [
+      ...new Set(dto.usuarioIds?.map((id) => id.trim()).filter(Boolean) ?? []),
+    ];
 
     if (!dto.todos && usuarioIdsDto.length === 0) {
       throw new BadRequestException('Selecciona al menos un empleado');
@@ -1589,10 +1703,10 @@ export class AuthService {
       const filtroUsuarios = dto.todos
         ? Prisma.empty
         : Prisma.sql`AND tu.id_usu::text IN (${Prisma.join(usuarioIdsDto)})`;
-      const usuariosObjetivo = await tx.$queryRaw<
-        Array<{ usuario_id: string }>
+      const membresiasObjetivo = await tx.$queryRaw<
+        Array<{ usuario_organizacion_id: string }>
       >(Prisma.sql`
-        SELECT DISTINCT tu.id_usu::text AS usuario_id
+        SELECT DISTINCT uo.id_urg::text AS usuario_organizacion_id
         FROM public.tbl_usuarios tu
         JOIN public.tbl_usuarios_organizaciones uo
           ON uo.usu_id = tu.id_usu
@@ -1603,71 +1717,94 @@ export class AuthService {
           ${filtroUsuarios}
       `);
 
-      if (usuariosObjetivo.length === 0) {
+      if (membresiasObjetivo.length === 0) {
         throw new BadRequestException('Selecciona al menos un empleado');
       }
 
-      const [rolCobrador] = await tx.$queryRaw<Array<{ id: string }>>(
-        Prisma.sql`
-          SELECT id_rol::text AS id
-          FROM public.tbl_roles
-          WHERE rol_tip::text = 'COBRADOR'
-          LIMIT 1
-        `,
-      );
-
-      if (!rolCobrador) {
-        throw new ConflictException(
-          'No existe el rol COBRADOR en el esquema tbl_*',
+      if (!dto.todos && membresiasObjetivo.length !== usuarioIdsDto.length) {
+        throw new BadRequestException(
+          'Uno o mas empleados no pertenecen a la institucion',
         );
       }
 
-      await tx.$executeRaw(Prisma.sql`
-        DELETE FROM public.tbl_roles_recursos rol_recurso
-        USING public.tbl_roles rol, public.tbl_recursos recurso
-        WHERE rol.id_rol = rol_recurso.rol_id
-          AND recurso.id_rec = rol_recurso.rec_id
-          AND rol.rol_tip::text = 'COBRADOR'
-          AND recurso.rec_interface = 'WEB'
-          AND recurso.nom IN (${Prisma.join(permisosEmpleadoCodigos)})
-      `);
-
-      if (permisos.length === 0) {
-        return;
-      }
-
-      await tx.$executeRaw(Prisma.sql`
-        INSERT INTO public.tbl_recursos (nom, rec_orden, rec_interface)
-        VALUES ('MODIFICAR_CLIENTES', 75, 'WEB'), ('ELIMINAR_CLIENTES', 76, 'WEB')
-        ON CONFLICT (rec_interface, nom) DO NOTHING
-      `);
-
-      const recursosPermiso = await tx.$queryRaw<Array<{ id: string }>>(
-        Prisma.sql`
-          SELECT id_rec::text AS id
-          FROM public.tbl_recursos
-          WHERE rec_interface = 'WEB'
-            AND nom IN (${Prisma.join(permisos)})
-        `,
+      await this.reemplazarPermisosMembresias(
+        tx,
+        membresiasObjetivo.map(
+          (membresia) => membresia.usuario_organizacion_id,
+        ),
+        permisos,
       );
-
-      if (recursosPermiso.length !== permisos.length) {
-        throw new ConflictException(
-          'Faltan recursos de permisos en el esquema tbl_*',
-        );
-      }
-
-      await tx.$executeRaw(Prisma.sql`
-        INSERT INTO public.tbl_roles_recursos (rol_id, rec_id)
-        SELECT ${rolCobrador.id}::uuid, recurso.id_rec
-        FROM public.tbl_recursos recurso
-        WHERE recurso.rec_interface = 'WEB'
-          AND recurso.nom IN (${Prisma.join(permisos)})
-        ON CONFLICT (rec_id, rol_id) DO NOTHING
-      `);
     });
 
+    this.cache.deleteByPrefix('superadmin:usuarios:');
+    if (dto.todos) {
+      this.cache.deleteByPrefix('superadmin:usuario:');
+    } else {
+      usuarioIdsDto.forEach((usuarioId) => {
+        this.cache.deleteByPrefix(`superadmin:usuario:${usuarioId}:`);
+      });
+    }
+
     return this.listarEmpleados(administrador);
+  }
+
+  private async reemplazarPermisosMembresias(
+    tx: Prisma.TransactionClient,
+    membresiaIds: string[],
+    permisos: string[],
+  ): Promise<void> {
+    if (membresiaIds.length === 0) {
+      throw new BadRequestException('Selecciona al menos un empleado');
+    }
+
+    const membresiasSql = Prisma.join(
+      membresiaIds.map((id) => Prisma.sql`${id}::uuid`),
+    );
+
+    await tx.$executeRaw(Prisma.sql`
+      DELETE FROM public.tbl_usuarios_organizaciones_recursos uor
+      USING public.tbl_recursos recurso
+      WHERE recurso.id_rec = uor.rec_id
+        AND uor.urg_id IN (${membresiasSql})
+        AND recurso.rec_interface = 'WEB'
+        AND recurso.nom IN (${Prisma.join(permisosEmpleadoCodigos)})
+    `);
+
+    if (permisos.length === 0) {
+      return;
+    }
+
+    await tx.$executeRaw(Prisma.sql`
+      INSERT INTO public.tbl_recursos (nom, rec_orden, rec_interface)
+      VALUES ('MODIFICAR_CLIENTES', 75, 'WEB'), ('ELIMINAR_CLIENTES', 76, 'WEB')
+      ON CONFLICT (rec_interface, nom) DO NOTHING
+    `);
+
+    const recursosPermiso = await tx.$queryRaw<Array<{ id: string }>>(
+      Prisma.sql`
+        SELECT id_rec::text AS id
+        FROM public.tbl_recursos
+        WHERE rec_interface = 'WEB'
+          AND nom IN (${Prisma.join(permisos)})
+      `,
+    );
+
+    if (recursosPermiso.length !== permisos.length) {
+      throw new ConflictException(
+        'Faltan recursos de permisos en el esquema tbl_*',
+      );
+    }
+
+    await tx.$executeRaw(Prisma.sql`
+      INSERT INTO public.tbl_usuarios_organizaciones_recursos (urg_id, rec_id)
+      SELECT uo.id_urg, recurso.id_rec
+      FROM public.tbl_usuarios_organizaciones uo
+      CROSS JOIN public.tbl_recursos recurso
+      WHERE uo.id_urg IN (${membresiasSql})
+        AND recurso.rec_interface = 'WEB'
+        AND recurso.nom IN (${Prisma.join(permisos)})
+      ON CONFLICT (urg_id, rec_id) DO NOTHING
+    `);
   }
 
   private async actualizarEmpleadoTbl(
@@ -1775,7 +1912,7 @@ export class AuthService {
     }
 
     this.cache.delete('superadmin:organizaciones');
-    this.cache.delete(`superadmin:usuario:${empleadoId}`);
+    this.cache.deleteByPrefix(`superadmin:usuario:${empleadoId}:`);
     this.cache.deleteByPrefix('superadmin:usuarios:');
 
     return this.formatearUsuarioTbl(actualizado);
@@ -1825,7 +1962,7 @@ export class AuthService {
     }
 
     this.cache.delete('superadmin:organizaciones');
-    this.cache.delete(`superadmin:usuario:${empleadoId}`);
+    this.cache.deleteByPrefix(`superadmin:usuario:${empleadoId}:`);
     this.cache.deleteByPrefix('superadmin:usuarios:');
 
     return this.formatearUsuarioTbl(actualizado);
@@ -2074,18 +2211,42 @@ export class AuthService {
         `,
       );
 
-      await tx.$executeRaw(Prisma.sql`
-        INSERT INTO public.tbl_usuarios_organizaciones (
-          rol_id,
-          usu_id,
-          org_id
-        )
-        VALUES (
-          ${rol.id}::uuid,
-          ${usuarioCreado.id}::uuid,
-          ${orgId}::uuid
-        )
-      `);
+      const [usuarioOrganizacion] = await tx.$queryRaw<Array<{ id: string }>>(
+        Prisma.sql`
+          INSERT INTO public.tbl_usuarios_organizaciones (
+            rol_id,
+            usu_id,
+            org_id
+          )
+          VALUES (
+            ${rol.id}::uuid,
+            ${usuarioCreado.id}::uuid,
+            ${orgId}::uuid
+          )
+          RETURNING id_urg::text AS id
+        `,
+      );
+
+      if (!usuarioOrganizacion) {
+        throw new ConflictException('No se pudo asignar el usuario');
+      }
+
+      if (rolCodigo === 'COBRADOR') {
+        await tx.$executeRaw(Prisma.sql`
+          INSERT INTO public.tbl_usuarios_organizaciones_recursos (
+            urg_id,
+            rec_id
+          )
+          SELECT ${usuarioOrganizacion.id}::uuid, rol_recurso.rec_id
+          FROM public.tbl_roles_recursos rol_recurso
+          JOIN public.tbl_recursos recurso
+            ON recurso.id_rec = rol_recurso.rec_id
+          WHERE rol_recurso.rol_id = ${rol.id}::uuid
+            AND recurso.rec_interface = 'WEB'
+            AND recurso.nom IN (${Prisma.join(permisosEmpleadoCodigos)})
+          ON CONFLICT (urg_id, rec_id) DO NOTHING
+        `);
+      }
 
       return usuarioCreado.id;
     });
@@ -2400,8 +2561,11 @@ export class AuthService {
        AND uo.urg_activo
        AND (scope.org_id IS NULL OR uo.org_id = scope.org_id)
       LEFT JOIN public.tbl_roles tr ON tr.id_rol = uo.rol_id
-      LEFT JOIN public.tbl_roles_recursos rr ON rr.rol_id = tr.id_rol
-      LEFT JOIN public.tbl_recursos rec ON rec.id_rec = rr.rec_id
+      LEFT JOIN public.tbl_usuarios_organizaciones_recursos uor
+        ON uor.urg_id = uo.id_urg
+      LEFT JOIN public.tbl_recursos rec
+        ON rec.id_rec = uor.rec_id
+       AND rec.rec_interface = 'WEB'
       WHERE lower(tu.usu_usuario) = ${nombreUsuario}
       GROUP BY
         tu.id_usu,
@@ -2483,8 +2647,11 @@ export class AuthService {
        AND uo.urg_activo
        AND (scope.org_id IS NULL OR uo.org_id = scope.org_id)
       LEFT JOIN public.tbl_roles tr ON tr.id_rol = uo.rol_id
-      LEFT JOIN public.tbl_roles_recursos rr ON rr.rol_id = tr.id_rol
-      LEFT JOIN public.tbl_recursos rec ON rec.id_rec = rr.rec_id
+      LEFT JOIN public.tbl_usuarios_organizaciones_recursos uor
+        ON uor.urg_id = uo.id_urg
+      LEFT JOIN public.tbl_recursos rec
+        ON rec.id_rec = uor.rec_id
+       AND rec.rec_interface = 'WEB'
       WHERE tu.id_usu = ${usuarioId}::uuid
       GROUP BY
         tu.id_usu,

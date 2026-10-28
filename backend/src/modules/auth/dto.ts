@@ -172,6 +172,21 @@ export class ActualizarPermisosUsuariosDto {
   permisos!: string[];
 }
 
+export class ActualizarPermisosUsuarioSuperAdminDto {
+  @IsString()
+  @MaxLength(64)
+  @Matches(resourceIdPattern, {
+    message: 'La organizacion debe ser un identificador valido',
+  })
+  organizacionId!: string;
+
+  @IsArray()
+  @ArrayMaxSize(20)
+  @IsString({ each: true })
+  @MaxLength(60, { each: true })
+  permisos!: string[];
+}
+
 export class ActualizarEstadoUsuarioDto {
   @IsBoolean()
   activo!: boolean;

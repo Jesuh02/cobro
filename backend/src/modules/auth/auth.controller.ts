@@ -19,6 +19,7 @@ import { ResourceIdPipe } from '../../common/validation/resource-id';
 import {
   ActualizarOrganizacionSuperAdminDto,
   ActualizarEstadoUsuarioDto,
+  ActualizarPermisosUsuarioSuperAdminDto,
   ActualizarPermisosUsuariosDto,
   ActualizarUsuarioDto,
   CrearAdministradorSuperAdminDto,
@@ -132,6 +133,16 @@ export class AuthController {
     @Body() body: ActualizarEstadoUsuarioDto,
   ) {
     return this.auth.actualizarEstadoUsuarioSuperAdmin(usuario, id, body);
+  }
+
+  @Patch('super-admin/usuarios/:id/permisos')
+  @UseGuards(AuthGuard)
+  actualizarPermisosUsuarioSuperAdmin(
+    @CurrentUser() usuario: AuthenticatedUser,
+    @Param('id', new ResourceIdPipe()) id: string,
+    @Body() body: ActualizarPermisosUsuarioSuperAdminDto,
+  ) {
+    return this.auth.actualizarPermisosUsuarioSuperAdmin(usuario, id, body);
   }
 
   @Post('usuarios')

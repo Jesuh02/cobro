@@ -297,6 +297,70 @@ describe('AuthService - Account Lockout (SEC-COBRO-04)', () => {
     });
   });
 
+  describe('crearEmpleado', () => {
+    it('copies the default role permissions to the new membership', async () => {
+      const adminUser: AuthenticatedUser = {
+        usuarioId: '11111111-1111-1111-1111-111111111111',
+        usuario: 'adminuser',
+        organizacionId: '22222222-2222-2222-2222-222222222222',
+        roles: ['ADMINISTRADOR'],
+        permisos: [],
+      };
+      const membershipId = '33333333-3333-3333-3333-333333333333';
+      const tx = {
+        $queryRaw: jest
+          .fn()
+          .mockResolvedValueOnce([{ org_id: adminUser.organizacionId }])
+          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce([
+            { id: '44444444-4444-4444-4444-444444444444' },
+          ])
+          .mockResolvedValueOnce([
+            { id: '55555555-5555-5555-5555-555555555555' },
+          ])
+          .mockResolvedValueOnce([
+            { id: '66666666-6666-6666-6666-666666666666' },
+          ])
+          .mockResolvedValueOnce([{ id: membershipId }]),
+        $executeRaw: jest.fn().mockResolvedValue(1),
+      };
+      mockPrisma.$transaction = jest.fn(async (callback) => callback(tx));
+      mockPrisma.$queryRaw = jest.fn().mockResolvedValueOnce([
+        {
+          ...mockUserTbl,
+          id: '66666666-6666-6666-6666-666666666666',
+          usuario: 'cobrador.nuevo',
+          roles: ['COBRADOR'],
+          permisos: ['CREAR_CREDITOS'],
+        },
+      ]);
+      mockPasswords.hash.mockResolvedValue('new-hashed-password');
+
+      const resultado = await authService.crearEmpleado(
+        {
+          nombreCompleto: 'Cobrador Nuevo',
+          usuario: 'cobrador.nuevo',
+          contrasena: 'ClaveSegura123!',
+          correo: 'nuevo@example.com',
+        },
+        adminUser,
+      );
+
+      expect(resultado.usuario).toBe('cobrador.nuevo');
+      expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+      const sql = tx.$executeRaw.mock.calls[0][0] as {
+        strings: string[];
+        values: unknown[];
+      };
+      expect(sql.strings.join(' ')).toContain(
+        'tbl_usuarios_organizaciones_recursos',
+      );
+      expect(sql.strings.join(' ')).toContain('tbl_roles_recursos');
+      expect(sql.values).toContain(membershipId);
+    });
+  });
+
   describe('listarEmpleados', () => {
     it('rejects non-admin users from viewing employees', async () => {
       const cobradorUser = {
@@ -331,6 +395,65 @@ describe('AuthService - Account Lockout (SEC-COBRO-04)', () => {
 
       const resultado = await authService.listarEmpleados(adminUser);
       expect(Array.isArray(resultado)).toBe(true);
+      const sql = mockPrisma.$queryRaw.mock.calls[1][0] as {
+        strings: string[];
+      };
+      expect(sql.strings.join(' ')).toContain(
+        'tbl_usuarios_organizaciones_recursos',
+      );
+      expect(sql.strings.join(' ')).not.toContain('tbl_roles_recursos');
+    });
+  });
+
+  describe('actualizarPermisosEmpleados', () => {
+    it('persists permissions on the selected membership instead of the global role', async () => {
+      const adminUser: AuthenticatedUser = {
+        usuarioId: '11111111-1111-1111-1111-111111111111',
+        usuario: 'adminuser',
+        organizacionId: '22222222-2222-2222-2222-222222222222',
+        roles: ['ADMINISTRADOR'],
+        permisos: [],
+      };
+      const targetUserId = '33333333-3333-3333-3333-333333333333';
+      const membershipId = '44444444-4444-4444-4444-444444444444';
+      const tx = {
+        $queryRaw: jest
+          .fn()
+          .mockResolvedValueOnce([{ org_id: adminUser.organizacionId }])
+          .mockResolvedValueOnce([
+            { usuario_organizacion_id: membershipId },
+          ])
+          .mockResolvedValueOnce([
+            { id: '55555555-5555-5555-5555-555555555555' },
+          ]),
+        $executeRaw: jest.fn().mockResolvedValue(1),
+      };
+      mockPrisma.$transaction = jest.fn(async (callback) => callback(tx));
+      jest
+        .spyOn(authService as any, 'listarEmpleadosTbl')
+        .mockResolvedValueOnce([]);
+
+      await authService.actualizarPermisosEmpleados(adminUser, {
+        usuarioIds: [targetUserId],
+        permisos: ['CREAR_CREDITOS'],
+      });
+
+      const sqlEjecutado = tx.$executeRaw.mock.calls
+        .map((call) => call[0].strings.join(' '))
+        .join(' ');
+      expect(sqlEjecutado).toContain(
+        'tbl_usuarios_organizaciones_recursos',
+      );
+      expect(sqlEjecutado).not.toContain(
+        'DELETE FROM public.tbl_roles_recursos',
+      );
+      const valoresEjecutados = tx.$executeRaw.mock.calls.flatMap(
+        (call) => call[0].values,
+      );
+      expect(valoresEjecutados).toContain(membershipId);
+      expect(valoresEjecutados).not.toContain(
+        '66666666-6666-6666-6666-666666666666',
+      );
     });
   });
 
@@ -394,6 +517,7 @@ describe('AuthService - Account Lockout (SEC-COBRO-04)', () => {
       organizacion_nombre: 'Organizacion A',
       organizacion_suspendida: false,
       roles: ['COBRADOR'],
+      permisos: ['CREAR_CREDITOS'],
     };
 
     describe('listarUsuariosSuperAdmin', () => {
@@ -419,6 +543,7 @@ describe('AuthService - Account Lockout (SEC-COBRO-04)', () => {
         expect(resultado[0].nombreCompleto).toBe('Juan Perez');
         expect(resultado[0].organizacionNombre).toBe('Organizacion A');
         expect(resultado[0].roles).toContain('COBRADOR');
+        expect(resultado[0].permisos).toEqual(['CREAR_CREDITOS']);
       });
 
       it('applies organization filter when provided', async () => {
@@ -553,6 +678,113 @@ describe('AuthService - Account Lockout (SEC-COBRO-04)', () => {
 
         expect(freshList[0].activo).toBe(false);
         expect(mockPrisma.$queryRaw).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    describe('actualizarPermisosUsuarioSuperAdmin', () => {
+      it('rejects non-superadmin users', async () => {
+        await expect(
+          authService.actualizarPermisosUsuarioSuperAdmin(
+            regularUser,
+            '55555555-5555-5555-5555-555555555555',
+            {
+              organizacionId: '22222222-2222-2222-2222-222222222222',
+              permisos: [],
+            },
+          ),
+        ).rejects.toThrow(ForbiddenException);
+      });
+
+      it('updates only the selected employee membership', async () => {
+        const targetUserId = '55555555-5555-5555-5555-555555555555';
+        const membershipId = '66666666-6666-6666-6666-666666666666';
+        const resourceId = '77777777-7777-7777-7777-777777777777';
+        const tx = {
+          $queryRaw: jest
+            .fn()
+            .mockResolvedValueOnce([{ id: membershipId, rol: 'COBRADOR' }])
+            .mockResolvedValueOnce([{ id: resourceId }]),
+          $executeRaw: jest.fn().mockResolvedValue(1),
+        };
+        mockPrisma.$transaction = jest.fn(async (callback) => callback(tx));
+        jest
+          .spyOn(authService, 'obtenerUsuarioSuperAdminPorId')
+          .mockResolvedValueOnce({
+            id: targetUserId,
+            usuario: 'empleado1',
+            nombreCompleto: 'Juan Perez',
+            nombres: 'Juan',
+            apellidos: 'Perez',
+            identificacion: '12345678',
+            correo: 'juan@test.com',
+            telefono: '3001234567',
+            activo: true,
+            organizacionId: '22222222-2222-2222-2222-222222222222',
+            organizacionNombre: 'Organizacion A',
+            organizacionSuspendida: false,
+            roles: ['COBRADOR'],
+            permisos: ['CREAR_CREDITOS'],
+            creadoEn: '2026-01-01T00:00:00.000Z',
+          });
+
+        const resultado =
+          await authService.actualizarPermisosUsuarioSuperAdmin(
+            superAdminUser,
+            targetUserId,
+            {
+              organizacionId: '22222222-2222-2222-2222-222222222222',
+              permisos: ['CREAR_CREDITOS'],
+            },
+          );
+
+        expect(resultado.permisos).toEqual(['CREAR_CREDITOS']);
+        expect(tx.$executeRaw).toHaveBeenCalledTimes(3);
+        const sqlEjecutado = tx.$executeRaw.mock.calls
+          .map((call) => call[0].strings.join(' '))
+          .join(' ');
+        expect(sqlEjecutado).toContain(
+          'tbl_usuarios_organizaciones_recursos',
+        );
+        expect(sqlEjecutado).not.toContain(
+          'DELETE FROM public.tbl_roles_recursos',
+        );
+        const valoresEjecutados = tx.$executeRaw.mock.calls.flatMap(
+          (call) => call[0].values,
+        );
+        expect(valoresEjecutados).toContain(membershipId);
+        expect(authService.obtenerUsuarioSuperAdminPorId).toHaveBeenCalledWith(
+          targetUserId,
+          '22222222-2222-2222-2222-222222222222',
+        );
+      });
+
+      it('rejects permission overrides for administrators', async () => {
+        const tx = {
+          $queryRaw: jest.fn().mockResolvedValueOnce([
+            {
+              id: '66666666-6666-6666-6666-666666666666',
+              rol: 'ADMINISTRADOR',
+            },
+          ]),
+          $executeRaw: jest.fn(),
+        };
+        mockPrisma.$transaction = jest.fn(async (callback) => callback(tx));
+
+        await expect(
+          authService.actualizarPermisosUsuarioSuperAdmin(
+            superAdminUser,
+            '55555555-5555-5555-5555-555555555555',
+            {
+              organizacionId: '22222222-2222-2222-2222-222222222222',
+              permisos: [],
+            },
+          ),
+        ).rejects.toThrow(
+          new BadRequestException(
+            'Los permisos de administradores y SuperAdmin se heredan del rol',
+          ),
+        );
+        expect(tx.$executeRaw).not.toHaveBeenCalled();
       });
     });
 

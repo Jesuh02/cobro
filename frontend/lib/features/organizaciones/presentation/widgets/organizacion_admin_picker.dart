@@ -14,6 +14,11 @@ class OrganizacionAdminPicker extends StatelessWidget {
     required this.focusNode,
     required this.seleccionada,
     required this.onChanged,
+    this.incluirTodas = false,
+    this.etiquetaTodas = 'Todas las instituciones',
+    this.labelText = 'Institucion',
+    this.hintText = 'Buscar por nombre, correo o admin',
+    super.key,
   });
 
   final List<OrganizacionAdmin> organizaciones;
@@ -21,6 +26,10 @@ class OrganizacionAdminPicker extends StatelessWidget {
   final FocusNode focusNode;
   final OrganizacionAdmin? seleccionada;
   final ValueChanged<OrganizacionAdmin?> onChanged;
+  final bool incluirTodas;
+  final String etiquetaTodas;
+  final String labelText;
+  final String hintText;
 
   @override
   Widget build(BuildContext context) {
@@ -32,6 +41,7 @@ class OrganizacionAdminPicker extends StatelessWidget {
         final String texto = value.text.trim();
         final String consulta = texto.toLowerCase();
         if (consulta.isEmpty ||
+            (incluirTodas && texto == etiquetaTodas) ||
             (seleccionada != null && texto == seleccionada!.nombre)) {
           return organizaciones;
         }
@@ -56,11 +66,11 @@ class OrganizacionAdminPicker extends StatelessWidget {
         return TextField(
           controller: controller,
           focusNode: focusNode,
-          decoration: const InputDecoration(
-            labelText: 'Institucion',
-            hintText: 'Buscar por nombre, correo o admin',
-            prefixIcon: Icon(Icons.apartment_rounded),
-            suffixIcon: Icon(Icons.arrow_drop_down_rounded),
+          decoration: InputDecoration(
+            labelText: labelText,
+            hintText: hintText,
+            prefixIcon: const Icon(Icons.apartment_rounded),
+            suffixIcon: const Icon(Icons.arrow_drop_down_rounded),
           ),
           onTap: () {
             controller.selection = TextSelection(
@@ -100,7 +110,7 @@ class OrganizacionAdminPicker extends StatelessWidget {
               clipBehavior: Clip.antiAlias,
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxHeight: 280),
-                child: opciones.isEmpty
+                child: opciones.isEmpty && !incluirTodas
                     ? Padding(
                         padding: const EdgeInsets.all(16),
                         child: Text(
@@ -111,11 +121,58 @@ class OrganizacionAdminPicker extends StatelessWidget {
                     : ListView.separated(
                         padding: EdgeInsets.zero,
                         shrinkWrap: true,
-                        itemCount: opciones.length,
+                        itemCount: opciones.length + (incluirTodas ? 1 : 0),
                         separatorBuilder: (_, __) => const Divider(height: 1),
                         itemBuilder: (BuildContext context, int index) {
+                          if (incluirTodas && index == 0) {
+                            return InkWell(
+                              key: const ValueKey<String>(
+                                'organizacion-picker-todas',
+                              ),
+                              onTap: () {
+                                controller.text = etiquetaTodas;
+                                focusNode.unfocus();
+                                onChanged(null);
+                              },
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 12,
+                                ),
+                                child: Row(
+                                  children: <Widget>[
+                                    CircleAvatar(
+                                      radius: 18,
+                                      backgroundColor: CobroAppTheme.primary
+                                          .withValues(alpha: 0.12),
+                                      foregroundColor: CobroAppTheme.primary,
+                                      child: const Icon(
+                                        Icons.public_rounded,
+                                        size: 18,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Text(
+                                        etiquetaTodas,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodyMedium
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }
+
+                          final int opcionIndex =
+                              index - (incluirTodas ? 1 : 0);
                           final OrganizacionAdmin organizacion =
-                              opciones[index];
+                              opciones[opcionIndex];
                           final String detalle = [
                             if ((organizacion.correo ?? '').isNotEmpty)
                               organizacion.correo!,
@@ -124,6 +181,9 @@ class OrganizacionAdminPicker extends StatelessWidget {
                           ].join(' · ');
 
                           return InkWell(
+                            key: ValueKey<String>(
+                              'organizacion-picker-${organizacion.id}',
+                            ),
                             onTap: () => onSelected(organizacion),
                             child: Padding(
                               padding: const EdgeInsets.symmetric(

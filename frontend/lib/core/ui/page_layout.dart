@@ -19,7 +19,10 @@ class Pagina extends StatelessWidget {
     this.acciones = const <Widget>[],
     this.accionesBuilder,
     this.onNearEnd,
-  });
+    this.itemCount = 0,
+    this.itemBuilder,
+  })  : assert(itemCount >= 0),
+        assert(itemCount == 0 || itemBuilder != null);
 
   final String titulo;
   final String? subtitulo;
@@ -29,6 +32,8 @@ class Pagina extends StatelessWidget {
   final List<Widget> acciones;
   final Widget Function(BuildContext context, bool compacto)? accionesBuilder;
   final VoidCallback? onNearEnd;
+  final int itemCount;
+  final IndexedWidgetBuilder? itemBuilder;
 
   @override
   Widget build(BuildContext context) {
@@ -37,6 +42,7 @@ class Pagina extends StatelessWidget {
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
           final double horizontal = constraints.maxWidth < 520 ? 16 : 28;
+          final bool hasLazyItems = itemBuilder != null && itemCount > 0;
           return NotificationListener<ScrollNotification>(
             onNotification: (ScrollNotification notification) {
               final ScrollMetrics metrics = notification.metrics;
@@ -49,7 +55,12 @@ class Pagina extends StatelessWidget {
             child: CustomScrollView(
               slivers: <Widget>[
                 SliverPadding(
-                  padding: EdgeInsets.fromLTRB(horizontal, 22, horizontal, 32),
+                  padding: EdgeInsets.fromLTRB(
+                    horizontal,
+                    22,
+                    horizontal,
+                    hasLazyItems ? 0 : 32,
+                  ),
                   sliver: SliverToBoxAdapter(
                     child: Center(
                       child: ConstrainedBox(
@@ -75,6 +86,26 @@ class Pagina extends StatelessWidget {
                     ),
                   ),
                 ),
+                if (hasLazyItems)
+                  SliverPadding(
+                    padding: EdgeInsets.fromLTRB(
+                      horizontal,
+                      0,
+                      horizontal,
+                      32,
+                    ),
+                    sliver: SliverList.builder(
+                      itemCount: itemCount,
+                      itemBuilder: (BuildContext context, int index) {
+                        return Center(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 960),
+                            child: itemBuilder!(context, index),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
               ],
             ),
           );

@@ -27,3 +27,22 @@ export type AuthSessionResponse = {
   token: string;
   usuario: AuthUserResponse;
 };
+
+export type UsuarioSuperAdminResponse = {
+  id: string;
+  usuario: string;
+  nombreCompleto: string;
+  nombres: string;
+  apellidos: string;
+  identificacion: string | null;
+  correo: string;
+  telefono: string | null;
+  activo: boolean;
+  organizacionId: string | null;
+  organizacionNombre: string | null;
+  organizacionSuspendida: boolean;
+  roles: string[];
+  permisos: string[];
+  creadoEn: string | null;
+};
+

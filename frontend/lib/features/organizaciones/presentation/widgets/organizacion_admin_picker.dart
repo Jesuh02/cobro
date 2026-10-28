@@ -1,17 +1,16 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 
 import '../../../../app/app_theme.dart';
 import '../../../../core/formatters/app_formatters.dart';
 import '../../../../core/ui/clay.dart';
+import '../../../../core/ui/cobro_dropdown.dart';
 import '../../../../data/models/models.dart';
+
+const String _todasLasInstitucionesId = '__todas_las_instituciones__';
 
 class OrganizacionAdminPicker extends StatelessWidget {
   const OrganizacionAdminPicker({
     required this.organizaciones,
-    required this.controller,
-    required this.focusNode,
     required this.seleccionada,
     required this.onChanged,
     this.incluirTodas = false,
@@ -22,8 +21,6 @@ class OrganizacionAdminPicker extends StatelessWidget {
   });
 
   final List<OrganizacionAdmin> organizaciones;
-  final TextEditingController controller;
-  final FocusNode focusNode;
   final OrganizacionAdmin? seleccionada;
   final ValueChanged<OrganizacionAdmin?> onChanged;
   final bool incluirTodas;
@@ -33,220 +30,62 @@ class OrganizacionAdminPicker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return RawAutocomplete<OrganizacionAdmin>(
-      textEditingController: controller,
-      focusNode: focusNode,
-      displayStringForOption: (OrganizacionAdmin option) => option.nombre,
-      optionsBuilder: (TextEditingValue value) {
-        final String texto = value.text.trim();
-        final String consulta = texto.toLowerCase();
-        if (consulta.isEmpty ||
-            (incluirTodas && texto == etiquetaTodas) ||
-            (seleccionada != null && texto == seleccionada!.nombre)) {
-          return organizaciones;
+    final List<CobroDropdownItem<String>> items = <CobroDropdownItem<String>>[
+      if (incluirTodas)
+        CobroDropdownItem<String>(
+          key: const ValueKey<String>('organizacion-picker-todas'),
+          value: _todasLasInstitucionesId,
+          label: etiquetaTodas,
+          subtitle: 'Ver usuarios de todas las instituciones',
+          icon: Icons.public_rounded,
+          iconColor: CobroAppTheme.primary,
+        ),
+      ...organizaciones.map((OrganizacionAdmin organizacion) {
+        final String detalle = <String>[
+          if ((organizacion.correo ?? '').isNotEmpty) organizacion.correo!,
+          if (organizacion.administradores.isNotEmpty)
+            organizacion.administradores.join(', '),
+        ].join(' · ');
+
+        return CobroDropdownItem<String>(
+          key: ValueKey<String>('organizacion-picker-${organizacion.id}'),
+          value: organizacion.id,
+          label: organizacion.nombre,
+          subtitle: detalle,
+          searchText: organizacion.administradores.join(' '),
+          icon: organizacion.suspendida
+              ? Icons.domain_disabled_rounded
+              : Icons.apartment_rounded,
+          iconColor: organizacion.suspendida
+              ? CobroAppTheme.danger
+              : CobroAppTheme.primary,
+        );
+      }),
+    ];
+
+    return CobroDropdownField<String>(
+      value:
+          seleccionada?.id ?? (incluirTodas ? _todasLasInstitucionesId : null),
+      items: items,
+      labelText: labelText,
+      hintText: hintText,
+      prefixIcon: const Icon(Icons.apartment_rounded),
+      searchable: true,
+      searchHintText: 'Buscar institución',
+      emptyText: 'No hay instituciones con ese filtro',
+      menuMaxHeight: 360,
+      onChanged: (String? value) {
+        if (value == null || value == _todasLasInstitucionesId) {
+          onChanged(null);
+          return;
         }
 
-        return organizaciones.where((OrganizacionAdmin organizacion) {
-          final String nombre = organizacion.nombre.toLowerCase();
-          final String correo = (organizacion.correo ?? '').toLowerCase();
-          final String administradores =
-              organizacion.administradores.join(' ').toLowerCase();
-          return nombre.contains(consulta) ||
-              correo.contains(consulta) ||
-              administradores.contains(consulta);
-        });
-      },
-      onSelected: onChanged,
-      fieldViewBuilder: (
-        BuildContext context,
-        TextEditingController controller,
-        FocusNode focusNode,
-        VoidCallback onFieldSubmitted,
-      ) {
-        return TextField(
-          controller: controller,
-          focusNode: focusNode,
-          decoration: InputDecoration(
-            labelText: labelText,
-            hintText: hintText,
-            prefixIcon: const Icon(Icons.apartment_rounded),
-            suffixIcon: const Icon(Icons.arrow_drop_down_rounded),
-          ),
-          onTap: () {
-            controller.selection = TextSelection(
-              baseOffset: 0,
-              extentOffset: controller.text.length,
-            );
-          },
-          onChanged: (String value) {
-            final String texto = value.trim();
-            final bool mantieneSeleccion =
-                seleccionada != null && texto == seleccionada!.nombre;
-            if (seleccionada != null && !mantieneSeleccion) {
-              onChanged(null);
-            }
-          },
-        );
-      },
-      optionsViewBuilder: (
-        BuildContext context,
-        AutocompleteOnSelected<OrganizacionAdmin> onSelected,
-        Iterable<OrganizacionAdmin> options,
-      ) {
-        final List<OrganizacionAdmin> opciones =
-            options.toList(growable: false);
-        final double ancho = math.min(
-          460,
-          math.max(0, MediaQuery.sizeOf(context).width - 32),
-        );
-
-        return Align(
-          alignment: Alignment.topLeft,
-          child: SizedBox(
-            width: ancho,
-            child: Material(
-              elevation: 6,
-              borderRadius: BorderRadius.circular(8),
-              clipBehavior: Clip.antiAlias,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 280),
-                child: opciones.isEmpty && !incluirTodas
-                    ? Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Text(
-                          'No hay instituciones con ese filtro',
-                          style: Theme.of(context).textTheme.bodyMedium,
-                        ),
-                      )
-                    : ListView.separated(
-                        padding: EdgeInsets.zero,
-                        shrinkWrap: true,
-                        itemCount: opciones.length + (incluirTodas ? 1 : 0),
-                        separatorBuilder: (_, __) => const Divider(height: 1),
-                        itemBuilder: (BuildContext context, int index) {
-                          if (incluirTodas && index == 0) {
-                            return InkWell(
-                              key: const ValueKey<String>(
-                                'organizacion-picker-todas',
-                              ),
-                              onTap: () {
-                                controller.text = etiquetaTodas;
-                                focusNode.unfocus();
-                                onChanged(null);
-                              },
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 12,
-                                ),
-                                child: Row(
-                                  children: <Widget>[
-                                    CircleAvatar(
-                                      radius: 18,
-                                      backgroundColor: CobroAppTheme.primary
-                                          .withValues(alpha: 0.12),
-                                      foregroundColor: CobroAppTheme.primary,
-                                      child: const Icon(
-                                        Icons.public_rounded,
-                                        size: 18,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Text(
-                                        etiquetaTodas,
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .bodyMedium
-                                            ?.copyWith(
-                                              fontWeight: FontWeight.w800,
-                                            ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          }
-
-                          final int opcionIndex =
-                              index - (incluirTodas ? 1 : 0);
-                          final OrganizacionAdmin organizacion =
-                              opciones[opcionIndex];
-                          final String detalle = [
-                            if ((organizacion.correo ?? '').isNotEmpty)
-                              organizacion.correo!,
-                            if (organizacion.administradores.isNotEmpty)
-                              organizacion.administradores.join(', '),
-                          ].join(' · ');
-
-                          return InkWell(
-                            key: ValueKey<String>(
-                              'organizacion-picker-${organizacion.id}',
-                            ),
-                            onTap: () => onSelected(organizacion),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 12,
-                              ),
-                              child: Row(
-                                children: <Widget>[
-                                  CircleAvatar(
-                                    radius: 18,
-                                    backgroundColor: CobroAppTheme.primary
-                                        .withValues(alpha: 0.12),
-                                    foregroundColor: CobroAppTheme.primary,
-                                    child: const Icon(
-                                      Icons.apartment_rounded,
-                                      size: 18,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: <Widget>[
-                                        Text(
-                                          organizacion.nombre,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .bodyMedium
-                                              ?.copyWith(
-                                                fontWeight: FontWeight.w800,
-                                              ),
-                                        ),
-                                        if (detalle.isNotEmpty)
-                                          Text(
-                                            detalle,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: Theme.of(context)
-                                                .textTheme
-                                                .bodySmall
-                                                ?.copyWith(
-                                                  color:
-                                                      context.clay.subtleText,
-                                                  fontWeight: FontWeight.w600,
-                                                ),
-                                          ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-              ),
-            ),
-          ),
-        );
+        for (final OrganizacionAdmin organizacion in organizaciones) {
+          if (organizacion.id == value) {
+            onChanged(organizacion);
+            return;
+          }
+        }
       },
     );
   }
@@ -258,6 +97,7 @@ class OrganizacionAdminItem extends StatelessWidget {
     required this.guardando,
     required this.onEditar,
     required this.onActivoChanged,
+    super.key,
   });
 
   final OrganizacionAdmin organizacion;
@@ -399,6 +239,7 @@ class OrganizacionDato extends StatelessWidget {
     required this.icono,
     required this.texto,
     this.color,
+    super.key,
   });
 
   final IconData icono;

@@ -123,11 +123,14 @@ void main() {
       isNull,
     );
 
-    final Finder selectorInstitucion = find.byWidgetPredicate(
-      (Widget widget) =>
-          widget is TextField && widget.decoration?.labelText == 'Institución',
+    await tester.tap(find.text('Todas las instituciones'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(
+        const ValueKey<String>('cobro-dropdown-search'),
+      ),
+      'Institución Uno',
     );
-    await tester.tap(selectorInstitucion);
     await tester.pump();
     await tester.tap(
       find.byKey(

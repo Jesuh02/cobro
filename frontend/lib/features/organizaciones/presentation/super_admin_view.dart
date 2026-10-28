@@ -410,8 +410,6 @@ class _DialogoDatosAdministradorAdminContent extends StatefulWidget {
 
 class _DialogoDatosAdministradorAdminContentState
     extends State<_DialogoDatosAdministradorAdminContent> {
-  late final TextEditingController _organizacionController;
-  late final FocusNode _organizacionFocusNode;
   late final TextEditingController _nombreController;
   late final TextEditingController _usuarioController;
   late final TextEditingController _correoController;
@@ -424,9 +422,6 @@ class _DialogoDatosAdministradorAdminContentState
   void initState() {
     super.initState();
     final OrganizacionAdmin organizacionInicial = widget.organizaciones.first;
-    _organizacionController =
-        TextEditingController(text: organizacionInicial.nombre);
-    _organizacionFocusNode = FocusNode();
     _nombreController = TextEditingController();
     _usuarioController = TextEditingController();
     _correoController = TextEditingController();
@@ -436,8 +431,6 @@ class _DialogoDatosAdministradorAdminContentState
 
   @override
   void dispose() {
-    _organizacionController.dispose();
-    _organizacionFocusNode.dispose();
     _nombreController.dispose();
     _usuarioController.dispose();
     _correoController.dispose();
@@ -543,8 +536,6 @@ class _DialogoDatosAdministradorAdminContentState
             children: <Widget>[
               OrganizacionAdminPicker(
                 organizaciones: widget.organizaciones,
-                controller: _organizacionController,
-                focusNode: _organizacionFocusNode,
                 seleccionada: _organizacionSeleccionada,
                 onChanged: (OrganizacionAdmin? value) {
                   setState(() => _organizacionSeleccionada = value);

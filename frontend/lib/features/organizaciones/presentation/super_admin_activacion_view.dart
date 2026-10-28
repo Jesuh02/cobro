@@ -6,7 +6,6 @@ import '../../../data/models/models.dart';
 import 'widgets/organizacion_admin_picker.dart';
 import 'widgets/super_admin_usuario_detail_sheet.dart';
 
-const String _todasLasInstituciones = 'Todas las instituciones';
 const double _desktopCardsBreakpoint = 1000;
 
 class SuperAdminActivacionView extends StatefulWidget {
@@ -55,8 +54,6 @@ class SuperAdminActivacionView extends StatefulWidget {
 }
 
 class _SuperAdminActivacionViewState extends State<SuperAdminActivacionView> {
-  late final TextEditingController _organizacionController;
-  late final FocusNode _organizacionFocusNode;
   late final TextEditingController _busquedaController;
 
   OrganizacionAdmin? get _organizacionSeleccionada {
@@ -71,10 +68,6 @@ class _SuperAdminActivacionViewState extends State<SuperAdminActivacionView> {
   @override
   void initState() {
     super.initState();
-    _organizacionFocusNode = FocusNode();
-    _organizacionController = TextEditingController(
-      text: _organizacionSeleccionada?.nombre ?? _todasLasInstituciones,
-    );
     _busquedaController = TextEditingController(text: widget.consulta);
   }
 
@@ -88,23 +81,10 @@ class _SuperAdminActivacionViewState extends State<SuperAdminActivacionView> {
         selection: TextSelection.collapsed(offset: widget.consulta.length),
       );
     }
-
-    if (!_organizacionFocusNode.hasFocus &&
-        (oldWidget.organizacionSeleccionadaId !=
-                widget.organizacionSeleccionadaId ||
-            oldWidget.organizaciones != widget.organizaciones)) {
-      final String texto =
-          _organizacionSeleccionada?.nombre ?? _todasLasInstituciones;
-      if (_organizacionController.text != texto) {
-        _organizacionController.text = texto;
-      }
-    }
   }
 
   @override
   void dispose() {
-    _organizacionController.dispose();
-    _organizacionFocusNode.dispose();
     _busquedaController.dispose();
     super.dispose();
   }
@@ -151,12 +131,10 @@ class _SuperAdminActivacionViewState extends State<SuperAdminActivacionView> {
                 builder: (BuildContext context, BoxConstraints constraints) {
                   final Widget organizacion = OrganizacionAdminPicker(
                     organizaciones: widget.organizaciones,
-                    controller: _organizacionController,
-                    focusNode: _organizacionFocusNode,
                     seleccionada: _organizacionSeleccionada,
                     incluirTodas: true,
                     labelText: 'Institución',
-                    hintText: 'Todas o busca una institución',
+                    hintText: 'Selecciona una institución',
                     onChanged: (OrganizacionAdmin? value) {
                       widget.onOrganizacionChanged(value?.id);
                     },

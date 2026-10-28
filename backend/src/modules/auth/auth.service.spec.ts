@@ -1,5 +1,11 @@
-import { UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { AuthenticatedUser } from './auth.types';
 
 import { InMemoryCacheService } from '../../common/cache/in-memory-cache.service';
 import { AuthService } from './auth.service';
@@ -353,6 +359,194 @@ describe('AuthService - Account Lockout (SEC-COBRO-04)', () => {
 
       const invalidResult = await authService.cerrarSesion('invalid.token');
       expect(invalidResult.ok).toBe(true);
+    });
+  });
+
+  describe('SuperAdmin - Gestion de Acceso / Usuarios', () => {
+    const superAdminUser: AuthenticatedUser = {
+      usuarioId: '33333333-3333-3333-3333-333333333333',
+      usuario: 'superadmin',
+      organizacionId: null,
+      roles: ['SUPER_ADMIN'],
+      permisos: [],
+    };
+
+    const regularUser: AuthenticatedUser = {
+      usuarioId: '44444444-4444-4444-4444-444444444444',
+      usuario: 'regular',
+      organizacionId: '22222222-2222-2222-2222-222222222222',
+      roles: ['ADMINISTRADOR'],
+      permisos: [],
+    };
+
+    const mockSuperAdminUserRow = {
+      id: '55555555-5555-5555-5555-555555555555',
+      usuario: 'empleado1',
+      activo: true,
+      creado_en: new Date('2026-01-01T00:00:00Z'),
+      nombres: 'Juan',
+      apellidos: 'Perez',
+      nombre_completo: 'Juan Perez',
+      identificacion: '12345678',
+      correo: 'juan@test.com',
+      telefono: '3001234567',
+      organizacion_id: '22222222-2222-2222-2222-222222222222',
+      organizacion_nombre: 'Organizacion A',
+      organizacion_suspendida: false,
+      roles: ['COBRADOR'],
+    };
+
+    describe('listarUsuariosSuperAdmin', () => {
+      it('rejects non-superadmin users', async () => {
+        await expect(
+          authService.listarUsuariosSuperAdmin(regularUser, {}),
+        ).rejects.toThrow(ForbiddenException);
+      });
+
+      it('lists users successfully for superadmin', async () => {
+        mockPrisma.$queryRaw = jest
+          .fn()
+          .mockResolvedValueOnce([mockSuperAdminUserRow]);
+
+        const resultado = await authService.listarUsuariosSuperAdmin(
+          superAdminUser,
+          {},
+        );
+
+        expect(Array.isArray(resultado)).toBe(true);
+        expect(resultado.length).toBe(1);
+        expect(resultado[0].usuario).toBe('empleado1');
+        expect(resultado[0].nombreCompleto).toBe('Juan Perez');
+        expect(resultado[0].organizacionNombre).toBe('Organizacion A');
+        expect(resultado[0].roles).toContain('COBRADOR');
+      });
+
+      it('applies organization filter when provided', async () => {
+        mockPrisma.$queryRaw = jest
+          .fn()
+          .mockResolvedValueOnce([mockSuperAdminUserRow]);
+
+        const resultado = await authService.listarUsuariosSuperAdmin(
+          superAdminUser,
+          { organizacionId: '22222222-2222-2222-2222-222222222222' },
+        );
+
+        expect(resultado.length).toBe(1);
+      });
+    });
+
+    describe('actualizarEstadoUsuarioSuperAdmin', () => {
+      it('rejects non-superadmin users', async () => {
+        await expect(
+          authService.actualizarEstadoUsuarioSuperAdmin(
+            regularUser,
+            '55555555-5555-5555-5555-555555555555',
+            { activo: false },
+          ),
+        ).rejects.toThrow(ForbiddenException);
+      });
+
+      it('prevents superadmin from deactivating themselves (anti-lockout)', async () => {
+        await expect(
+          authService.actualizarEstadoUsuarioSuperAdmin(
+            superAdminUser,
+            superAdminUser.usuarioId,
+            { activo: false },
+          ),
+        ).rejects.toThrow(
+          new BadRequestException('No puedes desactivar tu propio usuario'),
+        );
+      });
+
+      it('throws NotFoundException when user does not exist', async () => {
+        mockPrisma.$queryRaw = jest
+          .fn()
+          .mockResolvedValueOnce([]);
+
+        await expect(
+          authService.actualizarEstadoUsuarioSuperAdmin(
+            superAdminUser,
+            '99999999-9999-9999-9999-999999999999',
+            { activo: false },
+          ),
+        ).rejects.toThrow(NotFoundException);
+      });
+
+      it('updates user status and returns updated user', async () => {
+        const targetUserId = '55555555-5555-5555-5555-555555555555';
+        const updatedRow = { ...mockSuperAdminUserRow, activo: false };
+
+        mockPrisma.$queryRaw = jest
+          .fn()
+          // 1. existing user check
+          .mockResolvedValueOnce([{ id: targetUserId }])
+          // 2. obtenerUsuarioSuperAdminPorId
+          .mockResolvedValueOnce([updatedRow]);
+
+        mockPrisma.$executeRaw = jest.fn().mockResolvedValueOnce(1);
+
+        const resultado =
+          await authService.actualizarEstadoUsuarioSuperAdmin(
+            superAdminUser,
+            targetUserId,
+            { activo: false },
+          );
+
+        expect(resultado.id).toBe(targetUserId);
+        expect(resultado.activo).toBe(false);
+        expect(mockPrisma.$executeRaw).toHaveBeenCalled();
+      });
+
+      it('invalidates cache when user status is updated', async () => {
+        const targetUserId = '55555555-5555-5555-5555-555555555555';
+        const updatedRow = { ...mockSuperAdminUserRow, id: targetUserId, activo: false };
+
+        // 1. Prime cache
+        mockPrisma.$queryRaw = jest
+          .fn()
+          .mockResolvedValueOnce([mockSuperAdminUserRow]);
+        await authService.listarUsuariosSuperAdmin(superAdminUser, { q: 'invalcache' });
+        expect(mockPrisma.$queryRaw).toHaveBeenCalledTimes(1);
+
+        // 2. Perform status update
+        mockPrisma.$queryRaw = jest
+          .fn()
+          .mockResolvedValueOnce([{ id: targetUserId }])
+          .mockResolvedValueOnce([updatedRow]);
+        mockPrisma.$executeRaw = jest.fn().mockResolvedValueOnce(1);
+
+        await authService.actualizarEstadoUsuarioSuperAdmin(
+          superAdminUser,
+          targetUserId,
+          { activo: false },
+        );
+
+        // 3. Querying again should re-fetch from DB because cache was invalidated
+        mockPrisma.$queryRaw = jest
+          .fn()
+          .mockResolvedValueOnce([updatedRow]);
+        const freshList = await authService.listarUsuariosSuperAdmin(
+          superAdminUser,
+          { q: 'invalcache' },
+        );
+
+        expect(freshList[0].activo).toBe(false);
+        expect(mockPrisma.$queryRaw).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    describe('SuperAdmin - Organizaciones Caching', () => {
+      it('caches organizaciones query and serves subsequent calls from cache', async () => {
+        cacheService.delete('superadmin:organizaciones');
+        mockPrisma.$queryRaw = jest
+          .fn()
+          .mockResolvedValueOnce([]);
+
+        await authService.listarOrganizacionesSuperAdmin(superAdminUser);
+        await authService.listarOrganizacionesSuperAdmin(superAdminUser);
+
+        expect(mockPrisma.$queryRaw).toHaveBeenCalledTimes(1);
+      });
     });
   });
 });

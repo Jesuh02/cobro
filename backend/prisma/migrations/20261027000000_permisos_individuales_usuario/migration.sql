@@ -13,6 +13,11 @@ CREATE TABLE IF NOT EXISTS public.tbl_usuarios_organizaciones_recursos (
     ON DELETE CASCADE
 );
 
+-- CockroachDB bloquea automáticamente tablas observadas por changefeeds.
+-- El desbloqueo es temporal y permite crear los índices de esta migración.
+ALTER TABLE public.tbl_usuarios_organizaciones_recursos
+  SET (schema_locked = false);
+
 CREATE UNIQUE INDEX IF NOT EXISTS ux_tbl_usuarios_organizaciones_recursos
   ON public.tbl_usuarios_organizaciones_recursos (urg_id, rec_id);
 
@@ -46,3 +51,6 @@ WHERE uo.urg_activo
     'MODIFICAR_MOVIMIENTOS'
   )
 ON CONFLICT (urg_id, rec_id) DO NOTHING;
+
+ALTER TABLE public.tbl_usuarios_organizaciones_recursos
+  SET (schema_locked = true);

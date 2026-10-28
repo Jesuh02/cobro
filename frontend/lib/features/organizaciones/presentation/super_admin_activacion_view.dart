@@ -111,6 +111,20 @@ class _SuperAdminActivacionViewState extends State<SuperAdminActivacionView> {
       subtitulo: 'Activación de administradores y empleados por institución',
       error: widget.error,
       onRefresh: widget.onRefresh,
+      itemCount: widget.usuarios.length,
+      itemBuilder: (BuildContext context, int index) {
+        final UsuarioSuperAdminItem usuario = widget.usuarios[index];
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: _UsuarioAccesoCard(
+            usuario: usuario,
+            esUsuarioActual: usuario.id == widget.usuarioActualId,
+            actualizando: widget.actualizandoIds.contains(usuario.id),
+            onEstadoChanged: (bool activo) =>
+                _solicitarCambioEstado(usuario, activo),
+          ),
+        );
+      },
       acciones: <Widget>[
         IconButton.filledTonal(
           onPressed: widget.cargando ? null : widget.onRefresh,
@@ -137,30 +151,35 @@ class _SuperAdminActivacionViewState extends State<SuperAdminActivacionView> {
                   widget.onOrganizacionChanged(value?.id);
                 },
               );
-              final Widget busqueda = TextField(
-                key: const ValueKey<String>('buscar-usuarios-super-admin'),
-                controller: _busquedaController,
-                textInputAction: TextInputAction.search,
-                decoration: InputDecoration(
-                  labelText: 'Buscar usuario',
-                  hintText: 'Nombre, usuario, documento o correo',
-                  prefixIcon: const Icon(Icons.search_rounded),
-                  suffixIcon: _busquedaController.text.isEmpty
-                      ? null
-                      : IconButton(
-                          onPressed: () {
-                            _busquedaController.clear();
-                            setState(() {});
-                            widget.onConsultaChanged('');
-                          },
-                          icon: const Icon(Icons.close_rounded),
-                          tooltip: 'Limpiar búsqueda',
-                        ),
+              final Widget busqueda = Semantics(
+                textField: true,
+                label:
+                    'Buscar usuarios por nombre, usuario, documento o correo',
+                child: TextField(
+                  key: const ValueKey<String>('buscar-usuarios-super-admin'),
+                  controller: _busquedaController,
+                  textInputAction: TextInputAction.search,
+                  decoration: InputDecoration(
+                    labelText: 'Buscar usuario',
+                    hintText: 'Nombre, usuario, documento o correo',
+                    prefixIcon: const Icon(Icons.search_rounded),
+                    suffixIcon: _busquedaController.text.isEmpty
+                        ? null
+                        : IconButton(
+                            onPressed: () {
+                              _busquedaController.clear();
+                              setState(() {});
+                              widget.onConsultaChanged('');
+                            },
+                            icon: const Icon(Icons.close_rounded),
+                            tooltip: 'Limpiar búsqueda',
+                          ),
+                  ),
+                  onChanged: (String value) {
+                    setState(() {});
+                    widget.onConsultaChanged(value);
+                  },
                 ),
-                onChanged: (String value) {
-                  setState(() {});
-                  widget.onConsultaChanged(value);
-                },
               );
 
               if (constraints.maxWidth < 680) {
@@ -225,19 +244,6 @@ class _SuperAdminActivacionViewState extends State<SuperAdminActivacionView> {
                     widget.organizacionSeleccionadaId != null
                 ? 'No hay usuarios que coincidan con los filtros.'
                 : 'No hay usuarios administrables registrados.',
-          )
-        else
-          ...widget.usuarios.map(
-            (UsuarioSuperAdminItem usuario) => Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: _UsuarioAccesoCard(
-                usuario: usuario,
-                esUsuarioActual: usuario.id == widget.usuarioActualId,
-                actualizando: widget.actualizandoIds.contains(usuario.id),
-                onEstadoChanged: (bool activo) =>
-                    _solicitarCambioEstado(usuario, activo),
-              ),
-            ),
           ),
       ],
     );

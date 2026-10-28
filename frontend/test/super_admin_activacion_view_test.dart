@@ -177,6 +177,48 @@ void main() {
     expect(find.byType(AlertDialog), findsNothing);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('renderiza de forma perezosa una lista extensa de usuarios',
+      (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(900, 800);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final List<UsuarioSuperAdminItem> usuariosExtensos =
+        List<UsuarioSuperAdminItem>.generate(
+      100,
+      (int index) => _usuario(
+        id: 'usuario-$index',
+        usuario: 'usuario.$index',
+        nombre: 'Usuario $index',
+        activo: true,
+        roles: const <String>['COBRADOR'],
+      ),
+    );
+
+    await tester.pumpWidget(
+      _app(
+        SuperAdminActivacionView(
+          usuarios: usuariosExtensos,
+          organizaciones: <OrganizacionAdmin>[organizacion],
+          usuarioActualId: usuarioActualId,
+          organizacionSeleccionadaId: null,
+          consulta: '',
+          cargando: false,
+          actualizandoIds: const <String>{},
+          onRefresh: () async {},
+          onOrganizacionChanged: (_) {},
+          onConsultaChanged: (_) {},
+          onEstadoChanged: (_, __) async {},
+        ),
+      ),
+    );
+
+    expect(find.byType(Switch), findsWidgets);
+    expect(find.byType(Switch).evaluate().length, lessThan(100));
+    expect(tester.takeException(), isNull);
+  });
 }
 
 Widget _app(Widget child) {

@@ -28,6 +28,7 @@ import '../../creditos/presentation/dialogs/credito_dialogs.dart';
 import '../../dashboard/presentation/widgets/exportacion_helpers.dart';
 import '../../empleados/presentation/dialogs/empleado_dialogs.dart';
 import '../../empleados/presentation/gestion_empleados_page.dart';
+import '../../organizaciones/presentation/super_admin_activacion_view.dart';
 import '../../organizaciones/presentation/super_admin_view.dart';
 import '../../presupuesto/presentation/inicio_presupuesto_view.dart';
 import '../../rutas/presentation/dialogs/pago_ruta_dialogs.dart';
@@ -140,6 +141,8 @@ class _HomePageState extends State<HomePage> {
   List<CreditoRegistro> _creditos = const <CreditoRegistro>[];
   List<MovimientoCaja> _movimientosCaja = const <MovimientoCaja>[];
   List<OrganizacionAdmin> _organizacionesAdmin = const <OrganizacionAdmin>[];
+  List<UsuarioSuperAdminItem> _usuariosSuperAdmin =
+      const <UsuarioSuperAdminItem>[];
   ConteoCreditosInicio _conteoCreditosInicio =
       const ConteoCreditosInicio.vacio();
   int _siguienteOffsetCreditos = 0;
@@ -150,8 +153,12 @@ class _HomePageState extends State<HomePage> {
   bool _cargandoMovimientosCaja = false;
   bool _cargandoMasCreditos = false;
   bool _cargandoMasMovimientosCaja = false;
+  bool _cargandoUsuariosSuperAdmin = false;
+  bool _usuariosSuperAdminCargados = false;
+  bool _organizacionesAdminDesactualizadas = false;
 
   int _seccionActual = 0;
+  int _pestanaSuperAdmin = 0;
   bool _cargando = false;
   bool _guardando = false;
   bool _exportando = false;
@@ -168,8 +175,13 @@ class _HomePageState extends State<HomePage> {
   Timer? _mensajeTimer;
   Timer? _refrescoTimer;
   Timer? _filtrosListasTimer;
+  Timer? _filtroUsuariosSuperAdminTimer;
   Timer? _offlineSyncTimer;
   int _cargaSerial = 0;
+  int _cargaUsuariosSuperAdminSerial = 0;
+  String? _organizacionUsuariosSuperAdminId;
+  String _consultaUsuariosSuperAdmin = '';
+  final Set<String> _usuariosSuperAdminActualizando = <String>{};
   int _accionesPendientesOffline = 0;
   bool _sincronizandoOffline = false;
   DateTime? _fechaCajaDesde;
@@ -243,6 +255,7 @@ class _HomePageState extends State<HomePage> {
     _errorTimer?.cancel();
     _refrescoTimer?.cancel();
     _filtrosListasTimer?.cancel();
+    _filtroUsuariosSuperAdminTimer?.cancel();
     _offlineSyncTimer?.cancel();
     _mensajeOverlay?.remove();
     if (_cerrarApiClientAlSalir) {
@@ -316,7 +329,8 @@ class _HomePageState extends State<HomePage> {
             Tooltip(
               message: 'Recargar',
               child: IconButton(
-                onPressed: _cargando ? null : _cargar,
+                onPressed:
+                    _cargando || _cargandoUsuariosSuperAdmin ? null : _cargar,
                 icon: const Icon(Icons.refresh_rounded),
               ),
             ),
@@ -472,32 +486,7 @@ class _HomePageState extends State<HomePage> {
               ],
               Expanded(
                 child: usuarioSesion.esSuperAdmin
-                    ? SuperAdminView(
-                        organizaciones: _organizacionesAdmin,
-                        guardando: _guardando,
-                        cargando: _cargando,
-                        error: _error,
-                        onRefresh: _cargar,
-                        onCrearOrganizacion: _crearOrganizacionAdmin,
-                        onCrearAdministrador: _crearAdministradorAdmin,
-                        onEditarOrganizacion: _editarOrganizacionAdmin,
-                        onActivoChanged: (
-                          OrganizacionAdmin organizacion,
-                          bool activo,
-                        ) =>
-                            _actualizarOrganizacionAdmin(
-                          organizacion,
-                          <String, dynamic>{
-                            'activo': activo,
-                            if (!activo)
-                              'motivoSuspension':
-                                  'Suspendido por falta de pagos',
-                          },
-                          activo
-                              ? 'Institución reactivada'
-                              : 'Institución suspendida',
-                        ),
-                      )
+                    ? _construirSuperAdmin(context, usuarioSesion)
                     : _cargando && _catalogos == null
                         ? const Center(child: CircularProgressIndicator())
                         : _construirVistaActual(context),
@@ -509,6 +498,90 @@ class _HomePageState extends State<HomePage> {
       bottomNavigationBar: esMovil && !usuarioSesion.esSuperAdmin
           ? _construirNavegacionInferior(context)
           : null,
+    );
+  }
+
+  Widget _construirSuperAdmin(
+    BuildContext context,
+    SesionUsuario usuarioSesion,
+  ) {
+    return DefaultTabController(
+      length: 2,
+      initialIndex: _pestanaSuperAdmin,
+      child: Column(
+        children: <Widget>[
+          Material(
+            color: context.clay.surface,
+            child: TabBar(
+              onTap: _seleccionarPestanaSuperAdmin,
+              tabs: const <Widget>[
+                Tab(
+                  key: ValueKey<String>('super-admin-tab-instituciones'),
+                  icon: Icon(Icons.apartment_rounded),
+                  text: 'Instituciones',
+                ),
+                Tab(
+                  key: ValueKey<String>('super-admin-tab-acceso'),
+                  icon: Icon(Icons.manage_accounts_rounded),
+                  text: 'Gestión de acceso',
+                ),
+              ],
+            ),
+          ),
+          Divider(height: 1, color: context.clay.border),
+          Expanded(
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 180),
+              child: _pestanaSuperAdmin == 0
+                  ? SuperAdminView(
+                      key: const ValueKey<String>(
+                        'super-admin-instituciones',
+                      ),
+                      organizaciones: _organizacionesAdmin,
+                      guardando: _guardando,
+                      cargando: _cargando,
+                      error: _error,
+                      onRefresh: _cargar,
+                      onCrearOrganizacion: _crearOrganizacionAdmin,
+                      onCrearAdministrador: _crearAdministradorAdmin,
+                      onEditarOrganizacion: _editarOrganizacionAdmin,
+                      onActivoChanged: (
+                        OrganizacionAdmin organizacion,
+                        bool activo,
+                      ) =>
+                          _actualizarOrganizacionAdmin(
+                        organizacion,
+                        <String, dynamic>{
+                          'activo': activo,
+                          if (!activo)
+                            'motivoSuspension': 'Suspendido por falta de pagos',
+                        },
+                        activo
+                            ? 'Institución reactivada'
+                            : 'Institución suspendida',
+                      ),
+                    )
+                  : SuperAdminActivacionView(
+                      key: const ValueKey<String>('super-admin-acceso'),
+                      usuarios: _usuariosSuperAdmin,
+                      organizaciones: _organizacionesAdmin,
+                      usuarioActualId: usuarioSesion.id,
+                      organizacionSeleccionadaId:
+                          _organizacionUsuariosSuperAdminId,
+                      consulta: _consultaUsuariosSuperAdmin,
+                      cargando: _cargandoUsuariosSuperAdmin,
+                      actualizandoIds: _usuariosSuperAdminActualizando,
+                      error: _error,
+                      onRefresh: _cargarUsuariosSuperAdmin,
+                      onOrganizacionChanged:
+                          _seleccionarOrganizacionUsuariosSuperAdmin,
+                      onConsultaChanged: _programarBusquedaUsuariosSuperAdmin,
+                      onEstadoChanged: _actualizarEstadoUsuarioSuperAdmin,
+                    ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1935,6 +2008,15 @@ class _HomePageState extends State<HomePage> {
         _clientes = const <Cliente>[];
         _cobrosRuta = const <CobroRuta>[];
         _organizacionesAdmin = const <OrganizacionAdmin>[];
+        _usuariosSuperAdmin = const <UsuarioSuperAdminItem>[];
+        _usuariosSuperAdminActualizando.clear();
+        _usuariosSuperAdminCargados = false;
+        _cargandoUsuariosSuperAdmin = false;
+        _cargaUsuariosSuperAdminSerial++;
+        _organizacionesAdminDesactualizadas = false;
+        _organizacionUsuariosSuperAdminId = null;
+        _consultaUsuariosSuperAdmin = '';
+        _pestanaSuperAdmin = 0;
         _movimientosCaja = const <MovimientoCaja>[];
         _cajaMenorFiltroId = null;
         _aplicarFechaInicioHoy();
@@ -1960,6 +2042,7 @@ class _HomePageState extends State<HomePage> {
     unawaited(clearCachedSessionPayload());
     _loginContrasenaController.clear();
     _filtrosListasTimer?.cancel();
+    _filtroUsuariosSuperAdminTimer?.cancel();
 
     setState(() {
       _usuarioSesion = null;
@@ -1970,6 +2053,15 @@ class _HomePageState extends State<HomePage> {
       _creditos = const <CreditoRegistro>[];
       _movimientosCaja = const <MovimientoCaja>[];
       _organizacionesAdmin = const <OrganizacionAdmin>[];
+      _usuariosSuperAdmin = const <UsuarioSuperAdminItem>[];
+      _usuariosSuperAdminActualizando.clear();
+      _usuariosSuperAdminCargados = false;
+      _cargandoUsuariosSuperAdmin = false;
+      _cargaUsuariosSuperAdminSerial++;
+      _organizacionesAdminDesactualizadas = false;
+      _organizacionUsuariosSuperAdminId = null;
+      _consultaUsuariosSuperAdmin = '';
+      _pestanaSuperAdmin = 0;
       _siguienteOffsetCreditos = 0;
       _siguienteOffsetMovimientosCaja = 0;
       _hayMasCreditos = false;
@@ -2014,6 +2106,15 @@ class _HomePageState extends State<HomePage> {
       setState(() {
         _usuarioSesion = usuarioActual;
         _seccionActual = 0;
+        _pestanaSuperAdmin = 0;
+        _usuariosSuperAdmin = const <UsuarioSuperAdminItem>[];
+        _usuariosSuperAdminActualizando.clear();
+        _usuariosSuperAdminCargados = false;
+        _cargandoUsuariosSuperAdmin = false;
+        _cargaUsuariosSuperAdminSerial++;
+        _organizacionesAdminDesactualizadas = false;
+        _organizacionUsuariosSuperAdminId = null;
+        _consultaUsuariosSuperAdmin = '';
         _error = null;
         _aplicarFechaInicioHoy();
       });
@@ -2104,7 +2205,11 @@ class _HomePageState extends State<HomePage> {
     }
 
     if (_usuarioSesion!.esSuperAdmin) {
-      await _cargarOrganizacionesSuperAdmin();
+      if (_pestanaSuperAdmin == 0) {
+        await _cargarOrganizacionesSuperAdmin();
+      } else {
+        await _cargarUsuariosSuperAdmin();
+      }
       return;
     }
 
@@ -2187,7 +2292,10 @@ class _HomePageState extends State<HomePage> {
       if (!mounted || cargaActual != _cargaSerial) {
         return;
       }
-      setState(() => _organizacionesAdmin = organizaciones);
+      setState(() {
+        _organizacionesAdmin = organizaciones;
+        _organizacionesAdminDesactualizadas = false;
+      });
     } catch (error) {
       if (!mounted || cargaActual != _cargaSerial) {
         return;
@@ -2207,6 +2315,156 @@ class _HomePageState extends State<HomePage> {
               OrganizacionAdmin.fromJson(item as Map<String, dynamic>),
         )
         .toList(growable: false);
+  }
+
+  Future<void> _cargarUsuariosSuperAdmin() async {
+    final SesionUsuario? sesion = _usuarioSesion;
+    if (sesion == null || !sesion.esSuperAdmin) return;
+
+    final int cargaActual = ++_cargaUsuariosSuperAdminSerial;
+    setState(() {
+      _cargandoUsuariosSuperAdmin = true;
+      _error = null;
+    });
+
+    try {
+      final List<UsuarioSuperAdminItem> usuarios =
+          await _apiClient.getUsuariosSuperAdmin(
+        organizacionId: _organizacionUsuariosSuperAdminId,
+        q: _consultaUsuariosSuperAdmin,
+      );
+      if (!mounted || cargaActual != _cargaUsuariosSuperAdminSerial) return;
+
+      setState(() {
+        _usuariosSuperAdmin = usuarios;
+        _usuariosSuperAdminCargados = true;
+      });
+    } catch (error) {
+      if (!mounted || cargaActual != _cargaUsuariosSuperAdminSerial) return;
+
+      final String mensaje = _mensajeError(error);
+      setState(() => _error = mensaje);
+      if (error is ApiException && error.statusCode == 401) {
+        _cerrarSesion();
+        return;
+      }
+      _mostrarMensaje(mensaje);
+    } finally {
+      if (mounted && cargaActual == _cargaUsuariosSuperAdminSerial) {
+        setState(() => _cargandoUsuariosSuperAdmin = false);
+      }
+    }
+  }
+
+  void _seleccionarPestanaSuperAdmin(int index) {
+    if (index == _pestanaSuperAdmin) return;
+
+    _filtroUsuariosSuperAdminTimer?.cancel();
+    setState(() {
+      _pestanaSuperAdmin = index;
+      _error = null;
+    });
+
+    if (index == 0) {
+      if (_organizacionesAdmin.isEmpty || _organizacionesAdminDesactualizadas) {
+        unawaited(_cargarOrganizacionesSuperAdmin());
+      }
+      return;
+    }
+
+    if (!_usuariosSuperAdminCargados) {
+      unawaited(_cargarUsuariosSuperAdmin());
+    }
+  }
+
+  void _seleccionarOrganizacionUsuariosSuperAdmin(String? organizacionId) {
+    if (_organizacionUsuariosSuperAdminId == organizacionId) return;
+
+    _filtroUsuariosSuperAdminTimer?.cancel();
+    setState(() {
+      _organizacionUsuariosSuperAdminId = organizacionId;
+      _usuariosSuperAdminCargados = false;
+    });
+    unawaited(_cargarUsuariosSuperAdmin());
+  }
+
+  void _programarBusquedaUsuariosSuperAdmin(String consulta) {
+    if (_consultaUsuariosSuperAdmin == consulta) return;
+
+    _filtroUsuariosSuperAdminTimer?.cancel();
+    setState(() {
+      _consultaUsuariosSuperAdmin = consulta;
+      _usuariosSuperAdminCargados = false;
+    });
+    _filtroUsuariosSuperAdminTimer = Timer(
+      const Duration(milliseconds: 320),
+      () {
+        if (mounted && _pestanaSuperAdmin == 1) {
+          unawaited(_cargarUsuariosSuperAdmin());
+        }
+      },
+    );
+  }
+
+  Future<void> _actualizarEstadoUsuarioSuperAdmin(
+    UsuarioSuperAdminItem usuario,
+    bool activo,
+  ) async {
+    final SesionUsuario? sesion = _usuarioSesion;
+    if (sesion == null || !sesion.esSuperAdmin) return;
+    if (usuario.id == sesion.id) {
+      _mostrarMensaje('No puedes desactivar tu propio usuario');
+      return;
+    }
+    if (_usuariosSuperAdminActualizando.contains(usuario.id)) return;
+
+    setState(() {
+      _usuariosSuperAdminActualizando.add(usuario.id);
+      _usuariosSuperAdmin = _usuariosSuperAdmin
+          .map(
+            (UsuarioSuperAdminItem item) =>
+                item.id == usuario.id ? item.copyWith(activo: activo) : item,
+          )
+          .toList(growable: false);
+    });
+
+    try {
+      final UsuarioSuperAdminItem actualizado =
+          await _apiClient.actualizarEstadoUsuarioSuperAdmin(
+        usuario.id,
+        activo: activo,
+      );
+      if (!mounted) return;
+
+      setState(() {
+        _usuariosSuperAdmin = _usuariosSuperAdmin
+            .map(
+              (UsuarioSuperAdminItem item) =>
+                  item.id == actualizado.id ? actualizado : item,
+            )
+            .toList(growable: false);
+        _organizacionesAdminDesactualizadas = true;
+      });
+      _mostrarMensaje(
+        activo ? 'Usuario activado' : 'Usuario desactivado',
+      );
+    } catch (error) {
+      if (!mounted) return;
+
+      setState(() {
+        _usuariosSuperAdmin = _usuariosSuperAdmin
+            .map(
+              (UsuarioSuperAdminItem item) =>
+                  item.id == usuario.id ? usuario : item,
+            )
+            .toList(growable: false);
+      });
+      _mostrarMensaje(_mensajeError(error));
+    } finally {
+      if (mounted) {
+        setState(() => _usuariosSuperAdminActualizando.remove(usuario.id));
+      }
+    }
   }
 
   Future<void> _actualizarOrganizacionAdmin(
@@ -2236,6 +2494,7 @@ class _HomePageState extends State<HomePage> {
                   item.id == actualizada.id ? actualizada : item,
             )
             .toList(growable: false);
+        _usuariosSuperAdminCargados = false;
       });
       _mostrarMensaje(mensaje);
     } catch (error) {
@@ -2327,6 +2586,7 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
+    setState(() => _usuariosSuperAdminCargados = false);
     await _cargarOrganizacionesSuperAdmin();
     final String usuarioCreado =
         creado['usuario'] is String ? creado['usuario'] as String : 'usuario';
@@ -2637,7 +2897,11 @@ class _HomePageState extends State<HomePage> {
     }
 
     if (_usuarioSesion!.esSuperAdmin) {
-      unawaited(_cargarOrganizacionesSuperAdmin());
+      if (_pestanaSuperAdmin == 0) {
+        unawaited(_cargarOrganizacionesSuperAdmin());
+      } else {
+        unawaited(_cargarUsuariosSuperAdmin());
+      }
       return;
     }
 
@@ -4081,4 +4345,3 @@ class _DialogoSolicitarDireccionParaMapaState
     );
   }
 }
-

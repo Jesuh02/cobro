@@ -21,6 +21,7 @@ import {
   CrearOrganizacionSuperAdminDto,
   CrearUsuarioDto,
   ExtenderAccesoOrganizacionDto,
+  ListarUsuariosSuperAdminQueryDto,
   LoginDto,
   RegistrarInstitucionDto,
 } from './dto';
@@ -28,6 +29,7 @@ import {
   AuthSessionResponse,
   AuthenticatedUser,
   AuthUserResponse,
+  UsuarioSuperAdminResponse,
 } from './auth.types';
 import { PasswordService } from './password.service';
 import {
@@ -67,6 +69,23 @@ type OrganizacionSuperAdminRow = {
   administradores: string[] | null;
   suspendida: boolean;
   dias_restantes: number | null;
+};
+
+type UsuarioSuperAdminRow = {
+  id: string;
+  usuario: string;
+  activo: boolean;
+  creado_en: Date | string | null;
+  nombres: string;
+  apellidos: string;
+  nombre_completo: string;
+  identificacion: string | null;
+  correo: string;
+  telefono: string | null;
+  organizacion_id: string | null;
+  organizacion_nombre: string | null;
+  organizacion_suspendida: boolean | null;
+  roles: string[];
 };
 
 type TokenPayload = {
@@ -262,7 +281,7 @@ export class AuthService {
         )
       `;
 
-      return this.crearSesionParaUsuario(
+      const session = this.crearSesionParaUsuario(
         this.formatearUsuarioTbl({
           id: usuario.id,
           usuario: nombreUsuario,
@@ -278,6 +297,11 @@ export class AuthService {
           organizacionId: organizacion.id,
         }),
       );
+
+      this.cache.delete('superadmin:organizaciones');
+      this.cache.deleteByPrefix('superadmin:usuarios:');
+
+      return session;
     });
   }
 
@@ -285,55 +309,63 @@ export class AuthService {
     this.requerirSuperAdmin(usuario);
     await this.requerirEsquemaTblSuperAdmin();
 
-    const rows = await this.prisma.$queryRaw<
-      OrganizacionSuperAdminRow[]
-    >(Prisma.sql`
-      SELECT
-        org.id_org::text AS id,
-        org.org_nombre AS nombre,
-        org.org_telefono AS telefono,
-        org.org_email AS correo,
-        org.org_activo AS activo,
-        COALESCE(org.org_es_sistema, FALSE) AS es_sistema,
-        org.org_monto_plan AS monto_plan,
-        org.org_moneda_plan AS moneda_plan,
-        org.org_acceso_hasta AS acceso_hasta,
-        org.org_suspendida_en AS suspendida_en,
-        org.org_motivo_suspension AS motivo_suspension,
-        COUNT(DISTINCT uo.usu_id)::int AS usuarios_total,
-        COUNT(DISTINCT uo.usu_id) FILTER (WHERE tu.usu_activo)::int
-          AS usuarios_activos,
-        COALESCE(
-          array_agg(DISTINCT tu.usu_usuario)
-            FILTER (
-              WHERE rol.rol_tip::text = 'ADMINISTRADOR'
-                AND tu.usu_usuario IS NOT NULL
-            ),
-          ARRAY[]::text[]
-        ) AS administradores,
-        (
-          NOT org.org_activo
-          OR (
-            org.org_acceso_hasta IS NOT NULL
-            AND org.org_acceso_hasta < CURRENT_DATE
-          )
-        ) AS suspendida,
-        CASE
-          WHEN org.org_acceso_hasta IS NULL THEN NULL
-          ELSE (org.org_acceso_hasta - CURRENT_DATE)::int
-        END AS dias_restantes
-      FROM public.tbl_organizaciones org
-      LEFT JOIN public.tbl_usuarios_organizaciones uo
-        ON uo.org_id = org.id_org
-       AND uo.urg_activo
-      LEFT JOIN public.tbl_usuarios tu ON tu.id_usu = uo.usu_id
-      LEFT JOIN public.tbl_roles rol ON rol.id_rol = uo.rol_id
-      WHERE NOT COALESCE(org.org_es_sistema, FALSE)
-      GROUP BY org.id_org
-      ORDER BY suspendida DESC, org.org_acceso_hasta ASC NULLS LAST, org.org_nombre ASC
-    `);
+    const cacheKey = 'superadmin:organizaciones';
 
-    return rows.map((row) => this.formatearOrganizacionSuperAdmin(row));
+    return this.cache.remember(
+      cacheKey,
+      async () => {
+        const rows = await this.prisma.$queryRaw<
+          OrganizacionSuperAdminRow[]
+        >(Prisma.sql`
+          SELECT
+            org.id_org::text AS id,
+            org.org_nombre AS nombre,
+            org.org_telefono AS telefono,
+            org.org_email AS correo,
+            org.org_activo AS activo,
+            COALESCE(org.org_es_sistema, FALSE) AS es_sistema,
+            org.org_monto_plan AS monto_plan,
+            org.org_moneda_plan AS moneda_plan,
+            org.org_acceso_hasta AS acceso_hasta,
+            org.org_suspendida_en AS suspendida_en,
+            org.org_motivo_suspension AS motivo_suspension,
+            COUNT(DISTINCT uo.usu_id)::int AS usuarios_total,
+            COUNT(DISTINCT uo.usu_id) FILTER (WHERE tu.usu_activo)::int
+              AS usuarios_activos,
+            COALESCE(
+              array_agg(DISTINCT tu.usu_usuario)
+                FILTER (
+                  WHERE rol.rol_tip::text = 'ADMINISTRADOR'
+                    AND tu.usu_usuario IS NOT NULL
+                ),
+              ARRAY[]::text[]
+            ) AS administradores,
+            (
+              NOT org.org_activo
+              OR (
+                org.org_acceso_hasta IS NOT NULL
+                AND org.org_acceso_hasta < CURRENT_DATE
+              )
+            ) AS suspendida,
+            CASE
+              WHEN org.org_acceso_hasta IS NULL THEN NULL
+              ELSE (org.org_acceso_hasta - CURRENT_DATE)::int
+            END AS dias_restantes
+          FROM public.tbl_organizaciones org
+          LEFT JOIN public.tbl_usuarios_organizaciones uo
+            ON uo.org_id = org.id_org
+           AND uo.urg_activo
+          LEFT JOIN public.tbl_usuarios tu ON tu.id_usu = uo.usu_id
+          LEFT JOIN public.tbl_roles rol ON rol.id_rol = uo.rol_id
+          WHERE NOT COALESCE(org.org_es_sistema, FALSE)
+          GROUP BY org.id_org
+          ORDER BY suspendida DESC, org.org_acceso_hasta ASC NULLS LAST, org.org_nombre ASC
+        `);
+
+        return rows.map((row) => this.formatearOrganizacionSuperAdmin(row));
+      },
+      { ttlMs: 60_000 },
+    );
   }
 
   async crearOrganizacionSuperAdmin(
@@ -383,6 +415,9 @@ export class AuthService {
 
       return organizacion.id;
     });
+
+    this.cache.delete('superadmin:organizaciones');
+    this.cache.deleteByPrefix('superadmin:usuarios:');
 
     return this.obtenerOrganizacionSuperAdminPorId(organizacionId);
   }
@@ -529,6 +564,9 @@ export class AuthService {
       throw new NotFoundException('Institucion no encontrada');
     }
 
+    this.cache.delete('superadmin:organizaciones');
+    this.cache.deleteByPrefix('superadmin:usuarios:');
+
     return this.formatearOrganizacionSuperAdmin(actualizado[0]);
   }
 
@@ -608,6 +646,9 @@ export class AuthService {
     if (!actualizado[0]) {
       throw new NotFoundException('Institucion no encontrada');
     }
+
+    this.cache.delete('superadmin:organizaciones');
+    this.cache.deleteByPrefix('superadmin:usuarios:');
 
     return this.formatearOrganizacionSuperAdmin(actualizado[0]);
   }
@@ -712,7 +753,242 @@ export class AuthService {
       throw new ConflictException('No se pudo crear el administrador');
     }
 
+    this.cache.delete('superadmin:organizaciones');
+    this.cache.deleteByPrefix('superadmin:usuarios:');
+
     return this.formatearUsuarioTbl(creado);
+  }
+
+  async listarUsuariosSuperAdmin(
+    usuario: AuthenticatedUser,
+    query: ListarUsuariosSuperAdminQueryDto,
+  ): Promise<UsuarioSuperAdminResponse[]> {
+    this.requerirSuperAdmin(usuario);
+    await this.requerirEsquemaTblSuperAdmin();
+
+    const cacheKey = `superadmin:usuarios:${query.organizacionId || 'all'}:${query.activo !== undefined ? String(query.activo) : 'all'}:${(query.q || '').trim().toLowerCase()}`;
+
+    return this.cache.remember(
+      cacheKey,
+      async () => {
+        const conditions: Prisma.Sql[] = [
+          Prisma.sql`NOT COALESCE(org.org_es_sistema, FALSE)`,
+        ];
+
+        if (query.organizacionId) {
+          this.requerirIdTbl(query.organizacionId, 'Institucion no encontrada');
+          conditions.push(Prisma.sql`uo.org_id = ${query.organizacionId}::uuid`);
+        }
+
+        if (query.activo !== undefined) {
+          conditions.push(Prisma.sql`tu.usu_activo = ${query.activo}`);
+        }
+
+        if (query.q && query.q.trim()) {
+          const q = `%${query.q.trim().toLowerCase()}%`;
+          conditions.push(Prisma.sql`(
+            lower(tu.usu_usuario) LIKE ${q}
+            OR lower(p.per_primer_nombre) LIKE ${q}
+            OR lower(p.per_apellido) LIKE ${q}
+            OR lower(COALESCE(p.per_email, '')) LIKE ${q}
+            OR lower(COALESCE(p.per_documento, '')) LIKE ${q}
+          )`);
+        }
+
+        const whereClause = Prisma.join(conditions, ' AND ');
+
+        const rows = await this.prisma.$queryRaw<UsuarioSuperAdminRow[]>(Prisma.sql`
+          SELECT
+            tu.id_usu::text AS id,
+            tu.usu_usuario AS usuario,
+            tu.usu_activo AS activo,
+            tu.usu_creacion AS creado_en,
+            p.per_primer_nombre AS nombres,
+            p.per_apellido AS apellidos,
+            concat_ws(' ', p.per_primer_nombre, p.per_apellido) AS nombre_completo,
+            p.per_documento AS identificacion,
+            COALESCE(p.per_email, '') AS correo,
+            p.per_num_celular AS telefono,
+            org.id_org::text AS organizacion_id,
+            org.org_nombre AS organizacion_nombre,
+            (
+              NOT COALESCE(org.org_activo, TRUE)
+              OR (
+                org.org_acceso_hasta IS NOT NULL
+                AND org.org_acceso_hasta < CURRENT_DATE
+              )
+            ) AS organizacion_suspendida,
+            COALESCE(
+              array_agg(DISTINCT tr.rol_tip::text)
+                FILTER (WHERE tr.rol_tip IS NOT NULL),
+              ARRAY[]::text[]
+            ) AS roles
+          FROM public.tbl_usuarios tu
+          JOIN public.tbl_personas p ON p.id_per = tu.persona_id
+          LEFT JOIN public.tbl_usuarios_organizaciones uo
+            ON uo.usu_id = tu.id_usu
+           AND uo.urg_activo
+          LEFT JOIN public.tbl_organizaciones org
+            ON org.id_org = uo.org_id
+          LEFT JOIN public.tbl_roles tr
+            ON tr.id_rol = uo.rol_id
+          WHERE ${whereClause}
+          GROUP BY
+            tu.id_usu,
+            tu.usu_usuario,
+            tu.usu_activo,
+            tu.usu_creacion,
+            p.per_primer_nombre,
+            p.per_apellido,
+            p.per_documento,
+            p.per_email,
+            p.per_num_celular,
+            org.id_org,
+            org.org_nombre,
+            org.org_activo,
+            org.org_acceso_hasta
+          ORDER BY tu.usu_creacion DESC, tu.usu_usuario ASC
+        `);
+
+        return rows.map((row) => this.formatearUsuarioSuperAdmin(row));
+      },
+      { ttlMs: 60_000 },
+    );
+  }
+
+  async actualizarEstadoUsuarioSuperAdmin(
+    superadmin: AuthenticatedUser,
+    usuarioId: string,
+    dto: ActualizarEstadoUsuarioDto,
+  ): Promise<UsuarioSuperAdminResponse> {
+    this.requerirSuperAdmin(superadmin);
+    await this.requerirEsquemaTblSuperAdmin();
+    this.requerirIdTbl(usuarioId, 'Usuario no encontrado');
+
+    if (usuarioId === superadmin.usuarioId) {
+      throw new BadRequestException('No puedes desactivar tu propio usuario');
+    }
+
+    const [existente] = await this.prisma.$queryRaw<Array<{ id: string }>>(
+      Prisma.sql`
+        SELECT id_usu::text AS id
+        FROM public.tbl_usuarios
+        WHERE id_usu = ${usuarioId}::uuid
+        LIMIT 1
+      `,
+    );
+
+    if (!existente) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    await this.prisma.$executeRaw(
+      Prisma.sql`
+        UPDATE public.tbl_usuarios
+        SET usu_activo = ${dto.activo}
+        WHERE id_usu = ${usuarioId}::uuid
+      `,
+    );
+
+    this.cache.delete('superadmin:organizaciones');
+    this.cache.delete(`superadmin:usuario:${usuarioId}`);
+    this.cache.deleteByPrefix('superadmin:usuarios:');
+
+    return this.obtenerUsuarioSuperAdminPorId(usuarioId);
+  }
+
+  async obtenerUsuarioSuperAdminPorId(
+    usuarioId: string,
+  ): Promise<UsuarioSuperAdminResponse> {
+    this.requerirIdTbl(usuarioId, 'Usuario no encontrado');
+
+    const cacheKey = `superadmin:usuario:${usuarioId}`;
+
+    return this.cache.remember(
+      cacheKey,
+      async () => {
+        const rows = await this.prisma.$queryRaw<UsuarioSuperAdminRow[]>(Prisma.sql`
+          SELECT
+            tu.id_usu::text AS id,
+            tu.usu_usuario AS usuario,
+            tu.usu_activo AS activo,
+            tu.usu_creacion AS creado_en,
+            p.per_primer_nombre AS nombres,
+            p.per_apellido AS apellidos,
+            concat_ws(' ', p.per_primer_nombre, p.per_apellido) AS nombre_completo,
+            p.per_documento AS identificacion,
+            COALESCE(p.per_email, '') AS correo,
+            p.per_num_celular AS telefono,
+            org.id_org::text AS organizacion_id,
+            org.org_nombre AS organizacion_nombre,
+            (
+              NOT COALESCE(org.org_activo, TRUE)
+              OR (
+                org.org_acceso_hasta IS NOT NULL
+                AND org.org_acceso_hasta < CURRENT_DATE
+              )
+            ) AS organizacion_suspendida,
+            COALESCE(
+              array_agg(DISTINCT tr.rol_tip::text)
+                FILTER (WHERE tr.rol_tip IS NOT NULL),
+              ARRAY[]::text[]
+            ) AS roles
+          FROM public.tbl_usuarios tu
+          JOIN public.tbl_personas p ON p.id_per = tu.persona_id
+          LEFT JOIN public.tbl_usuarios_organizaciones uo
+            ON uo.usu_id = tu.id_usu
+           AND uo.urg_activo
+          LEFT JOIN public.tbl_organizaciones org
+            ON org.id_org = uo.org_id
+          LEFT JOIN public.tbl_roles tr
+            ON tr.id_rol = uo.rol_id
+          WHERE tu.id_usu = ${usuarioId}::uuid
+          GROUP BY
+            tu.id_usu,
+            tu.usu_usuario,
+            tu.usu_activo,
+            tu.usu_creacion,
+            p.per_primer_nombre,
+            p.per_apellido,
+            p.per_documento,
+            p.per_email,
+            p.per_num_celular,
+            org.id_org,
+            org.org_nombre,
+            org.org_activo,
+            org.org_acceso_hasta
+          LIMIT 1
+        `);
+
+        if (!rows[0]) {
+          throw new NotFoundException('Usuario no encontrado');
+        }
+
+        return this.formatearUsuarioSuperAdmin(rows[0]);
+      },
+      { ttlMs: 60_000 },
+    );
+  }
+
+  private formatearUsuarioSuperAdmin(
+    row: UsuarioSuperAdminRow,
+  ): UsuarioSuperAdminResponse {
+    return {
+      id: row.id,
+      usuario: row.usuario,
+      nombreCompleto: row.nombre_completo || row.usuario,
+      nombres: row.nombres,
+      apellidos: row.apellidos,
+      identificacion: row.identificacion,
+      correo: row.correo,
+      telefono: row.telefono,
+      activo: Boolean(row.activo),
+      organizacionId: row.organizacion_id,
+      organizacionNombre: row.organizacion_nombre,
+      organizacionSuspendida: Boolean(row.organizacion_suspendida),
+      roles: row.roles ?? [],
+      creadoEn: this.fechaIso(row.creado_en),
+    };
   }
 
   async crearEmpleado(
@@ -720,7 +996,10 @@ export class AuthService {
     administrador: AuthenticatedUser,
   ): Promise<AuthUserResponse> {
     this.requerirAdministrador(administrador);
-    return this.crearUsuario(dto, 'COBRADOR', administrador);
+    const resultado = await this.crearUsuario(dto, 'COBRADOR', administrador);
+    this.cache.delete('superadmin:organizaciones');
+    this.cache.deleteByPrefix('superadmin:usuarios:');
+    return resultado;
   }
 
   async obtenerUsuarioAutenticado(
@@ -1479,6 +1758,10 @@ export class AuthService {
       throw new NotFoundException('Empleado no encontrado');
     }
 
+    this.cache.delete('superadmin:organizaciones');
+    this.cache.delete(`superadmin:usuario:${empleadoId}`);
+    this.cache.deleteByPrefix('superadmin:usuarios:');
+
     return this.formatearUsuarioTbl(actualizado);
   }
 
@@ -1524,6 +1807,10 @@ export class AuthService {
     if (!actualizado) {
       throw new NotFoundException('Empleado no encontrado');
     }
+
+    this.cache.delete('superadmin:organizaciones');
+    this.cache.delete(`superadmin:usuario:${empleadoId}`);
+    this.cache.deleteByPrefix('superadmin:usuarios:');
 
     return this.formatearUsuarioTbl(actualizado);
   }

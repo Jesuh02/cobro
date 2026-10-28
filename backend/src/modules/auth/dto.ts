@@ -284,3 +284,31 @@ export class ExtenderAccesoOrganizacionDto {
   @Min(1)
   dias!: number;
 }
+
+export class ListarUsuariosSuperAdminQueryDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  @Matches(resourceIdPattern, {
+    message: 'La organizacion debe ser un identificador valido',
+  })
+  organizacionId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  q?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  @Transform(({ value }: { value: unknown }) => {
+    if (value === 'true' || value === true) return true;
+    if (value === 'false' || value === false) return false;
+    return value;
+  })
+  activo?: boolean;
+}
+

@@ -25,6 +25,7 @@ import {
   CrearOrganizacionSuperAdminDto,
   CrearUsuarioDto,
   ExtenderAccesoOrganizacionDto,
+  ListarUsuariosSuperAdminQueryDto,
   LoginDto,
   RegistrarInstitucionDto,
 } from './dto';
@@ -112,6 +113,25 @@ export class AuthController {
     @Body() body: CrearAdministradorSuperAdminDto,
   ) {
     return this.auth.crearAdministradorSuperAdmin(usuario, body);
+  }
+
+  @Get('super-admin/usuarios')
+  @UseGuards(AuthGuard)
+  listarUsuariosSuperAdmin(
+    @CurrentUser() usuario: AuthenticatedUser,
+    @Query() query: ListarUsuariosSuperAdminQueryDto,
+  ) {
+    return this.auth.listarUsuariosSuperAdmin(usuario, query);
+  }
+
+  @Patch('super-admin/usuarios/:id/estado')
+  @UseGuards(AuthGuard)
+  actualizarEstadoUsuarioSuperAdmin(
+    @CurrentUser() usuario: AuthenticatedUser,
+    @Param('id', new ResourceIdPipe()) id: string,
+    @Body() body: ActualizarEstadoUsuarioDto,
+  ) {
+    return this.auth.actualizarEstadoUsuarioSuperAdmin(usuario, id, body);
   }
 
   @Post('usuarios')

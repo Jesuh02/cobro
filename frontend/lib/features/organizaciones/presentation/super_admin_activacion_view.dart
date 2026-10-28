@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../../../app/app_theme.dart';
-import '../../../core/formatters/app_formatters.dart';
 import '../../../core/ui/page_layout.dart';
 import '../../../data/models/models.dart';
 import 'widgets/organizacion_admin_picker.dart';
+import 'widgets/super_admin_usuario_detail_sheet.dart';
 
 const String _todasLasInstituciones = 'Todas las instituciones';
 
@@ -21,6 +21,9 @@ class SuperAdminActivacionView extends StatefulWidget {
     required this.onOrganizacionChanged,
     required this.onConsultaChanged,
     required this.onEstadoChanged,
+    required this.onPermisosChanged,
+    required this.mensajeError,
+    required this.mostrarMensaje,
     this.error,
     super.key,
   });
@@ -38,6 +41,12 @@ class SuperAdminActivacionView extends StatefulWidget {
   final ValueChanged<String> onConsultaChanged;
   final Future<void> Function(UsuarioSuperAdminItem usuario, bool activo)
       onEstadoChanged;
+  final Future<UsuarioSuperAdminItem> Function(
+    UsuarioSuperAdminItem usuario,
+    List<String> permisos,
+  ) onPermisosChanged;
+  final String Function(Object error) mensajeError;
+  final void Function(String mensaje) mostrarMensaje;
 
   @override
   State<SuperAdminActivacionView> createState() =>
@@ -122,6 +131,7 @@ class _SuperAdminActivacionViewState extends State<SuperAdminActivacionView> {
             actualizando: widget.actualizandoIds.contains(usuario.id),
             onEstadoChanged: (bool activo) =>
                 _solicitarCambioEstado(usuario, activo),
+            onTap: () => _mostrarDetalle(usuario),
           ),
         );
       },
@@ -285,6 +295,16 @@ class _SuperAdminActivacionViewState extends State<SuperAdminActivacionView> {
 
     await widget.onEstadoChanged(usuario, activo);
   }
+
+  Future<void> _mostrarDetalle(UsuarioSuperAdminItem usuario) async {
+    await mostrarSuperAdminUsuarioDetalleSheet(
+      context: context,
+      usuario: usuario,
+      onGuardarPermisos: widget.onPermisosChanged,
+      mensajeError: widget.mensajeError,
+      mostrarMensaje: widget.mostrarMensaje,
+    );
+  }
 }
 
 class _MetricaAcceso extends StatelessWidget {
@@ -346,167 +366,153 @@ class _UsuarioAccesoCard extends StatelessWidget {
     required this.esUsuarioActual,
     required this.actualizando,
     required this.onEstadoChanged,
+    required this.onTap,
   });
 
   final UsuarioSuperAdminItem usuario;
   final bool esUsuarioActual;
   final bool actualizando;
   final ValueChanged<bool> onEstadoChanged;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final Color estadoColor =
         usuario.activo ? CobroAppTheme.success : CobroAppTheme.danger;
-    return ClaySurface(
-      radius: 16,
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              CircleAvatar(
-                backgroundColor: estadoColor.withValues(alpha: 0.12),
-                foregroundColor: estadoColor,
-                child: Icon(
-                  usuario.activo
-                      ? Icons.person_rounded
-                      : Icons.person_off_rounded,
-                ),
+    return Semantics(
+      button: true,
+      label: 'Ver información y permisos de ${usuario.nombreVisible}',
+      child: ClaySurface(
+        key: ValueKey<String>(
+          'usuario-acceso-${usuario.id}-${usuario.organizacionId ?? 'sin-organizacion'}',
+        ),
+        radius: 16,
+        padding: const EdgeInsets.all(14),
+        onTap: onTap,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: <Widget>[
+            CircleAvatar(
+              backgroundColor: estadoColor.withValues(alpha: 0.12),
+              foregroundColor: estadoColor,
+              child: Icon(
+                usuario.activo
+                    ? Icons.person_rounded
+                    : Icons.person_off_rounded,
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 5,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: <Widget>[
-                        Text(
-                          usuario.nombreVisible,
-                          style:
-                              Theme.of(context).textTheme.titleSmall?.copyWith(
-                                    fontWeight: FontWeight.w900,
-                                  ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Wrap(
+                    spacing: 7,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: <Widget>[
+                      Text(
+                        usuario.nombreVisible,
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w900,
+                            ),
+                      ),
+                      if (esUsuarioActual)
+                        const _EtiquetaAcceso(
+                          texto: 'Eres tú',
+                          color: CobroAppTheme.primary,
                         ),
-                        if (esUsuarioActual)
-                          const _EtiquetaAcceso(
-                            texto: 'Eres tú',
-                            color: CobroAppTheme.primary,
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '@${usuario.usuario}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: context.clay.subtleText,
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: <Widget>[
+                      _DatoAcceso(
+                        icono: Icons.apartment_rounded,
+                        texto: usuario.organizacionVisible,
+                        color: usuario.organizacionSuspendida
+                            ? CobroAppTheme.danger
+                            : null,
+                      ),
+                      if (usuario.roles.isEmpty)
+                        const _EtiquetaAcceso(
+                          texto: 'Sin rol',
+                          color: CobroAppTheme.warning,
+                        )
+                      else
+                        for (final String rol in usuario.roles)
+                          _EtiquetaAcceso(
+                            texto: _etiquetaRol(rol),
+                            color: _colorRol(rol),
                           ),
-                      ],
-                    ),
-                    const SizedBox(height: 3),
+                    ],
+                  ),
+                  if (usuario.organizacionSuspendida) ...<Widget>[
+                    const SizedBox(height: 7),
                     Text(
-                      '@${usuario.usuario}${usuario.correo.isEmpty ? '' : ' · ${usuario.correo}'}',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: context.clay.subtleText,
-                            fontWeight: FontWeight.w600,
+                      'Institución suspendida',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: CobroAppTheme.danger,
+                            fontWeight: FontWeight.w800,
                           ),
                     ),
                   ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Column(
-                children: <Widget>[
-                  Text(
-                    usuario.activo ? 'Activo' : 'Inactivo',
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                          color: estadoColor,
-                          fontWeight: FontWeight.w900,
-                        ),
-                  ),
-                  if (actualizando)
-                    const Padding(
-                      padding: EdgeInsets.all(10),
-                      child: SizedBox.square(
-                        dimension: 22,
-                        child: CircularProgressIndicator(strokeWidth: 2.5),
-                      ),
-                    )
-                  else
-                    Tooltip(
-                      message: esUsuarioActual
-                          ? 'No puedes desactivar tu propio usuario'
-                          : usuario.activo
-                              ? 'Desactivar usuario'
-                              : 'Activar usuario',
-                      child: Switch(
-                        key: ValueKey<String>('estado-usuario-${usuario.id}'),
-                        value: usuario.activo,
-                        onChanged: esUsuarioActual ? null : onEstadoChanged,
-                      ),
-                    ),
                 ],
               ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: <Widget>[
-              _DatoAcceso(
-                icono: Icons.apartment_rounded,
-                texto: usuario.organizacionVisible,
-                color: usuario.organizacionSuspendida
-                    ? CobroAppTheme.danger
-                    : null,
-              ),
-              if ((usuario.identificacion ?? '').isNotEmpty)
-                _DatoAcceso(
-                  icono: Icons.badge_outlined,
-                  texto: usuario.identificacion!,
-                ),
-              if ((usuario.telefono ?? '').isNotEmpty)
-                _DatoAcceso(
-                  icono: Icons.phone_outlined,
-                  texto: usuario.telefono!,
-                ),
-              if (usuario.creadoEn != null)
-                _DatoAcceso(
-                  icono: Icons.event_outlined,
-                  texto: 'Creado ${formatDateLabel(usuario.creadoEn)}',
-                ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: usuario.roles.isEmpty
-                ? const <Widget>[
-                    _EtiquetaAcceso(
-                      texto: 'Sin rol',
-                      color: CobroAppTheme.warning,
-                    ),
-                  ]
-                : usuario.roles
-                    .map(
-                      (String rol) => _EtiquetaAcceso(
-                        texto: _etiquetaRol(rol),
-                        color: _colorRol(rol),
+            ),
+            const SizedBox(width: 8),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  usuario.activo ? 'Activo' : 'Inactivo',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: estadoColor,
+                        fontWeight: FontWeight.w900,
                       ),
-                    )
-                    .toList(growable: false),
-          ),
-          if (usuario.organizacionSuspendida) ...<Widget>[
-            const SizedBox(height: 10),
-            Text(
-              'La institución está suspendida',
-              style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: CobroAppTheme.danger,
-                    fontWeight: FontWeight.w800,
+                ),
+                if (actualizando)
+                  const Padding(
+                    padding: EdgeInsets.all(10),
+                    child: SizedBox.square(
+                      dimension: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2.5),
+                    ),
+                  )
+                else
+                  Tooltip(
+                    message: esUsuarioActual
+                        ? 'No puedes desactivar tu propio usuario'
+                        : usuario.activo
+                            ? 'Desactivar usuario'
+                            : 'Activar usuario',
+                    child: Switch(
+                      key: ValueKey<String>('estado-usuario-${usuario.id}'),
+                      value: usuario.activo,
+                      onChanged: esUsuarioActual ? null : onEstadoChanged,
+                    ),
                   ),
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  semanticLabel: 'Abrir detalle',
+                ),
+              ],
             ),
           ],
-        ],
+        ),
       ),
     );
   }
@@ -538,8 +544,7 @@ class _DatoAcceso extends StatelessWidget {
           children: <Widget>[
             Icon(icono, size: 15, color: acento),
             const SizedBox(width: 5),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 250),
+            Flexible(
               child: Text(
                 texto,
                 maxLines: 1,

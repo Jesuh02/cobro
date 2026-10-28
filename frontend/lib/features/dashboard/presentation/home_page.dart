@@ -536,6 +536,10 @@ class _HomePageState extends State<HomePage> {
                           onConsultaChanged:
                               _programarBusquedaUsuariosSuperAdmin,
                           onEstadoChanged: _actualizarEstadoUsuarioSuperAdmin,
+                          onPermisosChanged:
+                              _actualizarPermisosUsuarioSuperAdmin,
+                          mensajeError: _mensajeError,
+                          mostrarMensaje: _mostrarMensaje,
                         ),
                       )
                     : _cargando && _catalogos == null
@@ -2427,6 +2431,50 @@ class _HomePageState extends State<HomePage> {
             .toList(growable: false);
       });
       _mostrarMensaje(_mensajeError(error));
+    } finally {
+      if (mounted) {
+        setState(() => _usuariosSuperAdminActualizando.remove(usuario.id));
+      }
+    }
+  }
+
+  Future<UsuarioSuperAdminItem> _actualizarPermisosUsuarioSuperAdmin(
+    UsuarioSuperAdminItem usuario,
+    List<String> permisos,
+  ) async {
+    final SesionUsuario? sesion = _usuarioSesion;
+    final String? organizacionId = usuario.organizacionId;
+    if (sesion == null || !sesion.esSuperAdmin) {
+      throw StateError('La sesión no tiene permisos de SuperAdmin');
+    }
+    if (organizacionId == null) {
+      throw StateError('El usuario no pertenece a una institución editable');
+    }
+    if (_usuariosSuperAdminActualizando.contains(usuario.id)) {
+      throw StateError('Ya hay una actualización en curso para este usuario');
+    }
+
+    setState(() => _usuariosSuperAdminActualizando.add(usuario.id));
+    try {
+      final UsuarioSuperAdminItem actualizado =
+          await _apiClient.actualizarPermisosUsuarioSuperAdmin(
+        usuario.id,
+        organizacionId: organizacionId,
+        permisos: permisos,
+      );
+      if (!mounted) return actualizado;
+
+      setState(() {
+        _usuariosSuperAdmin = _usuariosSuperAdmin
+            .map(
+              (UsuarioSuperAdminItem item) =>
+                  item.id == usuario.id && item.organizacionId == organizacionId
+                      ? actualizado
+                      : item,
+            )
+            .toList(growable: false);
+      });
+      return actualizado;
     } finally {
       if (mounted) {
         setState(() => _usuariosSuperAdminActualizando.remove(usuario.id));

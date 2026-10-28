@@ -74,6 +74,10 @@ void main() {
             consulta = value;
           },
           onEstadoChanged: (_, __) async {},
+          onPermisosChanged: (UsuarioSuperAdminItem usuario, _) async =>
+              usuario,
+          mensajeError: (Object error) => error.toString(),
+          mostrarMensaje: (_) {},
         ),
       ),
     );
@@ -151,6 +155,10 @@ void main() {
             usuarioActualizado = usuario;
             estadoSolicitado = activo;
           },
+          onPermisosChanged: (UsuarioSuperAdminItem usuario, _) async =>
+              usuario,
+          mensajeError: (Object error) => error.toString(),
+          mostrarMensaje: (_) {},
         ),
       ),
     );
@@ -211,12 +219,62 @@ void main() {
           onOrganizacionChanged: (_) {},
           onConsultaChanged: (_) {},
           onEstadoChanged: (_, __) async {},
+          onPermisosChanged: (UsuarioSuperAdminItem usuario, _) async =>
+              usuario,
+          mensajeError: (Object error) => error.toString(),
+          mostrarMensaje: (_) {},
         ),
       ),
     );
 
     expect(find.byType(Switch), findsWidgets);
     expect(find.byType(Switch).evaluate().length, lessThan(100));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('abre el detalle reutilizable desde una tarjeta compacta',
+      (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(
+      _app(
+        SuperAdminActivacionView(
+          usuarios: <UsuarioSuperAdminItem>[usuarios.last],
+          organizaciones: <OrganizacionAdmin>[organizacion],
+          usuarioActualId: usuarioActualId,
+          organizacionSeleccionadaId: null,
+          consulta: '',
+          cargando: false,
+          actualizandoIds: const <String>{},
+          onRefresh: () async {},
+          onOrganizacionChanged: (_) {},
+          onConsultaChanged: (_) {},
+          onEstadoChanged: (_, __) async {},
+          onPermisosChanged: (UsuarioSuperAdminItem usuario, _) async =>
+              usuario,
+          mensajeError: (Object error) => error.toString(),
+          mostrarMensaje: (_) {},
+        ),
+      ),
+    );
+
+    expect(find.text('Correo'), findsNothing);
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>(
+          'usuario-acceso-$administradorId-$organizacionId',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Información'), findsOneWidget);
+    expect(find.text('Permisos'), findsOneWidget);
+    expect(find.text('Correo'), findsOneWidget);
+    expect(find.text('Institución y acceso'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }
@@ -249,6 +307,7 @@ UsuarioSuperAdminItem _usuario({
     'organizacionNombre': 'Institución Uno',
     'organizacionSuspendida': false,
     'roles': roles,
+    'permisos': const <String>[],
     'creadoEn': '2026-10-27T14:30:00.000Z',
   });
 }

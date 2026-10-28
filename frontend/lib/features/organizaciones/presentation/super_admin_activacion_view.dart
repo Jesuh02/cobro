@@ -7,6 +7,7 @@ import 'widgets/organizacion_admin_picker.dart';
 import 'widgets/super_admin_usuario_detail_sheet.dart';
 
 const String _todasLasInstituciones = 'Todas las instituciones';
+const double _desktopCardsBreakpoint = 1000;
 
 class SuperAdminActivacionView extends StatefulWidget {
   const SuperAdminActivacionView({
@@ -115,147 +116,149 @@ class _SuperAdminActivacionViewState extends State<SuperAdminActivacionView> {
         .length;
     final int inactivos = widget.usuarios.length - activos;
 
-    return Pagina(
-      titulo: 'Gestión de acceso',
-      subtitulo: 'Activación de administradores y empleados por institución',
-      error: widget.error,
-      onRefresh: widget.onRefresh,
-      itemCount: widget.usuarios.length,
-      itemBuilder: (BuildContext context, int index) {
-        final UsuarioSuperAdminItem usuario = widget.usuarios[index];
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 10),
-          child: _UsuarioAccesoCard(
-            usuario: usuario,
-            esUsuarioActual: usuario.id == widget.usuarioActualId,
-            actualizando: widget.actualizandoIds.contains(usuario.id),
-            onEstadoChanged: (bool activo) =>
-                _solicitarCambioEstado(usuario, activo),
-            onTap: () => _mostrarDetalle(usuario),
-          ),
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final bool usarCuadricula =
+            constraints.maxWidth >= _desktopCardsBreakpoint;
+        final int columnas = usarCuadricula ? 2 : 1;
+        final int filas = (widget.usuarios.length / columnas).ceil();
+
+        return Pagina(
+          titulo: 'Gestión de acceso',
+          subtitulo:
+              'Activación de administradores y empleados por institución',
+          error: widget.error,
+          onRefresh: widget.onRefresh,
+          itemCount: filas,
+          itemBuilder: (BuildContext context, int index) {
+            return _FilaUsuariosAcceso(
+              key: ValueKey<String>('fila-usuarios-acceso-$index'),
+              usuarios: widget.usuarios,
+              indiceInicial: index * columnas,
+              columnas: columnas,
+              usuarioActualId: widget.usuarioActualId,
+              actualizandoIds: widget.actualizandoIds,
+              onEstadoChanged: _solicitarCambioEstado,
+              onTap: _mostrarDetalle,
+            );
+          },
+          children: <Widget>[
+            ClaySurface(
+              radius: 16,
+              padding: const EdgeInsets.all(16),
+              elevated: false,
+              child: LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints constraints) {
+                  final Widget organizacion = OrganizacionAdminPicker(
+                    organizaciones: widget.organizaciones,
+                    controller: _organizacionController,
+                    focusNode: _organizacionFocusNode,
+                    seleccionada: _organizacionSeleccionada,
+                    incluirTodas: true,
+                    labelText: 'Institución',
+                    hintText: 'Todas o busca una institución',
+                    onChanged: (OrganizacionAdmin? value) {
+                      widget.onOrganizacionChanged(value?.id);
+                    },
+                  );
+                  final Widget busqueda = Semantics(
+                    textField: true,
+                    label:
+                        'Buscar usuarios por nombre, usuario, documento o correo',
+                    child: TextField(
+                      key:
+                          const ValueKey<String>('buscar-usuarios-super-admin'),
+                      controller: _busquedaController,
+                      textInputAction: TextInputAction.search,
+                      decoration: InputDecoration(
+                        labelText: 'Buscar usuario',
+                        hintText: 'Nombre, usuario, documento o correo',
+                        prefixIcon: const Icon(Icons.search_rounded),
+                        suffixIcon: _busquedaController.text.isEmpty
+                            ? null
+                            : IconButton(
+                                onPressed: () {
+                                  _busquedaController.clear();
+                                  setState(() {});
+                                  widget.onConsultaChanged('');
+                                },
+                                icon: const Icon(Icons.close_rounded),
+                                tooltip: 'Limpiar búsqueda',
+                              ),
+                      ),
+                      onChanged: (String value) {
+                        setState(() {});
+                        widget.onConsultaChanged(value);
+                      },
+                    ),
+                  );
+
+                  if (constraints.maxWidth < 680) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        organizacion,
+                        const SizedBox(height: 12),
+                        busqueda,
+                      ],
+                    );
+                  }
+
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Expanded(child: organizacion),
+                      const SizedBox(width: 12),
+                      Expanded(child: busqueda),
+                    ],
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: <Widget>[
+                _MetricaAcceso(
+                  key: const ValueKey<String>('metrica-usuarios-total'),
+                  icono: Icons.groups_rounded,
+                  etiqueta: 'Total',
+                  valor: widget.usuarios.length,
+                ),
+                _MetricaAcceso(
+                  key: const ValueKey<String>('metrica-usuarios-activos'),
+                  icono: Icons.check_circle_rounded,
+                  etiqueta: 'Activos',
+                  valor: activos,
+                  color: CobroAppTheme.success,
+                ),
+                _MetricaAcceso(
+                  key: const ValueKey<String>('metrica-usuarios-inactivos'),
+                  icono: Icons.pause_circle_rounded,
+                  etiqueta: 'Inactivos',
+                  valor: inactivos,
+                  color: CobroAppTheme.danger,
+                ),
+              ],
+            ),
+            if (widget.cargando) ...<Widget>[
+              const SizedBox(height: 14),
+              const LinearProgressIndicator(),
+            ],
+            const SizedBox(height: 14),
+            if (!widget.cargando && widget.usuarios.isEmpty)
+              EstadoVacio(
+                icono: Icons.manage_accounts_outlined,
+                titulo: 'Sin usuarios',
+                mensaje: widget.consulta.trim().isNotEmpty ||
+                        widget.organizacionSeleccionadaId != null
+                    ? 'No hay usuarios que coincidan con los filtros.'
+                    : 'No hay usuarios administrables registrados.',
+              ),
+          ],
         );
       },
-      acciones: <Widget>[
-        IconButton.filledTonal(
-          onPressed: widget.cargando ? null : widget.onRefresh,
-          icon: const Icon(Icons.refresh_rounded),
-          tooltip: 'Recargar usuarios',
-        ),
-      ],
-      children: <Widget>[
-        ClaySurface(
-          radius: 16,
-          padding: const EdgeInsets.all(16),
-          elevated: false,
-          child: LayoutBuilder(
-            builder: (BuildContext context, BoxConstraints constraints) {
-              final Widget organizacion = OrganizacionAdminPicker(
-                organizaciones: widget.organizaciones,
-                controller: _organizacionController,
-                focusNode: _organizacionFocusNode,
-                seleccionada: _organizacionSeleccionada,
-                incluirTodas: true,
-                labelText: 'Institución',
-                hintText: 'Todas o busca una institución',
-                onChanged: (OrganizacionAdmin? value) {
-                  widget.onOrganizacionChanged(value?.id);
-                },
-              );
-              final Widget busqueda = Semantics(
-                textField: true,
-                label:
-                    'Buscar usuarios por nombre, usuario, documento o correo',
-                child: TextField(
-                  key: const ValueKey<String>('buscar-usuarios-super-admin'),
-                  controller: _busquedaController,
-                  textInputAction: TextInputAction.search,
-                  decoration: InputDecoration(
-                    labelText: 'Buscar usuario',
-                    hintText: 'Nombre, usuario, documento o correo',
-                    prefixIcon: const Icon(Icons.search_rounded),
-                    suffixIcon: _busquedaController.text.isEmpty
-                        ? null
-                        : IconButton(
-                            onPressed: () {
-                              _busquedaController.clear();
-                              setState(() {});
-                              widget.onConsultaChanged('');
-                            },
-                            icon: const Icon(Icons.close_rounded),
-                            tooltip: 'Limpiar búsqueda',
-                          ),
-                  ),
-                  onChanged: (String value) {
-                    setState(() {});
-                    widget.onConsultaChanged(value);
-                  },
-                ),
-              );
-
-              if (constraints.maxWidth < 680) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    organizacion,
-                    const SizedBox(height: 12),
-                    busqueda,
-                  ],
-                );
-              }
-
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Expanded(child: organizacion),
-                  const SizedBox(width: 12),
-                  Expanded(child: busqueda),
-                ],
-              );
-            },
-          ),
-        ),
-        const SizedBox(height: 14),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: <Widget>[
-            _MetricaAcceso(
-              key: const ValueKey<String>('metrica-usuarios-total'),
-              icono: Icons.groups_rounded,
-              etiqueta: 'Total',
-              valor: widget.usuarios.length,
-            ),
-            _MetricaAcceso(
-              key: const ValueKey<String>('metrica-usuarios-activos'),
-              icono: Icons.check_circle_rounded,
-              etiqueta: 'Activos',
-              valor: activos,
-              color: CobroAppTheme.success,
-            ),
-            _MetricaAcceso(
-              key: const ValueKey<String>('metrica-usuarios-inactivos'),
-              icono: Icons.pause_circle_rounded,
-              etiqueta: 'Inactivos',
-              valor: inactivos,
-              color: CobroAppTheme.danger,
-            ),
-          ],
-        ),
-        if (widget.cargando) ...<Widget>[
-          const SizedBox(height: 14),
-          const LinearProgressIndicator(),
-        ],
-        const SizedBox(height: 14),
-        if (!widget.cargando && widget.usuarios.isEmpty)
-          EstadoVacio(
-            icono: Icons.manage_accounts_outlined,
-            titulo: 'Sin usuarios',
-            mensaje: widget.consulta.trim().isNotEmpty ||
-                    widget.organizacionSeleccionadaId != null
-                ? 'No hay usuarios que coincidan con los filtros.'
-                : 'No hay usuarios administrables registrados.',
-          ),
-      ],
     );
   }
 
@@ -303,6 +306,62 @@ class _SuperAdminActivacionViewState extends State<SuperAdminActivacionView> {
       onGuardarPermisos: widget.onPermisosChanged,
       mensajeError: widget.mensajeError,
       mostrarMensaje: widget.mostrarMensaje,
+    );
+  }
+}
+
+class _FilaUsuariosAcceso extends StatelessWidget {
+  const _FilaUsuariosAcceso({
+    required this.usuarios,
+    required this.indiceInicial,
+    required this.columnas,
+    required this.usuarioActualId,
+    required this.actualizandoIds,
+    required this.onEstadoChanged,
+    required this.onTap,
+    super.key,
+  });
+
+  final List<UsuarioSuperAdminItem> usuarios;
+  final int indiceInicial;
+  final int columnas;
+  final String usuarioActualId;
+  final Set<String> actualizandoIds;
+  final Future<void> Function(UsuarioSuperAdminItem usuario, bool activo)
+      onEstadoChanged;
+  final Future<void> Function(UsuarioSuperAdminItem usuario) onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool compacta = columnas > 1;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          for (int columna = 0; columna < columnas; columna++) ...<Widget>[
+            if (columna > 0) const SizedBox(width: 12),
+            Expanded(
+              child: indiceInicial + columna < usuarios.length
+                  ? _UsuarioAccesoCard(
+                      usuario: usuarios[indiceInicial + columna],
+                      esUsuarioActual: usuarios[indiceInicial + columna].id ==
+                          usuarioActualId,
+                      actualizando: actualizandoIds
+                          .contains(usuarios[indiceInicial + columna].id),
+                      compacta: compacta,
+                      onEstadoChanged: (bool activo) => onEstadoChanged(
+                        usuarios[indiceInicial + columna],
+                        activo,
+                      ),
+                      onTap: () => onTap(usuarios[indiceInicial + columna]),
+                    )
+                  : const SizedBox.shrink(),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }
@@ -365,6 +424,7 @@ class _UsuarioAccesoCard extends StatelessWidget {
     required this.usuario,
     required this.esUsuarioActual,
     required this.actualizando,
+    required this.compacta,
     required this.onEstadoChanged,
     required this.onTap,
   });
@@ -372,6 +432,7 @@ class _UsuarioAccesoCard extends StatelessWidget {
   final UsuarioSuperAdminItem usuario;
   final bool esUsuarioActual;
   final bool actualizando;
+  final bool compacta;
   final ValueChanged<bool> onEstadoChanged;
   final VoidCallback onTap;
 
@@ -386,22 +447,26 @@ class _UsuarioAccesoCard extends StatelessWidget {
         key: ValueKey<String>(
           'usuario-acceso-${usuario.id}-${usuario.organizacionId ?? 'sin-organizacion'}',
         ),
-        radius: 16,
-        padding: const EdgeInsets.all(14),
+        radius: compacta ? 14 : 16,
+        padding: compacta
+            ? const EdgeInsets.symmetric(horizontal: 12, vertical: 10)
+            : const EdgeInsets.all(14),
         onTap: onTap,
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: <Widget>[
             CircleAvatar(
+              radius: compacta ? 18 : null,
               backgroundColor: estadoColor.withValues(alpha: 0.12),
               foregroundColor: estadoColor,
               child: Icon(
                 usuario.activo
                     ? Icons.person_rounded
                     : Icons.person_off_rounded,
+                size: compacta ? 19 : null,
               ),
             ),
-            const SizedBox(width: 12),
+            SizedBox(width: compacta ? 10 : 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -419,9 +484,10 @@ class _UsuarioAccesoCard extends StatelessWidget {
                             ),
                       ),
                       if (esUsuarioActual)
-                        const _EtiquetaAcceso(
+                        _EtiquetaAcceso(
                           texto: 'Eres tú',
                           color: CobroAppTheme.primary,
+                          compacta: compacta,
                         ),
                     ],
                   ),
@@ -435,7 +501,7 @@ class _UsuarioAccesoCard extends StatelessWidget {
                           fontWeight: FontWeight.w600,
                         ),
                   ),
-                  const SizedBox(height: 8),
+                  SizedBox(height: compacta ? 6 : 8),
                   Wrap(
                     spacing: 6,
                     runSpacing: 6,
@@ -443,20 +509,23 @@ class _UsuarioAccesoCard extends StatelessWidget {
                       _DatoAcceso(
                         icono: Icons.apartment_rounded,
                         texto: usuario.organizacionVisible,
+                        compacta: compacta,
                         color: usuario.organizacionSuspendida
                             ? CobroAppTheme.danger
                             : null,
                       ),
                       if (usuario.roles.isEmpty)
-                        const _EtiquetaAcceso(
+                        _EtiquetaAcceso(
                           texto: 'Sin rol',
                           color: CobroAppTheme.warning,
+                          compacta: compacta,
                         )
                       else
                         for (final String rol in usuario.roles)
                           _EtiquetaAcceso(
                             texto: _etiquetaRol(rol),
                             color: _colorRol(rol),
+                            compacta: compacta,
                           ),
                     ],
                   ),
@@ -505,10 +574,6 @@ class _UsuarioAccesoCard extends StatelessWidget {
                       onChanged: esUsuarioActual ? null : onEstadoChanged,
                     ),
                   ),
-                const Icon(
-                  Icons.chevron_right_rounded,
-                  semanticLabel: 'Abrir detalle',
-                ),
               ],
             ),
           ],
@@ -522,11 +587,13 @@ class _DatoAcceso extends StatelessWidget {
   const _DatoAcceso({
     required this.icono,
     required this.texto,
+    required this.compacta,
     this.color,
   });
 
   final IconData icono;
   final String texto;
+  final bool compacta;
   final Color? color;
 
   @override
@@ -538,12 +605,15 @@ class _DatoAcceso extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+        padding: EdgeInsets.symmetric(
+          horizontal: compacta ? 8 : 9,
+          vertical: compacta ? 4 : 6,
+        ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Icon(icono, size: 15, color: acento),
-            const SizedBox(width: 5),
+            Icon(icono, size: compacta ? 14 : 15, color: acento),
+            SizedBox(width: compacta ? 4 : 5),
             Flexible(
               child: Text(
                 texto,
@@ -565,10 +635,12 @@ class _EtiquetaAcceso extends StatelessWidget {
   const _EtiquetaAcceso({
     required this.texto,
     required this.color,
+    this.compacta = false,
   });
 
   final String texto;
   final Color color;
+  final bool compacta;
 
   @override
   Widget build(BuildContext context) {
@@ -579,7 +651,10 @@ class _EtiquetaAcceso extends StatelessWidget {
         borderRadius: BorderRadius.circular(999),
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        padding: EdgeInsets.symmetric(
+          horizontal: compacta ? 7 : 8,
+          vertical: compacta ? 3 : 4,
+        ),
         child: Text(
           texto,
           style: Theme.of(context).textTheme.labelSmall?.copyWith(

@@ -85,6 +85,24 @@ void main() {
     expect(find.text('Gestión de acceso'), findsOneWidget);
     expect(find.text('Todas las instituciones'), findsOneWidget);
     expect(find.text('Eres tú'), findsOneWidget);
+    expect(find.byTooltip('Recargar usuarios'), findsNothing);
+    expect(find.byIcon(Icons.chevron_right_rounded), findsNothing);
+    final Rect usuarioActualCard = tester.getRect(
+      find.byKey(
+        const ValueKey<String>(
+          'usuario-acceso-$usuarioActualId-$organizacionId',
+        ),
+      ),
+    );
+    final Rect administradorCard = tester.getRect(
+      find.byKey(
+        const ValueKey<String>(
+          'usuario-acceso-$administradorId-$organizacionId',
+        ),
+      ),
+    );
+    expect(administradorCard.left, usuarioActualCard.left);
+    expect(administradorCard.top, greaterThan(usuarioActualCard.top));
     expect(
       find.descendant(
         of: find.byKey(
@@ -229,6 +247,77 @@ void main() {
 
     expect(find.byType(Switch), findsWidgets);
     expect(find.byType(Switch).evaluate().length, lessThan(100));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('organiza tarjetas compactas en dos columnas en escritorio',
+      (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1280, 900);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final List<UsuarioSuperAdminItem> usuariosEscritorio =
+        List<UsuarioSuperAdminItem>.generate(
+      4,
+      (int index) => _usuario(
+        id: 'usuario-$index',
+        usuario: 'usuario.$index',
+        nombre: 'Usuario $index',
+        activo: true,
+        roles: const <String>['COBRADOR'],
+      ),
+    );
+
+    await tester.pumpWidget(
+      _app(
+        SuperAdminActivacionView(
+          usuarios: usuariosEscritorio,
+          organizaciones: <OrganizacionAdmin>[organizacion],
+          usuarioActualId: usuarioActualId,
+          organizacionSeleccionadaId: null,
+          consulta: '',
+          cargando: false,
+          actualizandoIds: const <String>{},
+          onRefresh: () async {},
+          onOrganizacionChanged: (_) {},
+          onConsultaChanged: (_) {},
+          onEstadoChanged: (_, __) async {},
+          onPermisosChanged: (UsuarioSuperAdminItem usuario, _) async =>
+              usuario,
+          mensajeError: (Object error) => error.toString(),
+          mostrarMensaje: (_) {},
+        ),
+      ),
+    );
+
+    final Rect primera = tester.getRect(
+      find.byKey(
+        const ValueKey<String>(
+          'usuario-acceso-usuario-0-$organizacionId',
+        ),
+      ),
+    );
+    final Rect segunda = tester.getRect(
+      find.byKey(
+        const ValueKey<String>(
+          'usuario-acceso-usuario-1-$organizacionId',
+        ),
+      ),
+    );
+    final Rect tercera = tester.getRect(
+      find.byKey(
+        const ValueKey<String>(
+          'usuario-acceso-usuario-2-$organizacionId',
+        ),
+      ),
+    );
+
+    expect(segunda.top, closeTo(primera.top, 0.1));
+    expect(segunda.left, greaterThan(primera.left));
+    expect(tercera.left, closeTo(primera.left, 0.1));
+    expect(tercera.top, greaterThan(primera.top));
+    expect(primera.width, lessThan(500));
     expect(tester.takeException(), isNull);
   });
 

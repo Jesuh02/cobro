@@ -13,59 +13,6 @@ import '../../../../data/models/models.dart';
 
 const double _mobileBreakpoint = 760;
 
-class PermisoEmpleadoDef {
-  const PermisoEmpleadoDef({
-    required this.codigo,
-    required this.nombre,
-  });
-
-  final String codigo;
-  final String nombre;
-}
-
-const List<PermisoEmpleadoDef> permisosEmpleado = <PermisoEmpleadoDef>[
-  PermisoEmpleadoDef(
-    codigo: permisoCrearCajaMenor,
-    nombre: 'Crear caja menor',
-  ),
-  PermisoEmpleadoDef(
-    codigo: permisoRegistrarFlujoCaja,
-    nombre: 'Registrar flujo en caja menor',
-  ),
-  PermisoEmpleadoDef(
-    codigo: permisoCrearCreditos,
-    nombre: 'Crear creditos',
-  ),
-  PermisoEmpleadoDef(
-    codigo: permisoRefinanciarCreditos,
-    nombre: 'Refinanciar creditos',
-  ),
-  PermisoEmpleadoDef(
-    codigo: permisoModificarCreditos,
-    nombre: 'Modificar creditos',
-  ),
-  PermisoEmpleadoDef(
-    codigo: permisoEliminarCreditos,
-    nombre: 'Eliminar creditos',
-  ),
-  PermisoEmpleadoDef(
-    codigo: permisoModificarClientes,
-    nombre: 'Modificar clientes',
-  ),
-  PermisoEmpleadoDef(
-    codigo: permisoEliminarClientes,
-    nombre: 'Eliminar clientes',
-  ),
-  PermisoEmpleadoDef(
-    codigo: permisoAgregarCuota,
-    nombre: 'Agregar cuota',
-  ),
-  PermisoEmpleadoDef(
-    codigo: permisoModificarMovimientos,
-    nombre: 'Modificar movimientos',
-  ),
-];
-
 class GestionEmpleadosPage extends StatefulWidget {
   const GestionEmpleadosPage({
     required this.apiClient,

@@ -118,6 +118,22 @@ class ApiClient {
     );
   }
 
+  Future<UsuarioSuperAdminItem> actualizarPermisosUsuarioSuperAdmin(
+    String usuarioId, {
+    required String organizacionId,
+    required List<String> permisos,
+  }) async {
+    return UsuarioSuperAdminItem.fromJson(
+      await patchObject(
+        '/super-admin/usuarios/$usuarioId/permisos',
+        <String, dynamic>{
+          'organizacionId': organizacionId,
+          'permisos': permisos,
+        },
+      ),
+    );
+  }
+
   Future<Map<String, dynamic>> postObject(
     String path,
     Map<String, dynamic> body, {

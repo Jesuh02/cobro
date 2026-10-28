@@ -23,6 +23,7 @@ void main() {
     'organizacionNombre': 'Institución Demo',
     'organizacionSuspendida': false,
     'roles': <String>['ADMINISTRADOR'],
+    'permisos': <String>['CREAR_CREDITOS'],
     'creadoEn': '2026-10-27T14:30:00.000Z',
   };
 
@@ -107,5 +108,49 @@ void main() {
     );
     expect(actualizado.activo, isFalse);
     expect(actualizado.id, usuarioId);
+  });
+
+  test('actualiza los permisos individuales del usuario', () async {
+    late http.Request capturedRequest;
+    final ApiClient client = ApiClient(
+      baseUrl: 'https://cobro.test/api/v1',
+      client: MockClient((http.Request request) async {
+        capturedRequest = request;
+        return http.Response.bytes(
+          utf8.encode(
+            jsonEncode(<String, dynamic>{
+              ...usuarioJson,
+              'permisos': <String>['CREAR_CREDITOS', 'AGREGAR_CUOTA'],
+            }),
+          ),
+          200,
+        );
+      }),
+    );
+    addTearDown(client.close);
+
+    final UsuarioSuperAdminItem actualizado =
+        await client.actualizarPermisosUsuarioSuperAdmin(
+      usuarioId,
+      organizacionId: organizacionId,
+      permisos: <String>['CREAR_CREDITOS', 'AGREGAR_CUOTA'],
+    );
+
+    expect(capturedRequest.method, 'PATCH');
+    expect(
+      capturedRequest.url.path,
+      '/api/v1/super-admin/usuarios/$usuarioId/permisos',
+    );
+    expect(
+      jsonDecode(capturedRequest.body),
+      <String, dynamic>{
+        'organizacionId': organizacionId,
+        'permisos': <String>['CREAR_CREDITOS', 'AGREGAR_CUOTA'],
+      },
+    );
+    expect(
+      actualizado.permisos,
+      <String>['CREAR_CREDITOS', 'AGREGAR_CUOTA'],
+    );
   });
 }

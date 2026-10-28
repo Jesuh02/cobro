@@ -12,6 +12,7 @@ import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 
 import { InMemoryCacheService } from '../../common/cache/in-memory-cache.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { normalizeSearchText } from '../../common/search/text-search';
 import {
   ActualizarOrganizacionSuperAdminDto,
   ActualizarUsuarioDto,
@@ -146,6 +147,21 @@ type RangoActividadEmpleados = {
 
 const tokenClockToleranceSeconds = 30;
 const maxTokenLength = 2_048;
+const searchDiacritics = 'áàäâãåéèëêíìïîóòöôõúùüûñç';
+const searchAscii = 'aaaaaaeeeeiiiiooooouuuunc';
+
+function normalizeSearchSql(expression: Prisma.Sql): Prisma.Sql {
+  return Prisma.sql`regexp_replace(
+    translate(
+      lower(COALESCE(${expression}, '')),
+      ${searchDiacritics},
+      ${searchAscii}
+    ),
+    '[^a-z0-9]',
+    '',
+    'g'
+  )`;
+}
 
 @Injectable()
 export class AuthService {
@@ -766,7 +782,8 @@ export class AuthService {
     this.requerirSuperAdmin(usuario);
     await this.requerirEsquemaTblSuperAdmin();
 
-    const cacheKey = `superadmin:usuarios:${query.organizacionId || 'all'}:${query.activo !== undefined ? String(query.activo) : 'all'}:${(query.q || '').trim().toLowerCase()}`;
+    const normalizedQuery = normalizeSearchText(query.q || '');
+    const cacheKey = `superadmin:usuarios:${query.organizacionId || 'all'}:${query.activo !== undefined ? String(query.activo) : 'all'}:${normalizedQuery}`;
 
     return this.cache.remember(
       cacheKey,
@@ -784,14 +801,13 @@ export class AuthService {
           conditions.push(Prisma.sql`tu.usu_activo = ${query.activo}`);
         }
 
-        if (query.q && query.q.trim()) {
-          const q = `%${query.q.trim().toLowerCase()}%`;
+        if (normalizedQuery) {
+          const q = `%${normalizedQuery}%`;
           conditions.push(Prisma.sql`(
-            lower(tu.usu_usuario) LIKE ${q}
-            OR lower(p.per_primer_nombre) LIKE ${q}
-            OR lower(p.per_apellido) LIKE ${q}
-            OR lower(COALESCE(p.per_email, '')) LIKE ${q}
-            OR lower(COALESCE(p.per_documento, '')) LIKE ${q}
+            ${normalizeSearchSql(Prisma.sql`tu.usu_usuario`)} LIKE ${q}
+            OR ${normalizeSearchSql(Prisma.sql`concat_ws(' ', p.per_primer_nombre, p.per_apellido)`)} LIKE ${q}
+            OR ${normalizeSearchSql(Prisma.sql`p.per_email`)} LIKE ${q}
+            OR ${normalizeSearchSql(Prisma.sql`p.per_documento`)} LIKE ${q}
           )`);
         }
 

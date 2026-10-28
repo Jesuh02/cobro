@@ -433,6 +433,27 @@ describe('AuthService - Account Lockout (SEC-COBRO-04)', () => {
 
         expect(resultado.length).toBe(1);
       });
+
+      it('normalizes accents and punctuation for search and cache keys', async () => {
+        mockPrisma.$queryRaw = jest
+          .fn()
+          .mockResolvedValueOnce([mockSuperAdminUserRow]);
+
+        await authService.listarUsuariosSuperAdmin(superAdminUser, {
+          q: 'Jésús.Pérez',
+        });
+        await authService.listarUsuariosSuperAdmin(superAdminUser, {
+          q: 'jesus perez',
+        });
+
+        expect(mockPrisma.$queryRaw).toHaveBeenCalledTimes(1);
+        const sql = mockPrisma.$queryRaw.mock.calls[0][0] as {
+          strings: string[];
+          values: unknown[];
+        };
+        expect(sql.strings.join(' ')).toContain('regexp_replace');
+        expect(sql.values).toContain('%jesusperez%');
+      });
     });
 
     describe('actualizarEstadoUsuarioSuperAdmin', () => {

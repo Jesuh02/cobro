@@ -7,7 +7,9 @@ class CobroDropdownItem<T> {
   const CobroDropdownItem({
     required this.value,
     required this.label,
+    this.key,
     this.subtitle,
+    this.searchText,
     this.icon,
     this.iconColor,
     this.avatarText,
@@ -17,7 +19,9 @@ class CobroDropdownItem<T> {
 
   final T value;
   final String label;
+  final Key? key;
   final String? subtitle;
+  final String? searchText;
   final IconData? icon;
   final Color? iconColor;
   final String? avatarText;
@@ -45,6 +49,9 @@ class CobroDropdownField<T> extends StatefulWidget {
     this.prefixIconConstraints,
     this.suffixIconConstraints,
     this.isDense,
+    this.searchable = false,
+    this.searchHintText = 'Buscar',
+    this.emptyText = 'No hay resultados',
   });
 
   final T? value;
@@ -60,6 +67,9 @@ class CobroDropdownField<T> extends StatefulWidget {
   final BoxConstraints? prefixIconConstraints;
   final BoxConstraints? suffixIconConstraints;
   final bool? isDense;
+  final bool searchable;
+  final String searchHintText;
+  final String emptyText;
 
   @override
   State<CobroDropdownField<T>> createState() => _CobroDropdownFieldState<T>();
@@ -70,12 +80,16 @@ class _CobroDropdownFieldState<T> extends State<CobroDropdownField<T>> {
   final LayerLink _layerLink = LayerLink();
   final GlobalKey _fieldKey = GlobalKey();
   final Object _regionGroupId = Object();
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
 
   @override
   void dispose() {
     if (_portalController.isShowing) {
       _portalController.hide();
     }
+    _searchController.dispose();
+    _searchFocusNode.dispose();
     super.dispose();
   }
 
@@ -85,6 +99,8 @@ class _CobroDropdownFieldState<T> extends State<CobroDropdownField<T>> {
     }
     if (_portalController.isShowing) {
       _portalController.hide();
+      _searchFocusNode.unfocus();
+      _searchController.clear();
       setState(() {});
     }
   }
@@ -94,11 +110,19 @@ class _CobroDropdownFieldState<T> extends State<CobroDropdownField<T>> {
       return;
     }
     if (_portalController.isShowing) {
-      _portalController.hide();
+      _cerrar();
     } else {
+      _searchController.clear();
       _portalController.show();
+      if (widget.searchable) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _portalController.isShowing) {
+            _searchFocusNode.requestFocus();
+          }
+        });
+      }
+      setState(() {});
     }
-    setState(() {});
   }
 
   @override
@@ -114,6 +138,17 @@ class _CobroDropdownFieldState<T> extends State<CobroDropdownField<T>> {
     final bool habilitado =
         widget.enabled && widget.onChanged != null && widget.items.isNotEmpty;
     final bool abierto = _portalController.isShowing;
+    final String consulta = _searchController.text.trim().toLowerCase();
+    final List<CobroDropdownItem<T>> itemsVisibles = consulta.isEmpty
+        ? widget.items
+        : widget.items.where((CobroDropdownItem<T> item) {
+            final String contenido = <String>[
+              item.label,
+              if (item.subtitle != null) item.subtitle!,
+              if (item.searchText != null) item.searchText!,
+            ].join(' ').toLowerCase();
+            return contenido.contains(consulta);
+          }).toList(growable: false);
 
     return CompositedTransformTarget(
       link: _layerLink,
@@ -218,144 +253,201 @@ class _CobroDropdownFieldState<T> extends State<CobroDropdownField<T>> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: widget.items.map((CobroDropdownItem<T> item) {
-                          final bool esSeleccionado =
-                              item.value == widget.value;
-
-                          return InkWell(
-                            borderRadius: BorderRadius.circular(12),
-                            onTap: () {
-                              _cerrar();
-                              widget.onChanged?.call(item.value);
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 8,
-                              ),
-                              margin: const EdgeInsets.symmetric(
-                                horizontal: 4,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: esSeleccionado
-                                    ? Theme.of(context)
-                                        .colorScheme
-                                        .primary
-                                        .withValues(alpha: 0.12)
-                                    : Colors.transparent,
-                                borderRadius: BorderRadius.circular(12),
-                                border: esSeleccionado
-                                    ? Border.all(
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .primary
-                                            .withValues(alpha: 0.35),
-                                      )
-                                    : null,
-                              ),
-                              child: Row(
-                                children: <Widget>[
-                                  if (item.leading != null) ...<Widget>[
-                                    item.leading!,
-                                    const SizedBox(width: 12),
-                                  ] else if (item.avatarText != null &&
-                                      item.avatarText!.isNotEmpty) ...<Widget>[
-                                    CircleAvatar(
-                                      radius: 16,
-                                      backgroundColor: esSeleccionado
-                                          ? Theme.of(context)
-                                              .colorScheme
-                                              .primary
-                                          : Theme.of(context)
-                                              .colorScheme
-                                              .primaryContainer,
-                                      foregroundColor: esSeleccionado
-                                          ? Theme.of(context)
-                                              .colorScheme
-                                              .onPrimary
-                                          : Theme.of(context)
-                                              .colorScheme
-                                              .onPrimaryContainer,
-                                      child: Text(
-                                        item.avatarText!,
-                                        style: const TextStyle(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w800,
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                  ] else if (item.icon != null) ...<Widget>[
-                                    CircleAvatar(
-                                      radius: 16,
-                                      backgroundColor: (item.iconColor ??
-                                              Theme.of(context)
-                                                  .colorScheme
-                                                  .primary)
-                                          .withValues(
-                                        alpha: esSeleccionado ? 0.2 : 0.12,
-                                      ),
-                                      foregroundColor: item.iconColor ??
-                                          Theme.of(context).colorScheme.primary,
-                                      child: Icon(item.icon, size: 16),
-                                    ),
-                                    const SizedBox(width: 12),
-                                  ],
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: <Widget>[
-                                        Text(
-                                          item.label,
-                                          style: TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: esSeleccionado
-                                                ? FontWeight.w800
-                                                : FontWeight.w600,
-                                            color: esSeleccionado
-                                                ? Theme.of(context)
-                                                    .colorScheme
-                                                    .primary
-                                                : null,
-                                          ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                        if (item.subtitle != null &&
-                                            item.subtitle!.isNotEmpty)
-                                          Text(
-                                            item.subtitle!,
-                                            style: Theme.of(context)
-                                                .textTheme
-                                                .bodySmall
-                                                ?.copyWith(
-                                                  fontSize: 11,
-                                                  color:
-                                                      context.clay.subtleText,
-                                                ),
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                      ],
-                                    ),
+                        children: <Widget>[
+                          if (widget.searchable)
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(6, 4, 6, 6),
+                              child: TextField(
+                                key: const ValueKey<String>(
+                                  'cobro-dropdown-search',
+                                ),
+                                controller: _searchController,
+                                focusNode: _searchFocusNode,
+                                textInputAction: TextInputAction.search,
+                                decoration: InputDecoration(
+                                  hintText: widget.searchHintText,
+                                  prefixIcon: const Icon(
+                                    Icons.search_rounded,
+                                    size: 18,
                                   ),
-                                  if (item.trailing != null)
-                                    item.trailing!
-                                  else if (esSeleccionado)
-                                    Icon(
-                                      Icons.check_circle_rounded,
-                                      size: 18,
-                                      color:
-                                          Theme.of(context).colorScheme.primary,
-                                    ),
-                                ],
+                                  suffixIcon: consulta.isEmpty
+                                      ? null
+                                      : IconButton(
+                                          onPressed: () {
+                                            _searchController.clear();
+                                            setState(() {});
+                                            _searchFocusNode.requestFocus();
+                                          },
+                                          icon: const Icon(
+                                            Icons.close_rounded,
+                                            size: 18,
+                                          ),
+                                          tooltip: 'Limpiar búsqueda',
+                                        ),
+                                  isDense: true,
+                                ),
+                                onChanged: (_) => setState(() {}),
                               ),
                             ),
-                          );
-                        }).toList(growable: false),
+                          if (itemsVisibles.isEmpty)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 18,
+                              ),
+                              child: Text(
+                                widget.emptyText,
+                                textAlign: TextAlign.center,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(color: context.clay.subtleText),
+                              ),
+                            ),
+                          ...itemsVisibles.map((CobroDropdownItem<T> item) {
+                            final bool esSeleccionado =
+                                item.value == widget.value;
+
+                            return InkWell(
+                              key: item.key,
+                              borderRadius: BorderRadius.circular(12),
+                              onTap: () {
+                                _cerrar();
+                                widget.onChanged?.call(item.value);
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 8,
+                                ),
+                                margin: const EdgeInsets.symmetric(
+                                  horizontal: 4,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: esSeleccionado
+                                      ? Theme.of(context)
+                                          .colorScheme
+                                          .primary
+                                          .withValues(alpha: 0.12)
+                                      : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: esSeleccionado
+                                      ? Border.all(
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .primary
+                                              .withValues(alpha: 0.35),
+                                        )
+                                      : null,
+                                ),
+                                child: Row(
+                                  children: <Widget>[
+                                    if (item.leading != null) ...<Widget>[
+                                      item.leading!,
+                                      const SizedBox(width: 12),
+                                    ] else if (item.avatarText != null &&
+                                        item.avatarText!
+                                            .isNotEmpty) ...<Widget>[
+                                      CircleAvatar(
+                                        radius: 16,
+                                        backgroundColor: esSeleccionado
+                                            ? Theme.of(context)
+                                                .colorScheme
+                                                .primary
+                                            : Theme.of(context)
+                                                .colorScheme
+                                                .primaryContainer,
+                                        foregroundColor: esSeleccionado
+                                            ? Theme.of(context)
+                                                .colorScheme
+                                                .onPrimary
+                                            : Theme.of(context)
+                                                .colorScheme
+                                                .onPrimaryContainer,
+                                        child: Text(
+                                          item.avatarText!,
+                                          style: const TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                    ] else if (item.icon != null) ...<Widget>[
+                                      CircleAvatar(
+                                        radius: 16,
+                                        backgroundColor: (item.iconColor ??
+                                                Theme.of(context)
+                                                    .colorScheme
+                                                    .primary)
+                                            .withValues(
+                                          alpha: esSeleccionado ? 0.2 : 0.12,
+                                        ),
+                                        foregroundColor: item.iconColor ??
+                                            Theme.of(context)
+                                                .colorScheme
+                                                .primary,
+                                        child: Icon(item.icon, size: 16),
+                                      ),
+                                      const SizedBox(width: 12),
+                                    ],
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: <Widget>[
+                                          Text(
+                                            item.label,
+                                            style: TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: esSeleccionado
+                                                  ? FontWeight.w800
+                                                  : FontWeight.w600,
+                                              color: esSeleccionado
+                                                  ? Theme.of(context)
+                                                      .colorScheme
+                                                      .primary
+                                                  : null,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          if (item.subtitle != null &&
+                                              item.subtitle!.isNotEmpty)
+                                            Text(
+                                              item.subtitle!,
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .bodySmall
+                                                  ?.copyWith(
+                                                    fontSize: 11,
+                                                    color:
+                                                        context.clay.subtleText,
+                                                  ),
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                    if (item.trailing != null)
+                                      item.trailing!
+                                    else if (esSeleccionado)
+                                      Icon(
+                                        Icons.check_circle_rounded,
+                                        size: 18,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .primary,
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }),
+                        ],
                       ),
                     ),
                   ),

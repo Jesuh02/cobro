@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import '../../data/models/usuario_super_admin_item.dart';
 import 'api_exception.dart';
 import 'offline_mutation.dart';
 import 'offline_mutation_queue.dart';
@@ -80,6 +81,41 @@ class ApiClient {
         .get(_uri(path, query), headers: _headers)
         .timeout(_requestTimeout);
     return _decodeObject(response);
+  }
+
+  Future<List<UsuarioSuperAdminItem>> getUsuariosSuperAdmin({
+    String? organizacionId,
+    String? q,
+    bool? activo,
+  }) async {
+    final List<dynamic> response = await getList(
+      '/super-admin/usuarios',
+      query: <String, String?>{
+        'organizacionId': organizacionId,
+        'q': q,
+        'activo': activo?.toString(),
+      },
+    );
+
+    return response
+        .map(
+          (dynamic item) => UsuarioSuperAdminItem.fromJson(
+            item as Map<String, dynamic>,
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  Future<UsuarioSuperAdminItem> actualizarEstadoUsuarioSuperAdmin(
+    String usuarioId, {
+    required bool activo,
+  }) async {
+    return UsuarioSuperAdminItem.fromJson(
+      await patchObject(
+        '/super-admin/usuarios/$usuarioId/estado',
+        <String, dynamic>{'activo': activo},
+      ),
+    );
   }
 
   Future<Map<String, dynamic>> postObject(

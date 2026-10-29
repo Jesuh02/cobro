@@ -386,9 +386,11 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
 
       Uri? resumenTodosLosDiasUri;
+      final List<http.Request> requests = <http.Request>[];
       final ApiClient apiClient = ApiClient(
         baseUrl: 'https://cobro.test/api/v1',
         client: MockClient((http.Request request) async {
+          requests.add(request);
           if (request.url.path.endsWith('/creditos/resumen')) {
             final bool todosLosDias =
                 !request.url.queryParameters.containsKey('fechaDesde') &&
@@ -425,6 +427,7 @@ void main() {
       await tester.tap(find.text('Entrar'));
       await tester.pumpAndSettle(const Duration(seconds: 2));
       tester.takeException();
+      requests.clear();
 
       final Finder todosLosDias =
           find.widgetWithText(OutlinedButton, 'Todos los dias');
@@ -445,6 +448,9 @@ void main() {
         resumenTodosLosDiasUri!.queryParameters.containsKey('cajaMenorId'),
         isFalse,
       );
+      expect(_tieneSolicitudGet(requests, '/presupuesto'), isTrue);
+      expect(_tieneSolicitudGet(requests, '/creditos/resumen'), isTrue);
+      expect(_tieneSolicitudGet(requests, '/creditos'), isFalse);
       expect(find.text('Inactivos'), findsOneWidget);
       expect(find.text('5'), findsOneWidget);
       expect(tester.takeException(), isNull);

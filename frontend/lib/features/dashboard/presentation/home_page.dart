@@ -174,7 +174,6 @@ class _HomePageState extends State<HomePage> {
   Timer? _errorTimer;
   OverlayEntry? _mensajeOverlay;
   Timer? _mensajeTimer;
-  Timer? _refrescoTimer;
   Timer? _filtrosListasTimer;
   Timer? _filtroUsuariosSuperAdminTimer;
   Timer? _offlineSyncTimer;
@@ -210,14 +209,6 @@ class _HomePageState extends State<HomePage> {
     _buscarPapeleraController.addListener(_refrescar);
     unawaited(_cargarAccionesPendientesOffline());
     unawaited(_restaurarSesionGuardada());
-    _refrescoTimer = Timer.periodic(
-      const Duration(seconds: 45),
-      (_) {
-        if (mounted && _usuarioSesion != null) {
-          _recargarEnSegundoPlano();
-        }
-      },
-    );
     _offlineSyncTimer = Timer.periodic(
       const Duration(seconds: 20),
       (_) {
@@ -254,7 +245,6 @@ class _HomePageState extends State<HomePage> {
   void dispose() {
     _mensajeTimer?.cancel();
     _errorTimer?.cancel();
-    _refrescoTimer?.cancel();
     _filtrosListasTimer?.cancel();
     _filtroUsuariosSuperAdminTimer?.cancel();
     _offlineSyncTimer?.cancel();

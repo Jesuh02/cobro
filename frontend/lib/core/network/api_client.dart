@@ -23,6 +23,8 @@ class ApiClient {
   final OfflineMutationQueue _offlineQueue;
   String? _authToken;
   bool _syncingOffline = false;
+  final Map<String, Future<Object>> _lecturasEnCurso =
+      <String, Future<Object>>{};
   static const Duration _requestTimeout = Duration(seconds: 25);
 
   void setAuthToken(String? token) {
@@ -36,6 +38,7 @@ class ApiClient {
       );
     }
     _authToken = token;
+    _lecturasEnCurso.clear();
   }
 
   Future<void> logout() async {
@@ -57,30 +60,37 @@ class ApiClient {
   Future<List<dynamic>> getList(
     String path, {
     Map<String, String?> query = const <String, String?>{},
-  }) async {
-    final response = await _client
-        .get(_uri(path, query), headers: _headers)
-        .timeout(_requestTimeout);
-    final body = _decode(response);
+  }) {
+    final Uri uri = _uri(path, query);
+    return _compartirLectura<List<dynamic>>(uri, () async {
+      final response =
+          await _client.get(uri, headers: _headers).timeout(_requestTimeout);
+      final body = _decode(response);
 
-    if (body is! List<dynamic>) {
-      throw const ApiException(
-        statusCode: 500,
-        message: 'Expected a list response from the API',
-      );
-    }
+      if (body is! List<dynamic>) {
+        throw const ApiException(
+          statusCode: 500,
+          message: 'Expected a list response from the API',
+        );
+      }
 
-    return body;
+      return body;
+    });
   }
 
   Future<Map<String, dynamic>> getObject(
     String path, {
     Map<String, String?> query = const <String, String?>{},
-  }) async {
-    final response = await _client
-        .get(_uri(path, query), headers: _headers)
-        .timeout(_requestTimeout);
-    return _decodeObject(response);
+  }) {
+    final Uri uri = _uri(path, query);
+    return _compartirLectura<Map<String, dynamic>>(
+      uri,
+      () async {
+        final response =
+            await _client.get(uri, headers: _headers).timeout(_requestTimeout);
+        return _decodeObject(response);
+      },
+    );
   }
 
   Future<List<UsuarioSuperAdminItem>> getUsuariosSuperAdmin({
@@ -284,7 +294,28 @@ class ApiClient {
   }
 
   void close() {
+    _lecturasEnCurso.clear();
     _client.close();
+  }
+
+  Future<T> _compartirLectura<T extends Object>(
+    Uri uri,
+    Future<T> Function() solicitar,
+  ) {
+    final String clave = uri.toString();
+    final Future<Object>? lecturaExistente = _lecturasEnCurso[clave];
+    if (lecturaExistente != null) {
+      return lecturaExistente.then((Object respuesta) => respuesta as T);
+    }
+
+    late final Future<T> lectura;
+    lectura = solicitar().whenComplete(() {
+      if (identical(_lecturasEnCurso[clave], lectura)) {
+        _lecturasEnCurso.remove(clave);
+      }
+    });
+    _lecturasEnCurso[clave] = lectura;
+    return lectura;
   }
 
   Map<String, String> get _headers => <String, String>{

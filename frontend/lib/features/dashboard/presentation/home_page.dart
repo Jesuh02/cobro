@@ -53,6 +53,14 @@ const String _permisoEliminarClientes = permisoEliminarClientes;
 const String _permisoAgregarCuota = permisoAgregarCuota;
 const String _permisoModificarMovimientos = permisoModificarMovimientos;
 
+enum _DatosSeccion {
+  inicio,
+  ruta,
+  credito,
+  cajaMenor,
+  clientes,
+}
+
 class HomePage extends StatefulWidget {
   const HomePage({
     required this.apiBaseUrl,
@@ -152,6 +160,7 @@ class _HomePageState extends State<HomePage> {
   bool _hayMasMovimientosCaja = false;
   bool _cargandoCreditos = false;
   bool _cargandoMovimientosCaja = false;
+  bool _cargandoClientes = false;
   bool _cargandoMasCreditos = false;
   bool _cargandoMasMovimientosCaja = false;
   bool _cargandoUsuariosSuperAdmin = false;
@@ -174,11 +183,11 @@ class _HomePageState extends State<HomePage> {
   Timer? _errorTimer;
   OverlayEntry? _mensajeOverlay;
   Timer? _mensajeTimer;
-  Timer? _refrescoTimer;
   Timer? _filtrosListasTimer;
   Timer? _filtroUsuariosSuperAdminTimer;
   Timer? _offlineSyncTimer;
   int _cargaSerial = 0;
+  final Set<_DatosSeccion> _seccionesCargadas = <_DatosSeccion>{};
   int _cargaUsuariosSuperAdminSerial = 0;
   String? _organizacionUsuariosSuperAdminId;
   String _consultaUsuariosSuperAdmin = '';
@@ -204,20 +213,12 @@ class _HomePageState extends State<HomePage> {
     _aplicarFechaInicioHoy();
     _buscarRutaController.addListener(_refrescar);
     _buscarCajaInicioController.addListener(_programarRecargaPresupuesto);
-    _buscarCreditoController.addListener(_programarRecargaListasPesadas);
-    _buscarCajaController.addListener(_programarRecargaListasPesadas);
+    _buscarCreditoController.addListener(_programarRecargaCreditos);
+    _buscarCajaController.addListener(_programarRecargaMovimientosCaja);
     _buscarClienteController.addListener(_refrescar);
     _buscarPapeleraController.addListener(_refrescar);
     unawaited(_cargarAccionesPendientesOffline());
     unawaited(_restaurarSesionGuardada());
-    _refrescoTimer = Timer.periodic(
-      const Duration(seconds: 45),
-      (_) {
-        if (mounted && _usuarioSesion != null) {
-          _recargarEnSegundoPlano();
-        }
-      },
-    );
     _offlineSyncTimer = Timer.periodic(
       const Duration(seconds: 20),
       (_) {
@@ -254,7 +255,6 @@ class _HomePageState extends State<HomePage> {
   void dispose() {
     _mensajeTimer?.cancel();
     _errorTimer?.cancel();
-    _refrescoTimer?.cancel();
     _filtrosListasTimer?.cancel();
     _filtroUsuariosSuperAdminTimer?.cancel();
     _offlineSyncTimer?.cancel();
@@ -809,6 +809,8 @@ class _HomePageState extends State<HomePage> {
     setState(() => _seccionActual = index);
     if (destino == _destinoPapelera) {
       unawaited(_cargarPapelera());
+    } else {
+      unawaited(_cargarSeccion(index));
     }
   }
 
@@ -1302,7 +1304,7 @@ class _HomePageState extends State<HomePage> {
           (_DestinoMenu d) => d.etiqueta.toLowerCase().contains('caja'),
         );
         if (index != -1) {
-          setState(() => _seccionActual = index);
+          _seleccionarSeccion(index);
         }
       },
     );
@@ -1436,6 +1438,7 @@ class _HomePageState extends State<HomePage> {
   Widget _construirClientes(BuildContext context) {
     return ClientesView(
       clientes: _filtrarClientes(),
+      cargando: _cargandoClientes,
       sinClientesRegistrados: _clientes.isEmpty,
       esAdministrador: _usuarioSesion?.esAdministrador ?? false,
       puedeModificar: _puedeModificarClientes,
@@ -1453,7 +1456,7 @@ class _HomePageState extends State<HomePage> {
 
   void _cambiarCajaInicio(String? value) {
     setState(() => _cajaInicioFiltroId = value);
-    _recargarDatos(presupuesto: true, creditos: true);
+    _recargarDatos(presupuesto: true);
   }
 
   bool _puedeRegistrarPagoRuta(CobroRuta cobro) {
@@ -1588,7 +1591,7 @@ class _HomePageState extends State<HomePage> {
       _aplicarFechaInicioHoy();
       _cajaInicioFiltroId = _cajaInicioFiltroIdValida(_filtrarCajasInicio());
     });
-    _recargarDatos(presupuesto: true, creditos: true);
+    _recargarDatos(presupuesto: true);
   }
 
   void _mostrarInicioTodosLosDias() {
@@ -1597,7 +1600,7 @@ class _HomePageState extends State<HomePage> {
       _fechaInicioHasta = null;
       _cajaInicioFiltroId = _cajaInicioFiltroIdValida(_filtrarCajasInicio());
     });
-    _recargarDatos(presupuesto: true, creditos: true);
+    _recargarDatos(presupuesto: true);
   }
 
   bool get _inicioMostrandoHoy {
@@ -1641,7 +1644,7 @@ class _HomePageState extends State<HomePage> {
       }
       _cajaInicioFiltroId = _cajaInicioFiltroIdValida(_filtrarCajasInicio());
     });
-    _recargarDatos(presupuesto: true, creditos: true);
+    _recargarDatos(presupuesto: true);
   }
 
   Future<void> _seleccionarFechaCredito({required bool esDesde}) async {
@@ -1873,7 +1876,7 @@ class _HomePageState extends State<HomePage> {
       _aplicarFechaInicioHoy();
       _cajaInicioFiltroId = _cajaActivaPredeterminadaId(_catalogos);
     });
-    _recargarDatos(presupuesto: true, creditos: true);
+    _recargarDatos(presupuesto: true);
   }
 
   bool get _hayFiltrosInicio =>
@@ -1906,7 +1909,7 @@ class _HomePageState extends State<HomePage> {
       _fechaCreditoDesde = _fechaInicioDesde;
       _fechaCreditoHasta = _fechaInicioHasta;
     });
-    _recargarDatos(creditos: true);
+    unawaited(_cargarSeccion(_indiceCredito, forzar: true));
   }
 
   void _limpiarFiltrosRuta() {
@@ -1935,6 +1938,7 @@ class _HomePageState extends State<HomePage> {
       _rutaFiltroId = null;
       _filtroEstadoRuta = FiltroEstadoRuta.atrasado;
     });
+    unawaited(_cargarSeccion(1));
   }
 
   Future<void> _iniciarSesion() async {
@@ -1974,6 +1978,7 @@ class _HomePageState extends State<HomePage> {
       setState(() {
         _usuarioSesion = sesion.usuario;
         _seccionActual = 0;
+        _seccionesCargadas.clear();
         _catalogos = null;
         _presupuesto = null;
         _clientes = const <Cliente>[];
@@ -2017,6 +2022,7 @@ class _HomePageState extends State<HomePage> {
 
     setState(() {
       _usuarioSesion = null;
+      _seccionesCargadas.clear();
       _catalogos = null;
       _presupuesto = null;
       _clientes = const <Cliente>[];
@@ -2039,6 +2045,7 @@ class _HomePageState extends State<HomePage> {
       _hayMasMovimientosCaja = false;
       _cargandoCreditos = false;
       _cargandoMovimientosCaja = false;
+      _cargandoClientes = false;
       _cargandoMasCreditos = false;
       _cargandoMasMovimientosCaja = false;
       _seccionActual = 0;
@@ -2077,6 +2084,7 @@ class _HomePageState extends State<HomePage> {
       setState(() {
         _usuarioSesion = usuarioActual;
         _seccionActual = 0;
+        _seccionesCargadas.clear();
         _pestanaSuperAdmin = 0;
         _usuariosSuperAdmin = const <UsuarioSuperAdminItem>[];
         _usuariosSuperAdminActualizando.clear();
@@ -2184,68 +2192,138 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
-    final int cargaActual = ++_cargaSerial;
     setState(() {
       _cargando = true;
-      _cargandoCreditos = true;
-      _cargandoMovimientosCaja = true;
-      _cargandoMasCreditos = false;
-      _cargandoMasMovimientosCaja = false;
       _error = null;
     });
 
     try {
-      final List<dynamic> resultados =
-          await Future.wait<dynamic>(<Future<dynamic>>[
-        _obtenerCatalogos(),
-        _obtenerPresupuesto(),
-        _obtenerClientes(),
-        _obtenerCobrosRuta(),
-        _obtenerCreditosPagina(),
-        _obtenerMovimientosCajaPagina(),
-        _obtenerConteoCreditosInicio(),
-      ]);
-
-      if (!mounted || cargaActual != _cargaSerial) {
-        return;
-      }
-
-      setState(() {
-        _catalogos = resultados[0] as Catalogos;
-        _presupuesto = resultados[1] as Presupuesto;
-        _clientes = resultados[2] as List<Cliente>;
-        _cobrosRuta = resultados[3] as List<CobroRuta>;
-        final PaginaDatos<CreditoRegistro> creditos =
-            resultados[4] as PaginaDatos<CreditoRegistro>;
-        final PaginaDatos<MovimientoCaja> movimientosCaja =
-            resultados[5] as PaginaDatos<MovimientoCaja>;
-        _creditos = creditos.items;
-        _siguienteOffsetCreditos = creditos.nextOffset ?? _creditos.length;
-        _hayMasCreditos = creditos.hasMore;
-        _movimientosCaja = movimientosCaja.items;
-        _siguienteOffsetMovimientosCaja =
-            movimientosCaja.nextOffset ?? _movimientosCaja.length;
-        _hayMasMovimientosCaja = movimientosCaja.hasMore;
-        _conteoCreditosInicio = resultados[6] as ConteoCreditosInicio;
-        _ajustarSelecciones();
-      });
+      await _cargarSeccion(_seccionActual, forzar: true);
       unawaited(_sincronizarAccionesOffline());
-      unawaited(_cargarPapelera());
-    } catch (error, stackTrace) {
-      if (!mounted || cargaActual != _cargaSerial) {
-        return;
-      }
-      debugPrint('[ErrorCargaInicial] $error\n$stackTrace');
-      _manejarErrorCarga(error);
     } finally {
-      if (mounted && cargaActual == _cargaSerial) {
-        setState(() {
-          _cargando = false;
-          _cargandoCreditos = false;
-          _cargandoMovimientosCaja = false;
-        });
+      if (mounted) {
+        setState(() => _cargando = false);
       }
     }
+  }
+
+  Future<void> _cargarSeccion(
+    int index, {
+    bool forzar = false,
+  }) async {
+    final SesionUsuario? sesion = _usuarioSesion;
+    if (sesion == null || sesion.esSuperAdmin) {
+      return;
+    }
+
+    final List<_DestinoMenu> destinos = _destinosMenuActual;
+    final _DestinoMenu? destino =
+        index < destinos.length ? destinos[index] : null;
+    if (destino == _destinoPapelera) {
+      await _cargarPapelera();
+      return;
+    }
+
+    final _DatosSeccion? seccion = _datosSeccionParaIndice(index);
+    if (seccion == null ||
+        (!forzar && _seccionesCargadas.contains(seccion))) {
+      return;
+    }
+
+    switch (seccion) {
+      case _DatosSeccion.inicio:
+        _seccionesCargadas.addAll(<_DatosSeccion>{
+          _DatosSeccion.inicio,
+          _DatosSeccion.ruta,
+        });
+        await _recargarDatos(
+          catalogos: true,
+          presupuesto: true,
+          cobrosRuta: true,
+        );
+        return;
+      case _DatosSeccion.ruta:
+        _seccionesCargadas.add(_DatosSeccion.ruta);
+        await _recargarDatos(
+          catalogos: forzar || _catalogos == null,
+          cobrosRuta: true,
+        );
+        return;
+      case _DatosSeccion.credito:
+        final bool cargarClientes =
+            forzar || !_seccionesCargadas.contains(_DatosSeccion.clientes);
+        _seccionesCargadas.add(_DatosSeccion.credito);
+        _seccionesCargadas.add(_DatosSeccion.clientes);
+        await _recargarDatos(
+          catalogos: forzar || _catalogos == null,
+          clientes: cargarClientes,
+          creditos: true,
+        );
+        return;
+      case _DatosSeccion.cajaMenor:
+        _seccionesCargadas.add(_DatosSeccion.cajaMenor);
+        await _recargarDatos(
+          catalogos: forzar || _catalogos == null,
+          movimientosCaja: true,
+        );
+        return;
+      case _DatosSeccion.clientes:
+        _seccionesCargadas.add(_DatosSeccion.clientes);
+        await _recargarDatos(clientes: true);
+        return;
+    }
+  }
+
+  _DatosSeccion? _datosSeccionParaIndice(int index) {
+    return switch (index) {
+      0 => _DatosSeccion.inicio,
+      1 => _DatosSeccion.ruta,
+      _indiceCredito => _DatosSeccion.credito,
+      3 => _DatosSeccion.cajaMenor,
+      4 => _DatosSeccion.clientes,
+      _ => null,
+    };
+  }
+
+  Set<_DatosSeccion> _seccionesAInvalidar({
+    required bool catalogos,
+    required bool presupuesto,
+    required bool clientes,
+    required bool cobrosRuta,
+    required bool creditos,
+    required bool movimientosCaja,
+  }) {
+    final Set<_DatosSeccion> secciones = <_DatosSeccion>{};
+    if (catalogos) {
+      secciones.addAll(<_DatosSeccion>{
+        _DatosSeccion.inicio,
+        _DatosSeccion.ruta,
+        _DatosSeccion.credito,
+        _DatosSeccion.cajaMenor,
+      });
+    }
+    if (presupuesto) {
+      secciones.add(_DatosSeccion.inicio);
+    }
+    if (clientes) {
+      secciones.addAll(<_DatosSeccion>{
+        _DatosSeccion.clientes,
+        _DatosSeccion.credito,
+      });
+    }
+    if (cobrosRuta) {
+      secciones.addAll(<_DatosSeccion>{
+        _DatosSeccion.inicio,
+        _DatosSeccion.ruta,
+      });
+    }
+    if (creditos) {
+      secciones.add(_DatosSeccion.credito);
+    }
+    if (movimientosCaja) {
+      secciones.add(_DatosSeccion.cajaMenor);
+    }
+    return secciones;
   }
 
   Future<void> _cargarOrganizacionesSuperAdmin() async {
@@ -2754,7 +2832,7 @@ class _HomePageState extends State<HomePage> {
     }
 
     final int cargaActual = ++_cargaSerial;
-    if (creditos || movimientosCaja) {
+    if (creditos || movimientosCaja || clientes) {
       setState(() {
         if (creditos) {
           _cargandoCreditos = true;
@@ -2763,6 +2841,9 @@ class _HomePageState extends State<HomePage> {
         if (movimientosCaja) {
           _cargandoMovimientosCaja = true;
           _cargandoMasMovimientosCaja = false;
+        }
+        if (clientes) {
+          _cargandoClientes = true;
         }
       });
     }
@@ -2871,6 +2952,9 @@ class _HomePageState extends State<HomePage> {
           if (movimientosCaja) {
             _cargandoMovimientosCaja = false;
           }
+          if (clientes) {
+            _cargandoClientes = false;
+          }
         });
       }
     }
@@ -2900,12 +2984,12 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _recargarEnSegundoPlano({
-    bool catalogos = true,
-    bool presupuesto = true,
-    bool clientes = true,
-    bool cobrosRuta = true,
-    bool creditos = true,
-    bool movimientosCaja = true,
+    bool catalogos = false,
+    bool presupuesto = false,
+    bool clientes = false,
+    bool cobrosRuta = false,
+    bool creditos = false,
+    bool movimientosCaja = false,
   }) {
     if (_usuarioSesion == null) {
       return;
@@ -2920,14 +3004,71 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
+    if (!catalogos &&
+        !presupuesto &&
+        !clientes &&
+        !cobrosRuta &&
+        !creditos &&
+        !movimientosCaja) {
+      unawaited(_cargarSeccion(_seccionActual, forzar: true));
+      return;
+    }
+
+    final _DatosSeccion? seccionActiva =
+        _datosSeccionParaIndice(_seccionActual);
+    final Set<_DatosSeccion> seccionesAInvalidar = _seccionesAInvalidar(
+      catalogos: catalogos,
+      presupuesto: presupuesto,
+      clientes: clientes,
+      cobrosRuta: cobrosRuta,
+      creditos: creditos,
+      movimientosCaja: movimientosCaja,
+    );
+    if (seccionActiva == null) {
+      _seccionesCargadas.removeAll(seccionesAInvalidar);
+      return;
+    }
+
+    seccionesAInvalidar.remove(seccionActiva);
+    if (seccionActiva == _DatosSeccion.inicio && cobrosRuta) {
+      seccionesAInvalidar.remove(_DatosSeccion.ruta);
+    }
+    if (seccionActiva == _DatosSeccion.credito && clientes) {
+      seccionesAInvalidar.remove(_DatosSeccion.clientes);
+    }
+    _seccionesCargadas.removeAll(seccionesAInvalidar);
+
+    final bool recargarCatalogos =
+        catalogos && seccionActiva != _DatosSeccion.clientes;
+    final bool recargarPresupuesto =
+        presupuesto && seccionActiva == _DatosSeccion.inicio;
+    final bool recargarClientes = clientes &&
+        (seccionActiva == _DatosSeccion.credito ||
+            seccionActiva == _DatosSeccion.clientes);
+    final bool recargarCobrosRuta = cobrosRuta &&
+        (seccionActiva == _DatosSeccion.inicio ||
+            seccionActiva == _DatosSeccion.ruta);
+    final bool recargarCreditos =
+        creditos && seccionActiva == _DatosSeccion.credito;
+    final bool recargarMovimientosCaja =
+        movimientosCaja && seccionActiva == _DatosSeccion.cajaMenor;
+    if (!recargarCatalogos &&
+        !recargarPresupuesto &&
+        !recargarClientes &&
+        !recargarCobrosRuta &&
+        !recargarCreditos &&
+        !recargarMovimientosCaja) {
+      return;
+    }
+
     unawaited(
       _recargarDatos(
-        catalogos: catalogos,
-        presupuesto: presupuesto,
-        clientes: clientes,
-        cobrosRuta: cobrosRuta,
-        creditos: creditos,
-        movimientosCaja: movimientosCaja,
+        catalogos: recargarCatalogos,
+        presupuesto: recargarPresupuesto,
+        clientes: recargarClientes,
+        cobrosRuta: recargarCobrosRuta,
+        creditos: recargarCreditos,
+        movimientosCaja: recargarMovimientosCaja,
       ),
     );
   }
@@ -3926,17 +4067,38 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  void _programarRecargaListasPesadas() {
+  void _programarRecargaCreditos() {
+    _programarRecargaListaPesada(
+      seccion: _DatosSeccion.credito,
+      indice: _indiceCredito,
+      recargar: () => unawaited(_recargarDatos(creditos: true)),
+    );
+  }
+
+  void _programarRecargaMovimientosCaja() {
+    _programarRecargaListaPesada(
+      seccion: _DatosSeccion.cajaMenor,
+      indice: 3,
+      recargar: () => unawaited(_recargarDatos(movimientosCaja: true)),
+    );
+  }
+
+  void _programarRecargaListaPesada({
+    required _DatosSeccion seccion,
+    required int indice,
+    required VoidCallback recargar,
+  }) {
     _filtrosListasTimer?.cancel();
     _filtrosListasTimer = Timer(const Duration(milliseconds: 260), () {
       if (!mounted || _usuarioSesion == null || _usuarioSesion!.esSuperAdmin) {
         return;
       }
+      if (_seccionActual != indice ||
+          !_seccionesCargadas.contains(seccion)) {
+        return;
+      }
 
-      _recargarDatos(
-        creditos: true,
-        movimientosCaja: true,
-      );
+      recargar();
     });
 
     _refrescar();

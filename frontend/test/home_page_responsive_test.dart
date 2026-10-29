@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:cobro_app/app/app_theme.dart';
+import 'package:cobro_app/app/session_cache.dart';
 import 'package:cobro_app/core/network/api_client.dart';
 import 'package:cobro_app/features/dashboard/presentation/home_page.dart';
 import 'package:flutter/material.dart';
@@ -9,6 +10,111 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 void main() {
+  testWidgets(
+    'no recarga datos en segundo plano cuando la sesion permanece inactiva',
+    (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1280, 900);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+      await clearCachedSessionPayload();
+      addTearDown(clearCachedSessionPayload);
+
+      final List<http.Request> requests = <http.Request>[];
+      final ApiClient apiClient = ApiClient(
+        baseUrl: 'https://cobro.test/api/v1',
+        client: MockClient((http.Request request) async {
+          requests.add(request);
+          return _responderApi(request);
+        }),
+      );
+      addTearDown(apiClient.close);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: CobroAppTheme.light(),
+          home: HomePage(
+            apiBaseUrl: 'https://cobro.test/api/v1',
+            apiClient: apiClient,
+            themeMode: ThemeMode.light,
+            onThemeModeChanged: (_) {},
+          ),
+        ),
+      );
+
+      await tester.enterText(find.byType(TextField).at(0), 'admin');
+      await tester.enterText(find.byType(TextField).at(1), 'Admin12345!');
+      await tester.tap(find.text('Entrar'));
+      await tester.pumpAndSettle(const Duration(seconds: 2));
+      _descartarExcepcionesPrevias(tester);
+      requests.clear();
+
+      await tester.pump(const Duration(seconds: 50));
+      await tester.pump();
+
+      expect(requests, isEmpty);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'carga los datos de créditos solo al abrir esa sección',
+    (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1280, 900);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+      await clearCachedSessionPayload();
+      addTearDown(clearCachedSessionPayload);
+
+      final List<http.Request> requests = <http.Request>[];
+      final ApiClient apiClient = ApiClient(
+        baseUrl: 'https://cobro.test/api/v1',
+        client: MockClient((http.Request request) async {
+          requests.add(request);
+          return _responderApi(request);
+        }),
+      );
+      addTearDown(apiClient.close);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: CobroAppTheme.light(),
+          home: HomePage(
+            apiBaseUrl: 'https://cobro.test/api/v1',
+            apiClient: apiClient,
+            themeMode: ThemeMode.light,
+            onThemeModeChanged: (_) {},
+          ),
+        ),
+      );
+
+      await tester.enterText(find.byType(TextField).at(0), 'admin');
+      await tester.enterText(find.byType(TextField).at(1), 'Admin12345!');
+      await tester.tap(find.text('Entrar'));
+      await tester.pumpAndSettle(const Duration(seconds: 2));
+      _descartarExcepcionesPrevias(tester);
+
+      expect(_tieneSolicitudGet(requests, '/catalogos'), isTrue);
+      expect(_tieneSolicitudGet(requests, '/presupuesto'), isTrue);
+      expect(_tieneSolicitudGet(requests, '/cobros/ruta'), isTrue);
+      expect(_tieneSolicitudGet(requests, '/creditos/resumen'), isTrue);
+      expect(_tieneSolicitudGet(requests, '/clientes'), isFalse);
+      expect(_tieneSolicitudGet(requests, '/creditos'), isFalse);
+      expect(_tieneSolicitudGet(requests, '/caja-menor/movimientos'), isFalse);
+      expect(_tieneSolicitudGet(requests, '/papelera'), isFalse);
+
+      requests.clear();
+      await tester.tap(find.text('Credito'));
+      await tester.pumpAndSettle(const Duration(seconds: 2));
+
+      expect(_tieneSolicitudGet(requests, '/clientes'), isTrue);
+      expect(_tieneSolicitudGet(requests, '/creditos'), isTrue);
+      expect(_tieneSolicitudGet(requests, '/caja-menor/movimientos'), isFalse);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets(
     'muestra Inicio en movil y permite compactar el menu de escritorio',
     (WidgetTester tester) async {
@@ -280,9 +386,11 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
 
       Uri? resumenTodosLosDiasUri;
+      final List<http.Request> requests = <http.Request>[];
       final ApiClient apiClient = ApiClient(
         baseUrl: 'https://cobro.test/api/v1',
         client: MockClient((http.Request request) async {
+          requests.add(request);
           if (request.url.path.endsWith('/creditos/resumen')) {
             final bool todosLosDias =
                 !request.url.queryParameters.containsKey('fechaDesde') &&
@@ -319,6 +427,7 @@ void main() {
       await tester.tap(find.text('Entrar'));
       await tester.pumpAndSettle(const Duration(seconds: 2));
       tester.takeException();
+      requests.clear();
 
       final Finder todosLosDias =
           find.widgetWithText(OutlinedButton, 'Todos los dias');
@@ -339,6 +448,9 @@ void main() {
         resumenTodosLosDiasUri!.queryParameters.containsKey('cajaMenorId'),
         isFalse,
       );
+      expect(_tieneSolicitudGet(requests, '/presupuesto'), isTrue);
+      expect(_tieneSolicitudGet(requests, '/creditos/resumen'), isTrue);
+      expect(_tieneSolicitudGet(requests, '/creditos'), isFalse);
       expect(find.text('Inactivos'), findsOneWidget);
       expect(find.text('5'), findsOneWidget);
       expect(tester.takeException(), isNull);
@@ -1101,5 +1213,16 @@ http.Response _jsonResponse(Object body, {int statusCode = 200}) {
     jsonEncode(body),
     statusCode,
     headers: <String, String>{'content-type': 'application/json'},
+  );
+}
+
+void _descartarExcepcionesPrevias(WidgetTester tester) {
+  while (tester.takeException() != null) {}
+}
+
+bool _tieneSolicitudGet(List<http.Request> requests, String path) {
+  return requests.any(
+    (http.Request request) =>
+        request.method == 'GET' && request.url.path.endsWith(path),
   );
 }

@@ -21,7 +21,9 @@ void main() {
     );
   }
 
-  testWidgets('CobroDropdownField adopta exactamente el ancho del campo cuando menuWidth es null', (
+  testWidgets(
+      'CobroDropdownField adopta exactamente el ancho del campo cuando menuWidth es null',
+      (
     WidgetTester tester,
   ) async {
     String? seleccionado = '1';
@@ -91,7 +93,9 @@ void main() {
     expect(find.text('Desembolso de credito'), findsOneWidget);
   });
 
-  testWidgets('SelectorMedioPagoBuscable no se desborda y respeta el ancho del diálogo', (
+  testWidgets(
+      'SelectorMedioPagoBuscable no se desborda y respeta el ancho del diálogo',
+      (
     WidgetTester tester,
   ) async {
     String medioSeleccionado = 'EFECTIVO';
@@ -144,7 +148,9 @@ void main() {
     expect(medioSeleccionado, equals('BILLETERA'));
   });
 
-  testWidgets('CobroDropdownField se abre hacia arriba cuando el espacio inferior es reducido', (
+  testWidgets(
+      'CobroDropdownField se abre hacia arriba cuando el espacio inferior es reducido',
+      (
     WidgetTester tester,
   ) async {
     final List<CobroDropdownItem<String>> items = <CobroDropdownItem<String>>[
@@ -190,11 +196,78 @@ void main() {
 
     // Posición del campo
     final Finder fieldFinder = find.byType(InputDecorator);
-    final RenderBox fieldBox =
-        tester.renderObject(fieldFinder) as RenderBox;
+    final RenderBox fieldBox = tester.renderObject(fieldFinder) as RenderBox;
     final Offset fieldPos = fieldBox.localToGlobal(Offset.zero);
 
     // Dado que se encuentra al fondo, el menú debe desplegarse ARRIBA del campo (menuPos.dy < fieldPos.dy)
     expect(menuPos.dy, lessThan(fieldPos.dy));
+  });
+
+  testWidgets('CobroDropdownField filtra opciones cuando es buscable', (
+    WidgetTester tester,
+  ) async {
+    String? seleccionado = '1';
+
+    await tester.pumpWidget(
+      crearEntornoTest(
+        Center(
+          child: SizedBox(
+            width: 260,
+            child: StatefulBuilder(
+              builder: (BuildContext context, StateSetter setTestState) {
+                return CobroDropdownField<String>(
+                  value: seleccionado,
+                  searchable: true,
+                  searchHintText: 'Buscar institución',
+                  items: const <CobroDropdownItem<String>>[
+                    CobroDropdownItem<String>(
+                      key: ValueKey<String>('item-institucion-uno'),
+                      value: '1',
+                      label: 'Institución Uno',
+                      subtitle: 'uno@cobro.test',
+                    ),
+                    CobroDropdownItem<String>(
+                      key: ValueKey<String>('item-institucion-dos'),
+                      value: '2',
+                      label: 'Institución Dos',
+                      subtitle: 'dos@cobro.test',
+                    ),
+                  ],
+                  onChanged: (String? value) {
+                    setTestState(() => seleccionado = value);
+                  },
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Institución Uno'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('cobro-dropdown-search')),
+      'dos@cobro.test',
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey<String>('item-institucion-uno')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('item-institucion-dos')),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('item-institucion-dos')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(seleccionado, '2');
+    expect(find.text('Institución Dos'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 }

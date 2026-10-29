@@ -695,7 +695,7 @@ describe('AuthService - Account Lockout (SEC-COBRO-04)', () => {
         ).rejects.toThrow(ForbiddenException);
       });
 
-      it('updates only the selected employee membership', async () => {
+      it('synchronizes only permission differences for the selected membership', async () => {
         const targetUserId = '55555555-5555-5555-5555-555555555555';
         const membershipId = '66666666-6666-6666-6666-666666666666';
         const resourceId = '77777777-7777-7777-7777-777777777777';
@@ -745,6 +745,8 @@ describe('AuthService - Account Lockout (SEC-COBRO-04)', () => {
         expect(sqlEjecutado).toContain(
           'tbl_usuarios_organizaciones_recursos',
         );
+        expect(sqlEjecutado).toContain('recurso.nom NOT IN');
+        expect(sqlEjecutado).toContain('NOT EXISTS');
         expect(sqlEjecutado).not.toContain(
           'DELETE FROM public.tbl_roles_recursos',
         );
@@ -755,6 +757,57 @@ describe('AuthService - Account Lockout (SEC-COBRO-04)', () => {
         expect(authService.obtenerUsuarioSuperAdminPorId).toHaveBeenCalledWith(
           targetUserId,
           '22222222-2222-2222-2222-222222222222',
+        );
+      });
+
+      it('removes managed permissions without reinserting when none are selected', async () => {
+        const targetUserId = '55555555-5555-5555-5555-555555555555';
+        const membershipId = '66666666-6666-6666-6666-666666666666';
+        const tx = {
+          $queryRaw: jest
+            .fn()
+            .mockResolvedValueOnce([{ id: membershipId, rol: 'COBRADOR' }]),
+          $executeRaw: jest.fn().mockResolvedValue(1),
+        };
+        mockPrisma.$transaction = jest.fn(async (callback) => callback(tx));
+        jest
+          .spyOn(authService, 'obtenerUsuarioSuperAdminPorId')
+          .mockResolvedValueOnce({
+            id: targetUserId,
+            usuario: 'empleado1',
+            nombreCompleto: 'Juan Perez',
+            nombres: 'Juan',
+            apellidos: 'Perez',
+            identificacion: '12345678',
+            correo: 'juan@test.com',
+            telefono: '3001234567',
+            activo: true,
+            organizacionId: '22222222-2222-2222-2222-222222222222',
+            organizacionNombre: 'Organizacion A',
+            organizacionSuspendida: false,
+            roles: ['COBRADOR'],
+            permisos: [],
+            creadoEn: '2026-01-01T00:00:00.000Z',
+          });
+
+        const resultado = await authService.actualizarPermisosUsuarioSuperAdmin(
+          superAdminUser,
+          targetUserId,
+          {
+            organizacionId: '22222222-2222-2222-2222-222222222222',
+            permisos: [],
+          },
+        );
+
+        expect(resultado.permisos).toEqual([]);
+        expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+        const sqlEjecutado = tx.$executeRaw.mock.calls[0][0].strings.join(' ');
+        expect(sqlEjecutado).toContain(
+          'DELETE FROM public.tbl_usuarios_organizaciones_recursos',
+        );
+        expect(sqlEjecutado).not.toContain('recurso.nom NOT IN');
+        expect(sqlEjecutado).not.toContain(
+          'INSERT INTO public.tbl_usuarios_organizaciones_recursos',
         );
       });
 

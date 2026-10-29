@@ -978,7 +978,7 @@ export class AuthService {
         );
       }
 
-      await this.reemplazarPermisosMembresias(
+      await this.sincronizarPermisosMembresias(
         tx,
         membresiasCobrador,
         permisos,
@@ -1727,7 +1727,7 @@ export class AuthService {
         );
       }
 
-      await this.reemplazarPermisosMembresias(
+      await this.sincronizarPermisosMembresias(
         tx,
         membresiasObjetivo.map(
           (membresia) => membresia.usuario_organizacion_id,
@@ -1748,7 +1748,7 @@ export class AuthService {
     return this.listarEmpleados(administrador);
   }
 
-  private async reemplazarPermisosMembresias(
+  private async sincronizarPermisosMembresias(
     tx: Prisma.TransactionClient,
     membresiaIds: string[],
     permisos: string[],
@@ -1760,6 +1760,10 @@ export class AuthService {
     const membresiasSql = Prisma.join(
       membresiaIds.map((id) => Prisma.sql`${id}::uuid`),
     );
+    const filtroPermisosRetirados =
+      permisos.length === 0
+        ? Prisma.empty
+        : Prisma.sql`AND recurso.nom NOT IN (${Prisma.join(permisos)})`;
 
     await tx.$executeRaw(Prisma.sql`
       DELETE FROM public.tbl_usuarios_organizaciones_recursos uor
@@ -1768,6 +1772,7 @@ export class AuthService {
         AND uor.urg_id IN (${membresiasSql})
         AND recurso.rec_interface = 'WEB'
         AND recurso.nom IN (${Prisma.join(permisosEmpleadoCodigos)})
+        ${filtroPermisosRetirados}
     `);
 
     if (permisos.length === 0) {
@@ -1803,6 +1808,12 @@ export class AuthService {
       WHERE uo.id_urg IN (${membresiasSql})
         AND recurso.rec_interface = 'WEB'
         AND recurso.nom IN (${Prisma.join(permisos)})
+        AND NOT EXISTS (
+          SELECT 1
+          FROM public.tbl_usuarios_organizaciones_recursos existente
+          WHERE existente.urg_id = uo.id_urg
+            AND existente.rec_id = recurso.id_rec
+        )
       ON CONFLICT (urg_id, rec_id) DO NOTHING
     `);
   }

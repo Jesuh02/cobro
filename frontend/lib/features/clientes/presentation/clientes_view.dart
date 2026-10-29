@@ -12,6 +12,7 @@ class ClientesView extends StatelessWidget {
   const ClientesView({
     super.key,
     required this.clientes,
+    required this.cargando,
     required this.sinClientesRegistrados,
     required this.esAdministrador,
     this.puedeModificar = false,
@@ -28,6 +29,7 @@ class ClientesView extends StatelessWidget {
   });
 
   final List<Cliente> clientes;
+  final bool cargando;
   final bool sinClientesRegistrados;
   final bool esAdministrador;
   final bool puedeModificar;
@@ -68,13 +70,18 @@ class ClientesView extends StatelessWidget {
       onRefresh: onRefresh,
       acciones: <Widget>[
         FilledButton.icon(
-          onPressed: guardando ? null : onCrearCliente,
+          onPressed: guardando || cargando ? null : onCrearCliente,
           icon: const Icon(Icons.person_add_rounded),
           label: const Text('Cliente'),
         ),
       ],
       children: <Widget>[
-        if (sinClientesRegistrados)
+        if (cargando)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 28),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (sinClientesRegistrados)
           const EstadoVacio(
             icono: Icons.groups_outlined,
             titulo: 'Sin clientes',

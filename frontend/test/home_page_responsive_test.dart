@@ -58,6 +58,64 @@ void main() {
   );
 
   testWidgets(
+    'carga los datos de créditos solo al abrir esa sección',
+    (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1280, 900);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+      await clearCachedSessionPayload();
+      addTearDown(clearCachedSessionPayload);
+
+      final List<http.Request> requests = <http.Request>[];
+      final ApiClient apiClient = ApiClient(
+        baseUrl: 'https://cobro.test/api/v1',
+        client: MockClient((http.Request request) async {
+          requests.add(request);
+          return _responderApi(request);
+        }),
+      );
+      addTearDown(apiClient.close);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: CobroAppTheme.light(),
+          home: HomePage(
+            apiBaseUrl: 'https://cobro.test/api/v1',
+            apiClient: apiClient,
+            themeMode: ThemeMode.light,
+            onThemeModeChanged: (_) {},
+          ),
+        ),
+      );
+
+      await tester.enterText(find.byType(TextField).at(0), 'admin');
+      await tester.enterText(find.byType(TextField).at(1), 'Admin12345!');
+      await tester.tap(find.text('Entrar'));
+      await tester.pumpAndSettle(const Duration(seconds: 2));
+      _descartarExcepcionesPrevias(tester);
+
+      expect(_tieneSolicitudGet(requests, '/catalogos'), isTrue);
+      expect(_tieneSolicitudGet(requests, '/presupuesto'), isTrue);
+      expect(_tieneSolicitudGet(requests, '/cobros/ruta'), isTrue);
+      expect(_tieneSolicitudGet(requests, '/creditos/resumen'), isTrue);
+      expect(_tieneSolicitudGet(requests, '/clientes'), isFalse);
+      expect(_tieneSolicitudGet(requests, '/creditos'), isFalse);
+      expect(_tieneSolicitudGet(requests, '/caja-menor/movimientos'), isFalse);
+      expect(_tieneSolicitudGet(requests, '/papelera'), isFalse);
+
+      requests.clear();
+      await tester.tap(find.text('Credito'));
+      await tester.pumpAndSettle(const Duration(seconds: 2));
+
+      expect(_tieneSolicitudGet(requests, '/clientes'), isTrue);
+      expect(_tieneSolicitudGet(requests, '/creditos'), isTrue);
+      expect(_tieneSolicitudGet(requests, '/caja-menor/movimientos'), isFalse);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
     'muestra Inicio en movil y permite compactar el menu de escritorio',
     (WidgetTester tester) async {
       tester.view.devicePixelRatio = 1;
@@ -1154,4 +1212,11 @@ http.Response _jsonResponse(Object body, {int statusCode = 200}) {
 
 void _descartarExcepcionesPrevias(WidgetTester tester) {
   while (tester.takeException() != null) {}
+}
+
+bool _tieneSolicitudGet(List<http.Request> requests, String path) {
+  return requests.any(
+    (http.Request request) =>
+        request.method == 'GET' && request.url.path.endsWith(path),
+  );
 }
